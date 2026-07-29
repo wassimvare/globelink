@@ -65,14 +65,30 @@ function AiTripPage() {
   };
 
   const plan = useMutation({
-    mutationFn: async () => {
-      if (!isValid) throw new Error("Vérifie la destination, la durée, le budget et le nombre de voyageurs.");
-      const text = await askPuter(buildTravelPlanMessages({
-        destination: destination.trim(), days, budget, travelers, style, interests,
-      }));
-      return { plan: text, provider: "Puter" };
-    },
-    onError: (error: any) => toast.error(error?.message ?? "Impossible de créer le voyage pour le moment."),
+   mutationFn: async () => {
+  if (!isValid) {
+    throw new Error(
+      "Vérifie la destination, la durée, le budget et le nombre de voyageurs.",
+    );
+  }
+
+  const { askPuter, buildTravelPlanMessages } = await import(
+    "@/lib/puter-ai.client"
+  );
+
+  const text = await askPuter(
+    buildTravelPlanMessages({
+      destination: destination.trim(),
+      days,
+      budget,
+      travelers,
+      style,
+      interests,
+    }),
+  );
+
+  return { plan: text, provider: "Puter" };
+},
   });
 
   const savePlan = async () => {
