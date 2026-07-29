@@ -1,0 +1,40 @@
+GLOBELINK V5 — IA PRO, ACTUALISATION QUOTIDIENNE ET SÉCURITÉ
+================================================================
+
+1. CONTENU ACTUALISÉ
+- Rotation automatique chaque jour des destinations, activités et discussions.
+- Les photos du jour utilisent les publications récentes réelles.
+- Les bons plans changent quotidiennement.
+- Nouveau Radar voyage du jour : une synthèse serveur mise en cache une seule fois
+  par jour, avec sources visibles lorsque la recherche web est configurée.
+- En l'absence de service externe, le contenu quotidien local reste fonctionnel.
+
+2. MOT DE PASSE OUBLIÉ
+- Page de demande neutre qui ne révèle pas si un compte existe.
+- Compatibilité avec les liens PKCE, token_hash et les anciens liens à jetons.
+- Page externe /reset-password, vérification de session et changement immédiat.
+- Suppression des jetons de l'URL puis fermeture de la session de récupération.
+- Voir CONFIGURATION-PRODUCTION.md pour les URL autorisées dans Supabase.
+
+3. GLOBELINK AI PRO
+- Recherche web connectable, sources visibles et date de mise à jour.
+- Mode conversation : les questions suivantes conservent le contexte récent.
+- Modes Recherche, Comparaison, Planification et Sécurité.
+- Trois essais par jour, puis abonnement mensuel configurable avec Stripe.
+- Quotas en base, webhook signé, idempotence et suivi d'abonnement.
+- Protection contre les injections de prompt et les données sensibles.
+
+4. MOBILE ET FLUIDITÉ
+- Typographies Manrope + Fraunces et hiérarchie améliorée.
+- Ajustements petits écrans, safe areas iPhone et champs sans zoom iOS.
+- Animations réduites sur appareils tactiles et selon les préférences système.
+- PWA de production avec cache uniquement des fichiers statiques.
+- Les API, pages privées et données d'authentification ne sont jamais mises en cache.
+
+5. SÉCURITÉ
+- En-têtes CSP, HSTS en HTTPS, anti-frame, anti-MIME sniffing et permissions limitées.
+- Microphone autorisé uniquement au même domaine pour les messages vocaux.
+- Protection des colonnes propriétaires, contraintes de taille/valeur et index en base.
+- Validation des médias, mots de passe, pseudos, redirections et entrées IA.
+- Centre de sécurité du compte et déconnexion globale.
+- Aucun secret serveur ne doit être préfixé par VITE_.

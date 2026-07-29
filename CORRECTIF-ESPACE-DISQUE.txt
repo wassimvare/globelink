@@ -1,0 +1,17 @@
+ERREUR ENOSPC = DISQUE PLEIN
+
+Le lanceur V7.1 utilise maintenant son cache npm et ses fichiers temporaires
+dans le dossier GlobeLink au lieu de remplir automatiquement le disque C:.
+
+Avant le premier lancement :
+- garde au moins 4 Go libres sur le disque ou se trouve GlobeLink ;
+- decompresse completement le ZIP ;
+- lance LANCER_GLOBELINK_MOBILE.bat.
+
+Si une ancienne installation a echoue :
+1. Lance NETTOYER_INSTALLATION_INCOMPLETE.bat.
+2. Libere de l'espace ou deplace le dossier sur D: / un autre disque.
+3. Relance LANCER_GLOBELINK_MOBILE.bat.
+
+Le telephone n'a rien a lancer : il ouvre simplement l'adresse Wi-Fi affichee
+par le PC, qui doit rester allume et sur le meme reseau Wi-Fi.

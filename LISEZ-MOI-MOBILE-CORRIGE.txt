@@ -1,0 +1,30 @@
+GLOBELINK V7 — MOBILE, RESPONSIVE ET CONSEILLER SANS CLÉ API
+
+LANCEMENT SUR TÉLÉPHONE
+1. Décompresse entièrement le dossier sur le PC.
+2. Connecte le PC et le téléphone au même Wi-Fi.
+3. Double-clique sur LANCER_GLOBELINK_MOBILE.bat sur le PC.
+4. Si Windows demande une autorisation, coche Réseaux privés.
+5. Ouvre sur le téléphone l'adresse http://192.168...:5173 affichée sur le PC.
+   Le QR code, lorsqu'il est disponible, s'ouvre également sur le PC.
+6. Garde la fenêtre de lancement ouverte.
+
+IMPORTANT
+- 127.0.0.1 fonctionne seulement sur l'appareil qui lance le serveur.
+- Le téléphone doit utiliser l'adresse Wi-Fi du PC affichée par le lanceur.
+- Évite les réseaux Wi-Fi invités, qui isolent souvent les appareils.
+- Désactive temporairement le VPN si le téléphone ne rejoint pas le PC.
+
+AMÉLIORATIONS
+- Serveur accessible sur le réseau local via 0.0.0.0.
+- Vérification automatique de l'adresse réellement utilisée par le téléphone.
+- Responsive renforcé pour iPhone et Android.
+- Navigation mobile fixe et zones tactiles agrandies.
+- Fil d'actualité plus naturel sur petit écran.
+- Direction artistique plus sobre : moins de gros dégradés, de verre et de cartes trop rondes.
+- Conseiller voyage Puter.js sans clé API développeur à ajouter.
+
+IA SANS CLÉ
+Le conseiller utilise Puter.js. Aucune clé API n'est enregistrée dans le projet.
+Une fenêtre de connexion Puter peut apparaître au premier usage. Le service reste
+externe à GlobeLink et peut être indisponible ou modifier ses conditions.

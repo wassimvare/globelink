@@ -1,0 +1,28 @@
+GLOBELINK V7.3 - APPELS AUDIO ET VIDEO
+
+Fonctionnalites ajoutees :
+- Bouton appel audio dans chaque conversation.
+- Bouton appel video dans chaque conversation.
+- Ecran d'appel entrant et sortant.
+- Acceptation, refus, appel occupe et appel manque.
+- Micro actif/coupe.
+- Camera active/coupee.
+- Changement camera avant/arriere.
+- Son distant actif/coupe.
+- Duree d'appel et historique dans la conversation.
+- Interface plein ecran responsive iPhone/Android.
+- Signalisation WebRTC via la messagerie Supabase existante et ses regles RLS.
+- Nettoyage automatique des signaux techniques apres l'appel.
+- Nouveau lanceur GLOBELINK_APPELS_HTTPS.bat pour le micro et la camera sur mobile.
+
+Utilisation :
+1. Decompresser le projet.
+2. Lancer GLOBELINK_APPELS_HTTPS.bat sur le PC.
+3. Scanner le QR code avec le telephone.
+4. Autoriser le micro et la camera.
+5. Ouvrir une conversation et utiliser les icones telephone ou camera.
+
+Important :
+- Deux comptes differents sont necessaires pour tester un appel.
+- Les deux utilisateurs doivent avoir GlobeLink ouvert.
+- Le tunnel HTTPS temporaire est destine aux tests. Pour la production, utiliser un domaine HTTPS permanent et un serveur TURN.

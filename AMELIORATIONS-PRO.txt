@@ -1,0 +1,39 @@
+GLOBELINK — VERSION PRO DESIGN & SECURITE
+
+Cette version conserve l'architecture, les routes, Supabase et les fonctionnalités existantes.
+
+INTERFACE
+- Nouvelle navigation ordinateur plus claire et moins chargée.
+- Nouvelle barre mobile flottante avec action centrale « Créer ».
+- Menu de création rapide : publication, lieu, voyage IA et carnet.
+- Design system harmonisé : boutons, champs, cartes, ombres, rayons et focus.
+- Arrière-plan plus soigné, modes clair/sombre conservés.
+- Accueil enrichi avec recherche compacte et accès rapides, sans remettre le grand hero supprimé.
+- Publications plus propres et option locale « Ne plus voir » avec annulation.
+- Assistant voyage complètement réorganisé avec résumé de budget par personne et par jour.
+- Connexion/inscription refaite en version plus professionnelle, Google conservé.
+- Carte améliorée visuellement avec cercle de précision autour de la position.
+- Travel Match modernisé sans modifier son algorithme ou ses tables.
+
+FLUIDITE
+- Animations plus courtes et moins coûteuses.
+- États actifs et tactiles plus nets.
+- Mise en cache des données du header améliorée.
+- Navigation mobile simplifiée.
+- Respect du réglage système « réduire les animations ».
+
+SECURITE
+- Validation stricte du contenu des messages IA.
+- Limitation par minute et par heure, avec clé anonymisée.
+- Vérification d'origine et Sec-Fetch-Site sur l'API IA.
+- Réponses IA sans cache ni indexation.
+- Prompt IA durci contre l'extraction de secrets et les fausses informations temps réel.
+- Validation serveur renforcée de l'assistant de voyage.
+- Vérification de signature réelle des images et vidéos avant envoi.
+- Contrôle des dimensions, de la résolution, de la durée et de la taille des médias.
+- Nouvelle migration SQL : longueurs maximales, coordonnées valides, pseudos sûrs, index utiles et droits réduits.
+- Sessions rafraîchies proprement au retour dans l'onglet.
+
+LANCEMENT
+Décompresse le ZIP puis double-clique sur LANCER_GLOBELINK.bat.
+Le premier lancement nécessite une connexion Internet.

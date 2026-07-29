@@ -1,0 +1,28 @@
+GLOBELINK V7.2 — CORRECTIONS MOBILE ET RESPONSIVE
+
+CORRECTIONS PRINCIPALES
+- Contraste du mode sombre corrigé : titres, labels, boutons et champs sont de nouveau lisibles.
+- Barre de navigation masquée sur les écrans de connexion, confirmation et mot de passe.
+- Barre mobile compactée et masquée automatiquement lorsque le clavier est ouvert.
+- Page de connexion raccourcie et mieux adaptée aux petits écrans.
+- Recherche de l'accueil corrigée : le bouton ne recouvre plus le texte.
+- Stories et raccourcis de l'accueil compactés.
+- Onglets du fil adaptés aux écrans étroits.
+- Fenêtre Action rapide limitée à 82 % de la hauteur, avec liste défilante et bouton fermer visible.
+- Carte mobile compactée : commandes sur trois colonnes, pays en défilement horizontal et catégories sur une seule ligne.
+- Les catégories de carte ne sont plus toutes affichées comme sélectionnées au démarrage.
+- Hauteur de la carte adaptée à l'écran du téléphone.
+- Gestion renforcée des encoches iPhone, de la barre Safari et du clavier mobile.
+
+LANCEMENT
+1. Décompresse entièrement le ZIP.
+2. Garde au moins 4 Go libres sur le disque.
+3. Lance LANCER_GLOBELINK_MOBILE.bat sur le PC.
+4. Autorise Node.js sur les réseaux privés si Windows le demande.
+5. Ouvre sur le téléphone l'adresse 192.168.x.x affichée par le lanceur.
+6. Le PC et le téléphone doivent être connectés au même Wi-Fi.
+
+IMPORTANT
+- N'utilise pas 127.0.0.1 sur le téléphone.
+- Garde la fenêtre noire ouverte pendant le test.
+- Un Wi-Fi invité ou un VPN peut empêcher les appareils de communiquer.

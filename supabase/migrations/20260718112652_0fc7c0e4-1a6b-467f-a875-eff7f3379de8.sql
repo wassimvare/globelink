@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.ensure_demo_profile(TEXT, TEXT, TEXT);

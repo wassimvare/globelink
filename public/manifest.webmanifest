@@ -1,0 +1,37 @@
+{
+  "id": "/",
+  "name": "GlobeLink — Réseau social voyage",
+  "short_name": "GlobeLink",
+  "description": "Partage tes voyages, découvre des lieux et prépare tes itinéraires.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f7faf9",
+  "theme_color": "#087b83",
+  "lang": "fr-FR",
+  "dir": "ltr",
+  "categories": ["travel", "social", "lifestyle"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
