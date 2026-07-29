@@ -21,7 +21,6 @@ import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { askPuter, buildTravelPlanMessages } from "@/lib/puter-ai.client";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { destinationCover } from "@/lib/destination-cover";
