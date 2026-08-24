@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/apply-v11-api-patch.mjs && vite dev",
-    "build": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts && eslint src/lib/phase3-intelligence.ts src/lib/phase3-intelligence.functions.ts src/routes/_authenticated.intelligence.tsx src/lib/phase3-intelligence.test.ts && tsc --noEmit && vite build",
+    "build": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts && tsc --noEmit && vite build",
     "build:dev": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
