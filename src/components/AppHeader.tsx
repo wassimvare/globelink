@@ -223,6 +223,13 @@ export function AppHeader() {
                   <Sparkles className="mr-2 h-4 w-4 text-primary" /> Activités du monde
                 </Link>
               </DropdownMenuItem>
+              {user && (
+                <DropdownMenuItem asChild>
+                  <Link to="/intelligence" className="rounded-xl">
+                    <Sparkles className="mr-2 h-4 w-4 text-primary" /> Intelligence GlobeLink
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem asChild>
                 <Link to="/ai-pro" className="rounded-xl">
                   <Crown className="mr-2 h-4 w-4 text-amber-500" /> Conseils voyage
