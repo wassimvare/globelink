@@ -17,19 +17,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Restore V11.0.13 files
+      - name: Restore V11.0.13 runtime files
         shell: bash
         run: |
           set -euo pipefail
-          cat .v11-payload/part* | base64 -d > /tmp/v11-changes.tar.gz
-          echo "8433ad1adc871100fd87f9dbf818ef934ba072ae4e14ff172b9901ee490560d0  /tmp/v11-changes.tar.gz" | sha256sum -c -
-          tar -xzf /tmp/v11-changes.tar.gz -C .
+          cat .v11-payload/part* | base64 -d > /tmp/v11-runtime.tar.xz
+          echo "1488e6b626f4b9263460c8a39835ab75d315bedf8691507ad19f30e9d9256242  /tmp/v11-runtime.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/v11-runtime.tar.xz -C .
           rm -f bun.lock bun.lockb
+      - name: Install dependencies and refresh lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only
+          npm ci
       - name: Validate production build
         shell: bash
         run: |
           set -euo pipefail
-          npm ci
           npm run build
       - name: Commit restored version
         shell: bash
