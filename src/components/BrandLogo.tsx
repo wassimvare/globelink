@@ -9,7 +9,7 @@ export function BrandLogo({
 }) {
   return (
     <img
-      src="/brand/globelink-logo.png"
+      src="/icons/globelink-app-icon-512-v20260824.jpg"
       alt="Logo GlobeLink"
       className={cn("block object-contain", className)}
       loading={priority ? "eager" : "lazy"}
