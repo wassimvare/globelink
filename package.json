@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/apply-v11-api-patch.mjs && vite dev",
-    "build": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts && vite build",
+    "build": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts && eslint src/lib/phase3-intelligence.ts src/lib/phase3-intelligence.functions.ts src/routes/_authenticated.intelligence.tsx src/lib/phase3-intelligence.test.ts && tsc --noEmit && vite build",
     "build:dev": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
@@ -95,8 +95,7 @@
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.20",
+    "eslint-plugin-react-hooks": "^0.4.20",
     "globals": "^15.15.0",
     "nitro": "3.0.260603-beta",
     "prettier": "^3.7.3",
