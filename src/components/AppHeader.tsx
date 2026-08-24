@@ -326,6 +326,11 @@ export function AppHeader() {
                     )}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/intelligence" className="rounded-xl">
+                      <Sparkles className="mr-2 h-4 w-4 text-primary" /> Intelligence GlobeLink
+                    </Link>
+                  </DropdownMenuItem>
                   {profile?.username && (
                     <DropdownMenuItem asChild>
                       <Link
