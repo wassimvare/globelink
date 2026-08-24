@@ -52,3 +52,15 @@ begin
   return daily_limit - used - 1;
 end;
 $$;
+
+alter policy "Users can meter only their own AI usage"
+on public.ai_usage
+with check (
+  (select auth.uid()) = user_id
+  and (
+    (feature = 'ai_pro' and query_chars between 0 and 3000 and source_count between 0 and 10)
+    or (feature = 'ai_trip' and query_chars between 0 and 1000 and source_count = 0)
+    or (feature = 'phase3_intelligence' and query_chars between 0 and 1200 and source_count = 0)
+    or (feature = 'chat' and query_chars between 0 and 28000 and source_count = 0)
+  )
+);
