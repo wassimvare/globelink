@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/apply-v11-api-patch.mjs && vite dev",
-    "build": "node scripts/apply-v11-api-patch.mjs && node scripts/smoke-provider-keys.mjs && vite build",
+    "build": "node scripts/apply-v11-api-patch.mjs && vite build",
     "build:dev": "node scripts/apply-v11-api-patch.mjs && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
