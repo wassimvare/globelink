@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { PlaceCategory } from "./countries";
 
+// `amadeus` remains accepted in the UI-facing union for backward compatibility
+// with already-built clients, but the server no longer calls or configures it.
 export type TravelProvider = "google" | "amadeus" | "ticketmaster" | "community";
 
 export type VerifiedTravelPlace = {
@@ -38,8 +40,10 @@ export type VerifiedTravelDiscovery = {
   places: VerifiedTravelPlace[];
   providers: {
     google: ProviderState;
-    amadeus: ProviderState;
     ticketmaster: ProviderState;
+    // Optional only so older UI code can safely read this property.
+    // It is intentionally omitted from every new server response.
+    amadeus?: ProviderState;
   };
   generatedAt: string;
 };
@@ -72,7 +76,6 @@ type GooglePlace = {
 const CACHE_TTL_MS = 5 * 60_000;
 const REQUEST_TIMEOUT_MS = 8_000;
 const cache = new Map<string, { expiresAt: number; value: VerifiedTravelDiscovery }>();
-let amadeusToken: { token: string; expiresAt: number; baseUrl: string } | null = null;
 
 const FEATURED_LOCATIONS = [
   { label: "Paris, France", lat: 48.8566, lng: 2.3522 },
@@ -178,7 +181,7 @@ async function googleTextSearch(
 ) {
   const body: Record<string, unknown> = {
     textQuery,
-    pageSize: 5,
+    pageSize: 6,
     languageCode: "fr",
   };
   if (bias) {
@@ -216,7 +219,11 @@ async function googleTextSearch(
   );
 
   if (!response) return { ok: false, raw: [] as GooglePlace[], places: [] as VerifiedTravelPlace[] };
-  const raw = (response.places ?? []).filter((place) => Number.isFinite(place.location?.latitude) && Number.isFinite(place.location?.longitude));
+
+  const raw = (response.places ?? []).filter(
+    (place) => Number.isFinite(place.location?.latitude) && Number.isFinite(place.location?.longitude),
+  );
+
   const mapped = await Promise.all(raw.map(async (place) => {
     const photo = await googlePhotoUrl(apiKey, place.photos?.[0]);
     const names = addressParts(place.formattedAddress, fallbackCity);
@@ -247,143 +254,21 @@ async function googleTextSearch(
   return { ok: true, raw, places: mapped };
 }
 
-function amadeusBaseUrl() {
-  return String(process.env.AMADEUS_ENV ?? "test").toLowerCase() === "production"
-    ? "https://api.amadeus.com"
-    : "https://test.api.amadeus.com";
-}
-
-async function getAmadeusToken() {
-  const clientId = process.env.AMADEUS_API_KEY;
-  const clientSecret = process.env.AMADEUS_API_SECRET;
-  if (!clientId || !clientSecret) return null;
-  const baseUrl = amadeusBaseUrl();
-  if (amadeusToken && amadeusToken.baseUrl === baseUrl && amadeusToken.expiresAt > Date.now() + 30_000) {
-    return { token: amadeusToken.token, baseUrl };
-  }
-
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: clientId,
-    client_secret: clientSecret,
-  });
-  const response = await fetchJson<{ access_token?: string; expires_in?: number }>(
-    `${baseUrl}/v1/security/oauth2/token`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    },
-  );
-  if (!response?.access_token) return null;
-  amadeusToken = {
-    token: response.access_token,
-    expiresAt: Date.now() + Math.max(60, Number(response.expires_in) || 1_800) * 1_000,
-    baseUrl,
-  };
-  return { token: response.access_token, baseUrl };
-}
-
-async function amadeusNearby(anchor: { lat: number; lng: number; label: string }) {
-  const auth = await getAmadeusToken();
-  if (!auth) return { ok: false, places: [] as VerifiedTravelPlace[] };
-  const headers = { Authorization: `Bearer ${auth.token}` };
-
-  const [hotelResponse, activityResponse] = await Promise.all([
-    fetchJson<{ data?: Array<{
-      hotelId?: string;
-      name?: string;
-      geoCode?: { latitude?: number; longitude?: number };
-      address?: { countryCode?: string };
-    }> }>(
-      `${auth.baseUrl}/v1/reference-data/locations/hotels/by-geocode?latitude=${anchor.lat}&longitude=${anchor.lng}&radius=30`,
-      { headers },
-    ),
-    fetchJson<{ data?: Array<{
-      id?: string;
-      name?: string;
-      shortDescription?: string;
-      geoCode?: { latitude?: number; longitude?: number };
-      rating?: string;
-      pictures?: string[];
-      bookingLink?: string;
-      price?: { currencyCode?: string; amount?: string };
-    }> }>(
-      `${auth.baseUrl}/v1/shopping/activities?longitude=${anchor.lng}&latitude=${anchor.lat}&radius=30`,
-      { headers },
-    ),
-  ]);
-
-  const hotels: VerifiedTravelPlace[] = (hotelResponse?.data ?? []).slice(0, 8).flatMap((hotel) => {
-    const lat = Number(hotel.geoCode?.latitude);
-    const lng = Number(hotel.geoCode?.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !hotel.name) return [];
-    return [{
-      id: `amadeus-hotel-${hotel.hotelId ?? normalizeKey(hotel.name)}`,
-      name: hotel.name,
-      category: "hotel",
-      country: hotel.address?.countryCode ?? "",
-      city: anchor.label.split(",")[0]?.trim() ?? "",
-      lat,
-      lng,
-      description: "Hôtel référencé dans le catalogue Amadeus.",
-      image_url: "",
-      photos: [],
-      budget: null,
-      rating: null,
-      reviews_count: 0,
-      hours: "",
-      comments: [],
-      source: "amadeus",
-      sourceUrl: "",
-    }];
-  });
-
-  const activities: VerifiedTravelPlace[] = (activityResponse?.data ?? []).slice(0, 10).flatMap((activity) => {
-    const lat = Number(activity.geoCode?.latitude);
-    const lng = Number(activity.geoCode?.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !activity.name) return [];
-    const image = activity.pictures?.find(Boolean) ?? "";
-    const amount = activity.price?.amount;
-    const currency = activity.price?.currencyCode;
-    return [{
-      id: `amadeus-activity-${activity.id ?? normalizeKey(activity.name)}`,
-      name: activity.name,
-      category: "activite",
-      country: "",
-      city: anchor.label.split(",")[0]?.trim() ?? "",
-      lat,
-      lng,
-      description: activity.shortDescription?.trim() ?? "",
-      image_url: image,
-      photos: (activity.pictures ?? []).filter(Boolean).slice(0, 4),
-      budget: null,
-      rating: Number.isFinite(Number(activity.rating)) ? Number(activity.rating) : null,
-      reviews_count: 0,
-      hours: "",
-      comments: [],
-      source: "amadeus",
-      sourceUrl: activity.bookingLink ?? "",
-      priceLabel: amount && currency ? `${amount} ${currency}` : undefined,
-    }];
-  });
-
-  return { ok: hotelResponse !== null || activityResponse !== null, places: [...activities, ...hotels] };
-}
-
 async function ticketmasterNearby(anchor: { lat: number; lng: number; label: string }) {
   const apiKey = process.env.TICKETMASTER_API_KEY;
   if (!apiKey) return { ok: false, places: [] as VerifiedTravelPlace[] };
+
   const params = new URLSearchParams({
     apikey: apiKey,
     latlong: `${anchor.lat},${anchor.lng}`,
     radius: "50",
     unit: "km",
-    size: "8",
+    size: "10",
     sort: "distance,asc",
     locale: "fr,*",
     startDateTime: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   });
+
   const response = await fetchJson<{
     _embedded?: {
       events?: Array<{
@@ -404,11 +289,13 @@ async function ticketmasterNearby(anchor: { lat: number; lng: number; label: str
   }>(`https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`);
 
   if (!response) return { ok: false, places: [] as VerifiedTravelPlace[] };
+
   const places: VerifiedTravelPlace[] = (response._embedded?.events ?? []).flatMap((event) => {
     const venue = event._embedded?.venues?.[0];
     const lat = Number(venue?.location?.latitude);
     const lng = Number(venue?.location?.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !event.name) return [];
+
     const image = [...(event.images ?? [])]
       .filter((item) => item.url)
       .sort((a, b) => (Number(b.width) * Number(b.height)) - (Number(a.width) * Number(a.height)))[0]?.url ?? "";
@@ -419,6 +306,7 @@ async function ticketmasterNearby(anchor: { lat: number; lng: number; label: str
     const priceLabel = Number.isFinite(price?.min)
       ? `dès ${price?.min} ${price?.currency ?? ""}`.trim()
       : undefined;
+
     return [{
       id: `ticketmaster-${event.id ?? normalizeKey(event.name)}`,
       name: event.name,
@@ -440,6 +328,7 @@ async function ticketmasterNearby(anchor: { lat: number; lng: number; label: str
       priceLabel,
     }];
   });
+
   return { ok: true, places };
 }
 
@@ -450,19 +339,20 @@ function dedupePlaces(items: VerifiedTravelPlace[]) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 60);
+  }).slice(0, 80);
 }
 
 async function buildDiscovery(input: DiscoveryInput): Promise<VerifiedTravelDiscovery> {
   const query = cleanQuery(input.query);
   const lat = finiteCoord(input.lat, -90, 90);
   const lng = finiteCoord(input.lng, -180, 180);
-  const providedAnchor = lat !== undefined && lng !== undefined ? { lat, lng, label: query || "Autour de toi" } : undefined;
+  const providedAnchor = lat !== undefined && lng !== undefined
+    ? { lat, lng, label: query || "Autour de toi" }
+    : undefined;
   const seed = matchingFeaturedLocation(query) ?? dailyFeaturedLocation();
 
   const googleKey = process.env.GOOGLE_PLACES_API_KEY;
   const googleConfigured = Boolean(googleKey);
-  const amadeusConfigured = Boolean(process.env.AMADEUS_API_KEY && process.env.AMADEUS_API_SECRET);
   const ticketmasterConfigured = Boolean(process.env.TICKETMASTER_API_KEY);
 
   let googleOk = false;
@@ -473,13 +363,38 @@ async function buildDiscovery(input: DiscoveryInput): Promise<VerifiedTravelDisc
     const bias = providedAnchor ? { lat: providedAnchor.lat, lng: providedAnchor.lng } : undefined;
     const label = query || providedAnchor?.label || seed.label;
     const suffix = query ? ` à ${query}` : "";
+    const defaultBias = bias ?? (!query ? { lat: seed.lat, lng: seed.lng } : undefined);
+
+    // Google Places is the single verified source for establishments/POIs.
+    // Keeping all three categories on the same provider prevents mismatched photos
+    // or duplicate hotel/activity records from unrelated catalogues.
     const [restaurants, hotels, attractions] = await Promise.all([
-      googleTextSearch(googleKey, query ? `restaurants${suffix}` : "restaurants", "restaurant", label.split(",")[0] ?? label, bias ?? (!query ? { lat: seed.lat, lng: seed.lng } : undefined)),
-      googleTextSearch(googleKey, query ? `hôtels${suffix}` : "hôtels", "hotel", label.split(",")[0] ?? label, bias ?? (!query ? { lat: seed.lat, lng: seed.lng } : undefined)),
-      googleTextSearch(googleKey, query ? `activités touristiques${suffix}` : "activités touristiques", "activite", label.split(",")[0] ?? label, bias ?? (!query ? { lat: seed.lat, lng: seed.lng } : undefined)),
+      googleTextSearch(
+        googleKey,
+        query ? `restaurants${suffix}` : "restaurants",
+        "restaurant",
+        label.split(",")[0] ?? label,
+        defaultBias,
+      ),
+      googleTextSearch(
+        googleKey,
+        query ? `hôtels${suffix}` : "hôtels",
+        "hotel",
+        label.split(",")[0] ?? label,
+        defaultBias,
+      ),
+      googleTextSearch(
+        googleKey,
+        query ? `activités touristiques et attractions${suffix}` : "activités touristiques et attractions",
+        "activite",
+        label.split(",")[0] ?? label,
+        defaultBias,
+      ),
     ]);
+
     googleOk = restaurants.ok || hotels.ok || attractions.ok;
     googlePlaces = [...restaurants.places, ...hotels.places, ...attractions.places];
+
     const first = [...restaurants.raw, ...hotels.raw, ...attractions.raw].find((place) => place.location);
     if (Number.isFinite(first?.location?.latitude) && Number.isFinite(first?.location?.longitude)) {
       googleAnchor = {
@@ -496,20 +411,23 @@ async function buildDiscovery(input: DiscoveryInput): Promise<VerifiedTravelDisc
     label: query || seed.label,
   };
 
-  const [amadeus, ticketmaster] = await Promise.all([
-    amadeusConfigured ? amadeusNearby(anchor) : Promise.resolve({ ok: false, places: [] as VerifiedTravelPlace[] }),
-    ticketmasterConfigured ? ticketmasterNearby(anchor) : Promise.resolve({ ok: false, places: [] as VerifiedTravelPlace[] }),
-  ]);
+  const ticketmaster = ticketmasterConfigured
+    ? await ticketmasterNearby(anchor)
+    : { ok: false, places: [] as VerifiedTravelPlace[] };
 
-  const places = dedupePlaces([...googlePlaces, ...amadeus.places, ...ticketmaster.places]);
+  const places = dedupePlaces([...googlePlaces, ...ticketmaster.places]);
+
   return {
     query: query || anchor.label,
     anchor,
     places,
     providers: {
       google: { configured: googleConfigured, ok: googleOk, count: googlePlaces.length },
-      amadeus: { configured: amadeusConfigured, ok: amadeus.ok, count: amadeus.places.length },
-      ticketmaster: { configured: ticketmasterConfigured, ok: ticketmaster.ok, count: ticketmaster.places.length },
+      ticketmaster: {
+        configured: ticketmasterConfigured,
+        ok: ticketmaster.ok,
+        count: ticketmaster.places.length,
+      },
     },
     generatedAt: new Date().toISOString(),
   };
@@ -521,15 +439,23 @@ export const discoverVerifiedTravelPlaces = createServerFn({ method: "POST" })
     const query = cleanQuery(data.query);
     const lat = finiteCoord(data.lat, -90, 90);
     const lng = finiteCoord(data.lng, -180, 180);
-    if ((lat === undefined) !== (lng === undefined)) throw new Error("Latitude et longitude doivent être fournies ensemble.");
+    if ((lat === undefined) !== (lng === undefined)) {
+      throw new Error("Latitude et longitude doivent être fournies ensemble.");
+    }
     return { query: query || undefined, lat, lng };
   })
   .handler(async ({ data }) => {
-    const cacheKey = JSON.stringify({ q: data.query ?? "", lat: data.lat?.toFixed(3), lng: data.lng?.toFixed(3) });
+    const cacheKey = JSON.stringify({
+      q: data.query ?? "",
+      lat: data.lat?.toFixed(3),
+      lng: data.lng?.toFixed(3),
+    });
     const cached = cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
+
     const value = await buildDiscovery(data);
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+
     if (cache.size > 40) {
       const oldestKey = cache.keys().next().value as string | undefined;
       if (oldestKey) cache.delete(oldestKey);
