@@ -4,9 +4,9 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "build:dev": "vite build --mode development",
+    "dev": "node scripts/apply-v11-api-patch.mjs && vite dev",
+    "build": "node scripts/apply-v11-api-patch.mjs && vite build",
+    "build:dev": "node scripts/apply-v11-api-patch.mjs && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "check": "npm run check:security && npm run check:phase1 && npm run check:phase2 && npm run check:map && npm run lint && npm run typecheck && npm run test && npm run build",
     "check:security": "node scripts/security-check.mjs",
-    "check:apis": "node scripts/check-official-apis.mjs",
+    "check:apis": "node scripts/apply-v11-api-patch.mjs && node scripts/check-official-apis.mjs",
     "check:phase1": "node scripts/phase1-validate.mjs",
     "check:map": "node scripts/map-v2-check.mjs && node scripts/map-v3-check.mjs && node scripts/map-v4-check.mjs && node scripts/map-v5-check.mjs && node scripts/map-v6-check.mjs && node scripts/map-v7-check.mjs && node scripts/map-v8-check.mjs && node scripts/map-v9-check.mjs && node scripts/map-v10-check.mjs && node scripts/map-v11-check.mjs && node scripts/map-v12-check.mjs && node scripts/map-v13-check.mjs && node scripts/map-v14-check.mjs && node scripts/map-v15-check.mjs && node scripts/map-v16-check.mjs",
     "check:phase2": "node scripts/phase2-validate.mjs"
