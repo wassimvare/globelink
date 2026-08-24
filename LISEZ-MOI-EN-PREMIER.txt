@@ -1,0 +1,45 @@
+GLOBELINK V10.8.14 - DEMARRAGE SIMPLE
+==================================
+
+1. Decompresse entierement le fichier ZIP.
+2. Ouvre le dossier obtenu.
+3. Double-clique uniquement sur LANCER_GLOBELINK.bat.
+4. Au premier lancement, laisse la fenetre installer automatiquement le projet.
+5. Si Supabase demande une connexion, connecte-toi une seule fois.
+6. Attends que l'adresse HTTPS apparaisse en vert.
+7. Sur le telephone, scanne le QR code ou ouvre cette adresse.
+8. Autorise le micro et la camera.
+9. Garde la fenetre noire/bleue ouverte pendant le test.
+
+Pour tester correctement, utilise deux comptes confirmes et suis le fichier
+TEST-COMPLET-V10.8.md.
+
+Le lanceur installe maintenant automatiquement au premier demarrage :
+- les composants du projet ;
+- les tables Supabase GlobeLink necessaires ;
+- la fonction de catalogue web sync-travel-catalog ;
+- le renouvellement quotidien des offres ;
+- une premiere collecte catalogue.
+
+Les lancements suivants sont plus rapides : le fichier
+.runtime/globelink-auto-setup.json indique que l'installation a deja ete faite.
+
+Pour activer le vrai resume IA Gemini :
+1. lance CONFIGURER_GEMINI_API.bat ;
+2. colle une cle creee sur https://aistudio.google.com/app/apikey ;
+3. relance LANCER_GLOBELINK.bat.
+
+La page Selection du moment affiche les vraies offres si un fournisseur est
+configure. Sinon elle affiche une selection reelle de lieux et activites issus
+de sources verifiables, comme sur la page d'accueil.
+
+Si tu ajoutes AMADEUS_CLIENT_ID + AMADEUS_CLIENT_SECRET ou TAVILY_API_KEY dans
+.env, le lanceur les enregistre automatiquement au prochain lancement.
+
+Pour que l'onglet admin Lieux IA puisse charger ces analyses privees :
+1. lance CONFIGURER_PROJET_SUPABASE.bat ;
+2. ajoute obligatoirement la cle serveur Secret sb_secret_... ;
+3. ne copie jamais cette cle dans une variable VITE_* ni dans un ZIP public.
+
+Important : l'adresse HTTPS temporaire change a chaque lancement. Ce mode est
+fait pour tester, pas pour publier le site definitivement.

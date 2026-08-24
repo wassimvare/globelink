@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Réinitialisation GlobeLink</title>
+  </head>
+  <body
+    style="
+      font-family: system-ui, sans-serif;
+      display: grid;
+      min-height: 100vh;
+      place-items: center;
+      margin: 0;
+      background: #f3fafb;
+      color: #123;
+    "
+  >
+    <main style="max-width: 520px; padding: 28px; text-align: center">
+      <h1>Nettoyage de GlobeLink…</h1>
+      <p id="status">Suppression des anciens caches du navigateur.</p>
+    </main>
+    <script>
+      (async () => {
+        try {
+          if ("serviceWorker" in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((registration) => registration.unregister()));
+          }
+          if ("caches" in window) {
+            const names = await caches.keys();
+            await Promise.all(names.map((name) => caches.delete(name)));
+          }
+          localStorage.removeItem("globelink-build-error");
+          document.getElementById("status").textContent = "Caches supprimés. Retour à l’accueil…";
+        } catch (error) {
+          document.getElementById("status").textContent =
+            "Nettoyage terminé avec une erreur non bloquante.";
+        }
+        setTimeout(() => location.replace("/?repair=10.8.14&ts=" + Date.now()), 900);
+      })();
+    </script>
+  </body>
+</html>

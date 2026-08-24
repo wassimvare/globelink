@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /new-post
+Disallow: /new-place
+Disallow: /auth

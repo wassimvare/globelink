@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+  <body style="margin: 0; background: #f4f8f7; font-family: Arial, sans-serif; color: #17313b">
+    <table
+      role="presentation"
+      width="100%"
+      cellspacing="0"
+      cellpadding="0"
+      style="padding: 32px 16px"
+    >
+      <tr>
+        <td align="center">
+          <table
+            role="presentation"
+            width="100%"
+            cellspacing="0"
+            cellpadding="0"
+            style="
+              max-width: 560px;
+              background: #fff;
+              border: 1px solid #dbe7e4;
+              border-radius: 24px;
+              overflow: hidden;
+            "
+          >
+            <tr>
+              <td style="padding: 28px 32px; background: #071924; color: #fff; text-align: center">
+                <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.16em">
+                  GLOBELINK
+                </div>
+                <h1 style="margin: 10px 0 0; font-size: 27px">Ton code de vérification</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 30px 32px; text-align: center">
+                <p style="margin: 0; line-height: 1.65; color: #52686f">
+                  Entre ce code dans GlobeLink pour confirmer que cette adresse e-mail t'appartient.
+                </p>
+                <div
+                  style="
+                    margin: 26px auto;
+                    padding: 18px 16px;
+                    border: 1px solid #b8d6d4;
+                    border-radius: 16px;
+                    background: #edf8f7;
+                    font-size: 34px;
+                    font-weight: 800;
+                    letter-spacing: 0.25em;
+                    color: #087b83;
+                  "
+                >
+                  {{ .Token }}
+                </div>
+                <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.55; color: #17313b">
+                  Code GlobeLink : <strong>{{ .Token }}</strong>
+                </p>
+                <p style="margin: 0; font-size: 13px; line-height: 1.55; color: #6f8187">
+                  Ne partage jamais ce code. Il expire dans 10 minutes. Si tu n'es pas à l'origine
+                  de cette inscription, ignore cet e-mail.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

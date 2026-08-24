@@ -1,0 +1,2 @@
+ALTER TABLE public.trips DROP CONSTRAINT IF EXISTS trips_status_check;
+ALTER TABLE public.trips ADD CONSTRAINT trips_status_check CHECK (status = ANY (ARRAY['planned'::text, 'upcoming'::text, 'current'::text, 'past'::text]));
