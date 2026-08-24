@@ -1,11 +1,11 @@
 /* GlobeLink production service worker: static assets only, never auth/API data. */
-const CACHE = "globelink-static-icon-v20260824";
+const CACHE = "globelink-static-icon-v20260824b";
 const OFFLINE = "/offline.html";
 const PRECACHE = [
   OFFLINE,
   "/manifest.webmanifest",
   "/brand/globelink-logo.png",
-  "/icons/globelink-app-icon-192-v20260824.png",
+  "/icons/globelink-app-icon-180-v20260824b.png",
   "/icons/globelink-app-icon-512-v20260824.jpg",
 ];
 const STATIC_EXT = /\.(?:css|js|mjs|woff2?|png|jpe?g|webp|avif|svg|ico)$/i;
