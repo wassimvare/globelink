@@ -6,6 +6,12 @@ import { extractBearerToken } from "@/lib/security";
 import type { Database } from "./types";
 import { assertSafeSupabasePublishableKey, isOpaqueSupabaseApiKey } from "./key-safety";
 
+// Public Supabase configuration is safe to ship with the app. Keep these fallbacks aligned
+// with client.ts so authenticated server functions remain available even if a Vercel
+// deployment is missing the public environment variables.
+const FALLBACK_SUPABASE_URL = "https://hzsfocphpynxoykfkfaj.supabase.co";
+const FALLBACK_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Vrha4s7e7HJTQ3euKQyAA_lGjAaSh7";
+
 function createSupabaseFetch(supabaseKey: string): typeof fetch {
   return (input, init) => {
     const headers = new Headers(
@@ -43,18 +49,9 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
 
 /** Verifies a bearer JWT and returns a user-scoped Supabase client. */
 export async function authenticateSupabaseRequest(request: Request) {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-
-  if (!supabaseUrl || !supabasePublishableKey) {
-    const missing = [
-      ...(!supabaseUrl ? ["SUPABASE_URL"] : []),
-      ...(!supabasePublishableKey ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
-  }
+  const supabaseUrl = process.env.SUPABASE_URL || FALLBACK_SUPABASE_URL;
+  const supabasePublishableKey =
+    process.env.SUPABASE_PUBLISHABLE_KEY || FALLBACK_SUPABASE_PUBLISHABLE_KEY;
 
   assertSafeSupabasePublishableKey(supabasePublishableKey);
 
