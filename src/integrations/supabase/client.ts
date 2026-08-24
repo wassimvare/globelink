@@ -3,6 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 import { assertSafeSupabasePublishableKey, isOpaqueSupabaseApiKey } from "./key-safety";
 
+// Public client configuration. These values are intentionally safe to ship to the browser:
+// the publishable key is not a service-role secret and access remains protected by Supabase RLS.
+const FALLBACK_SUPABASE_URL = "https://hzsfocphpynxoykfkfaj.supabase.co";
+const FALLBACK_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Vrha4s7e7HJTQ3euKQyAA_lGjAaSh7";
+
 function createSupabaseFetch(supabaseKey: string): typeof fetch {
   return (input, init) => {
     const headers = new Headers(
@@ -27,12 +32,15 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function createSupabaseClient() {
-  // Use import.meta.env for client-side (Vite build-time replacement)
-  // Fall back to process.env for SSR (server-side rendering)
+  // Prefer Vercel/Vite environment variables when available, while keeping the public
+  // project URL + publishable key as a resilient browser fallback for production builds.
   const serverEnv = typeof process !== "undefined" ? process.env : undefined;
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || serverEnv?.SUPABASE_URL;
+  const SUPABASE_URL =
+    import.meta.env.VITE_SUPABASE_URL || serverEnv?.SUPABASE_URL || FALLBACK_SUPABASE_URL;
   const SUPABASE_PUBLISHABLE_KEY =
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || serverEnv?.SUPABASE_PUBLISHABLE_KEY;
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    serverEnv?.SUPABASE_PUBLISHABLE_KEY ||
+    FALLBACK_SUPABASE_PUBLISHABLE_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [
