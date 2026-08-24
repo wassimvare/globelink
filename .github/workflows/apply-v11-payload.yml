@@ -1,0 +1,43 @@
+name: Apply GlobeLink V11.0.13 payload
+
+on:
+  push:
+    branches:
+      - deploy/v11.0.13-google-ticketmaster
+    paths:
+      - .v11-ready
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore V11.0.13 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .v11-payload/part* | base64 -d > /tmp/v11-changes.tar.gz
+          echo "8433ad1adc871100fd87f9dbf818ef934ba072ae4e14ff172b9901ee490560d0  /tmp/v11-changes.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/v11-changes.tar.gz -C .
+          rm -f bun.lock bun.lockb
+      - name: Validate production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Commit restored version
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .v11-payload .v11-ready .github/workflows/apply-v11-payload.yml
+          git config user.name "GlobeLink Restore Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "restore: GlobeLink V11.0.13 with Google Places and Ticketmaster"
+          git push origin HEAD:deploy/v11.0.13-google-ticketmaster
