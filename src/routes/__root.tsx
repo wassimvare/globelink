@@ -104,12 +104,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/icons/globelink-app-icon-192-v20260824.png", type: "image/png" },
+      { rel: "icon", href: "/icons/globelink-app-icon-180-v20260824b.png", type: "image/png" },
       { rel: "manifest", href: "/manifest.webmanifest" },
       {
         rel: "apple-touch-icon",
-        href: "/icons/globelink-app-icon-192-v20260824.png",
-        sizes: "192x192",
+        href: "/icons/globelink-app-icon-180-v20260824b.png",
+        sizes: "180x180",
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
