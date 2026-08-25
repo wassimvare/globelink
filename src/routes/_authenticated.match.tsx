@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
@@ -17,12 +17,19 @@ import {
   MessageCircle,
   Filter,
   CheckCircle2,
+  Settings2,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { sendMatchLike } from "@/lib/match.functions";
+import {
+  DEFAULT_ACCOUNT_SETTINGS,
+  getAccountSettings,
+  getSuggestionExcludedUserIds,
+} from "@/lib/account-settings";
 
 export const Route = createFileRoute("/_authenticated/match")({
   head: () => ({
@@ -79,8 +86,8 @@ const DEFAULT_PREFS: MyPrefs = {
   budget: 1500,
   languages: ["Français", "Anglais"],
   interests: ["Randonnée", "Photo", "Culture"],
-  ageMin: 20,
-  ageMax: 45,
+  ageMin: 18,
+  ageMax: 99,
   startsOn: new Date().toISOString().slice(0, 10),
   endsOn: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
 };
@@ -121,7 +128,6 @@ function daysOverlap(aS: string, aE: string, bS: string, bE: string) {
 }
 
 function scoreTraveler(t: MapTraveler, p: MyPrefs) {
-  let s = 0;
   const parts: { label: string; got: number; max: number }[] = [];
   const destMatch =
     p.destination.trim().length === 0
@@ -147,11 +153,11 @@ function scoreTraveler(t: MapTraveler, p: MyPrefs) {
   const age = t.age;
   const agePts = age !== null && age >= p.ageMin && age <= p.ageMax ? 10 : 0;
   parts.push({ label: "Âge", got: agePts, max: 10 });
-  s = parts.reduce((a, b) => a + b.got, 0);
-  return { score: s, parts, sharedLangs, sharedInts, overlap, age };
+  const score = parts.reduce((total, part) => total + part.got, 0);
+  return { score, parts, sharedLangs, sharedInts, overlap, age };
 }
 
-type Candidate = { key: string; t: MapTraveler; profileId: string };
+type Candidate = { key: string; t: MapTraveler; profileId: string; verified: boolean };
 
 type RealProfile = {
   id: string;
@@ -162,6 +168,7 @@ type RealProfile = {
   birth_date: string | null;
   languages: string[] | null;
   interests: string[];
+  verified: boolean;
 };
 
 type RealIntent = {
@@ -191,6 +198,7 @@ function candidateFromData(profile: RealProfile, intent: RealIntent): Candidate 
   return {
     key: `real:${profile.id}:${intent.starts_on}`,
     profileId: profile.id,
+    verified: !!profile.verified,
     t: {
       id: profile.id,
       name: profile.display_name ?? profile.username,
@@ -216,7 +224,13 @@ function MatchPage() {
   const qc = useQueryClient();
   const [prefs, setPrefs] = useState<MyPrefs>(DEFAULT_PREFS);
   const [showFilters, setShowFilters] = useState(false);
-  const prefsHydrated = useRef(false);
+
+  const { data: accountSettings = DEFAULT_ACCOUNT_SETTINGS } = useQuery({
+    queryKey: ["account-settings", user?.id],
+    enabled: !!user,
+    queryFn: () => getAccountSettings(user!.id),
+    staleTime: 60_000,
+  });
 
   const { data: myMatchContext } = useQuery({
     queryKey: ["phase2-match-context", user?.id],
@@ -246,8 +260,7 @@ function MatchPage() {
   });
 
   useEffect(() => {
-    if (!myMatchContext || prefsHydrated.current) return;
-    prefsHydrated.current = true;
+    if (!myMatchContext) return;
     const { profile, intent } = myMatchContext;
     setPrefs((current) => ({
       ...current,
@@ -270,11 +283,20 @@ function MatchPage() {
     }));
   }, [myMatchContext]);
 
-  // Real members only: a swipe card exists only when the member has created
-  // a public travel intent. No generated dates, budget, age or interests.
+  useEffect(() => {
+    setPrefs((current) => ({
+      ...current,
+      ageMin: accountSettings.travel_match_age_min,
+      ageMax: accountSettings.travel_match_age_max,
+      interests: accountSettings.travel_interests.length
+        ? accountSettings.travel_interests
+        : current.interests,
+    }));
+  }, [accountSettings]);
+
   const { data: realCandidates = [] } = useQuery({
     queryKey: ["match-real-candidates", user?.id],
-    enabled: !!user,
+    enabled: !!user && accountSettings.travel_match_enabled,
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
       const { data: intents, error: intentError } = await supabase
@@ -292,7 +314,9 @@ function MatchPage() {
       if (ids.length === 0) return [] as Candidate[];
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, bio, birth_date, languages, interests")
+        .select(
+          "id, username, display_name, avatar_url, bio, birth_date, languages, interests, verified",
+        )
         .in("id", ids)
         .eq("visibility", "public")
         .eq("status", "active");
@@ -307,18 +331,18 @@ function MatchPage() {
     },
   });
 
-  // Already liked or permanently skipped.
   const { data: excluded } = useQuery({
     queryKey: ["match-exclusions", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const [likes, passes] = await Promise.all([
+      const [likes, passes, relationshipExcluded] = await Promise.all([
         supabase.from("match_likes").select("to_user_id").eq("from_user_id", user!.id),
         supabase.from("match_passes").select("target_id").eq("user_id", user!.id),
+        getSuggestionExcludedUserIds(user!.id),
       ]);
-      const set = new Set<string>();
-      for (const r of likes.data ?? []) set.add(r.to_user_id);
-      for (const r of passes.data ?? []) set.add(r.target_id);
+      const set = new Set<string>(relationshipExcluded);
+      for (const row of likes.data ?? []) set.add(row.to_user_id);
+      for (const row of passes.data ?? []) set.add(row.target_id);
       return set;
     },
   });
@@ -334,17 +358,21 @@ function MatchPage() {
 
   const deck = useMemo(() => {
     const seenSet = new Set(seen);
+    if (!accountSettings.travel_match_enabled) return [];
     return realCandidates
-      .filter((c) => c.profileId !== user?.id)
-      .filter((c) => !seenSet.has(c.key))
-      .filter((c) => !excluded?.has(c.profileId))
-      .map((c) => ({ c, s: scoreTraveler(c.t, prefs) }))
+      .filter((candidate) => candidate.profileId !== user?.id)
+      .filter((candidate) => !seenSet.has(candidate.key))
+      .filter((candidate) => !excluded?.has(candidate.profileId))
+      .filter(
+        (candidate) => !accountSettings.travel_match_verified_only || candidate.verified,
+      )
+      .map((candidate) => ({ c: candidate, s: scoreTraveler(candidate.t, prefs) }))
+      .filter(({ s }) => s.age === null || (s.age >= prefs.ageMin && s.age <= prefs.ageMax))
       .sort((a, b) => b.s.score - a.s.score);
-  }, [prefs, seen, realCandidates, excluded, user?.id]);
+  }, [accountSettings, prefs, seen, realCandidates, excluded, user?.id]);
 
   const current = deck[0];
   const next = deck[1];
-
   const sendLike = useServerFn(sendMatchLike);
 
   useEffect(() => {
@@ -364,7 +392,7 @@ function MatchPage() {
 
   async function advance(direction: "left" | "right") {
     if (!current || busy) return;
-    const c = current.c;
+    const candidate = current.c;
     setBusy(true);
     startRef.current = null;
     try {
@@ -373,39 +401,40 @@ function MatchPage() {
         return;
       }
       await animateOut(direction);
-      setSeen((l) => [...l, c.key]);
+      setSeen((list) => [...list, candidate.key]);
       setDrag(null);
-      const targetId = c.profileId;
+      const targetId = candidate.profileId;
 
       if (direction === "left") {
         const { error } = await supabase
           .from("match_passes")
           .upsert({ user_id: user.id, target_id: targetId }, { onConflict: "user_id,target_id" });
         if (error) throw error;
-        toast(`${c.t.name} ignoré`, { description: "Ce profil ne réapparaîtra plus." });
+        toast(`${candidate.t.name} ignoré`, { description: "Ce profil ne réapparaîtra plus." });
         qc.invalidateQueries({ queryKey: ["match-exclusions", user.id] });
         return;
       }
 
-      const res = await sendLike({ data: { toUserId: targetId } });
+      const result = await sendLike({ data: { toUserId: targetId } });
       qc.invalidateQueries({ queryKey: ["match-exclusions", user.id] });
-      if (res.matched && res.conversationId) {
+      if (result.matched && result.conversationId) {
         qc.invalidateQueries({ queryKey: ["conversations", user.id] });
-        setMatches((l) => [...l, c.key]);
-        toast.success(`Match avec ${c.t.name} ✨`, {
+        setMatches((list) => [...list, candidate.key]);
+        toast.success(`Match avec ${candidate.t.name} ✨`, {
           description: "La conversation est ouverte dans Messages.",
           action: {
             label: "Message",
-            onClick: () => navigate({ to: "/messages/$id", params: { id: res.conversationId! } }),
+            onClick: () =>
+              navigate({ to: "/messages/$id", params: { id: result.conversationId! } }),
           },
         });
       } else {
-        toast(`Like envoyé à ${c.t.name}`, {
+        toast(`Like envoyé à ${candidate.t.name}`, {
           description: "Tu verras un match s'il te like en retour.",
         });
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
       toast.error(
         direction === "left" ? "Impossible d'ignorer ce profil" : "Impossible d'envoyer le like",
       );
@@ -414,14 +443,17 @@ function MatchPage() {
     }
   }
 
-  function onPointerDown(e: React.PointerEvent) {
+  function onPointerDown(event: React.PointerEvent) {
     if (busy) return;
-    startRef.current = { x: e.clientX, y: e.clientY };
-    (e.target as Element).setPointerCapture(e.pointerId);
+    startRef.current = { x: event.clientX, y: event.clientY };
+    (event.target as Element).setPointerCapture(event.pointerId);
   }
-  function onPointerMove(e: React.PointerEvent) {
+  function onPointerMove(event: React.PointerEvent) {
     if (!startRef.current) return;
-    pendingDrag.current = { x: e.clientX - startRef.current.x, y: e.clientY - startRef.current.y };
+    pendingDrag.current = {
+      x: event.clientX - startRef.current.x,
+      y: event.clientY - startRef.current.y,
+    };
     if (rafRef.current !== null) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = null;
@@ -455,205 +487,248 @@ function MatchPage() {
     <div className="app-page">
       <AppHeader />
       <main className="mx-auto max-w-lg px-4 py-5">
-        <div className="surface-card mb-4 flex items-center justify-between rounded-[1.6rem] p-4">
-          <div>
+        <div className="surface-card mb-4 flex items-center justify-between gap-3 rounded-[1.6rem] p-4">
+          <div className="min-w-0">
             <h1 className="font-display text-2xl font-semibold">Travel Match</h1>
             <p className="text-xs text-muted-foreground">
               Compatibilité calculée avec destination, dates, budget, langues et affinités.
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setShowFilters((v) => !v)}>
-            <Filter className="mr-1 h-4 w-4" /> Filtres
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button asChild size="sm" variant="ghost" aria-label="Paramètres Travel Match">
+              <Link to="/settings/profile">
+                <Settings2 className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowFilters((value) => !value)}>
+              <Filter className="mr-1 h-4 w-4" /> Filtres
+            </Button>
+          </div>
         </div>
 
-        {showFilters && (
-          <div className="surface-card mb-4 space-y-4 rounded-[1.6rem] p-4">
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-xs font-medium">
-                Destination
-                <Input
-                  value={prefs.destination}
-                  onChange={(e) => setPrefs({ ...prefs, destination: e.target.value })}
-                  placeholder="Bali, Tokyo…"
-                />
-              </label>
-              <label className="text-xs font-medium">
-                Budget max (€)
-                <Input
-                  type="number"
-                  value={prefs.budget}
-                  onChange={(e) => setPrefs({ ...prefs, budget: Number(e.target.value) || 0 })}
-                />
-              </label>
-              <label className="text-xs font-medium">
-                Départ
-                <Input
-                  type="date"
-                  value={prefs.startsOn}
-                  onChange={(e) => setPrefs({ ...prefs, startsOn: e.target.value })}
-                />
-              </label>
-              <label className="text-xs font-medium">
-                Retour
-                <Input
-                  type="date"
-                  value={prefs.endsOn}
-                  onChange={(e) => setPrefs({ ...prefs, endsOn: e.target.value })}
-                />
-              </label>
-              <label className="text-xs font-medium">
-                Âge min
-                <Input
-                  type="number"
-                  value={prefs.ageMin}
-                  onChange={(e) => setPrefs({ ...prefs, ageMin: Number(e.target.value) || 0 })}
-                />
-              </label>
-              <label className="text-xs font-medium">
-                Âge max
-                <Input
-                  type="number"
-                  value={prefs.ageMax}
-                  onChange={(e) => setPrefs({ ...prefs, ageMax: Number(e.target.value) || 0 })}
-                />
-              </label>
-            </div>
-            <div>
-              <p className="mb-1 text-xs font-medium">Langues</p>
-              <div className="flex flex-wrap gap-1">
-                {ALL_LANGS.map((l) => {
-                  const on = prefs.languages.includes(l);
-                  return (
-                    <button
-                      key={l}
-                      onClick={() =>
-                        setPrefs({
-                          ...prefs,
-                          languages: on
-                            ? prefs.languages.filter((x) => x !== l)
-                            : [...prefs.languages, l],
-                        })
-                      }
-                      className={`rounded-full px-2 py-1 text-[11px] ${on ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}
-                    >
-                      {l}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <p className="mb-1 text-xs font-medium">Centres d'intérêt</p>
-              <div className="flex flex-wrap gap-1">
-                {ALL_INTERESTS.map((l) => {
-                  const on = prefs.interests.includes(l);
-                  return (
-                    <button
-                      key={l}
-                      onClick={() =>
-                        setPrefs({
-                          ...prefs,
-                          interests: on
-                            ? prefs.interests.filter((x) => x !== l)
-                            : [...prefs.interests, l],
-                        })
-                      }
-                      className={`rounded-full px-2 py-1 text-[11px] ${on ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}
-                    >
-                      {l}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        {!accountSettings.travel_match_enabled ? (
+          <div className="surface-card rounded-[2rem] border border-primary/15 p-8 text-center">
+            <Heart className="mx-auto h-10 w-10 text-primary" />
+            <h2 className="mt-4 font-display text-2xl font-semibold">Travel Match est désactivé</h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              Ton profil n'est plus proposé dans Travel Match. Réactive-le depuis Paramètres et
+              confidentialité quand tu souhaites rencontrer d'autres voyageurs.
+            </p>
+            <Button asChild className="mt-5 gap-2 rounded-2xl">
+              <Link to="/settings/profile">
+                <Settings2 className="h-4 w-4" /> Ouvrir les paramètres
+              </Link>
+            </Button>
           </div>
-        )}
-
-        <div className="relative mx-auto h-[585px] w-full max-w-sm select-none">
-          {!current ? (
-            <div className="absolute inset-0 grid place-items-center rounded-3xl border border-dashed border-border bg-card p-8 text-center">
-              <div>
-                <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-                <p className="font-semibold">Tu as vu tout le monde !</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {matches.length} match(s) enregistré(s).
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Les profils ignorés ne réapparaîtront plus.
-                </p>
-                <Button onClick={reset} className="mt-4">
-                  <RotateCcw className="mr-2 h-4 w-4" /> Revoir la sélection
-                </Button>
+        ) : (
+          <>
+            {accountSettings.travel_match_verified_only && (
+              <div className="mb-4 flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3 text-xs text-emerald-700 dark:text-emerald-300">
+                <ShieldCheck className="h-4 w-4" /> Profils vérifiés uniquement
               </div>
-            </div>
-          ) : (
-            <>
-              {next && (
-                <SwipeCard
-                  t={next.c.t}
-                  score={next.s.score}
-                  parts={next.s.parts}
-                  sharedInts={next.s.sharedInts}
-                  overlap={next.s.overlap}
-                  age={next.s.age}
-                  stacked
-                />
+            )}
+
+            {showFilters && (
+              <div className="surface-card mb-4 space-y-4 rounded-[1.6rem] p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs font-medium">
+                    Destination
+                    <Input
+                      value={prefs.destination}
+                      onChange={(event) => setPrefs({ ...prefs, destination: event.target.value })}
+                      placeholder="Bali, Tokyo…"
+                    />
+                  </label>
+                  <label className="text-xs font-medium">
+                    Budget max (€)
+                    <Input
+                      type="number"
+                      value={prefs.budget}
+                      onChange={(event) =>
+                        setPrefs({ ...prefs, budget: Number(event.target.value) || 0 })
+                      }
+                    />
+                  </label>
+                  <label className="text-xs font-medium">
+                    Départ
+                    <Input
+                      type="date"
+                      value={prefs.startsOn}
+                      onChange={(event) => setPrefs({ ...prefs, startsOn: event.target.value })}
+                    />
+                  </label>
+                  <label className="text-xs font-medium">
+                    Retour
+                    <Input
+                      type="date"
+                      value={prefs.endsOn}
+                      onChange={(event) => setPrefs({ ...prefs, endsOn: event.target.value })}
+                    />
+                  </label>
+                  <label className="text-xs font-medium">
+                    Âge min
+                    <Input
+                      type="number"
+                      min={18}
+                      max={99}
+                      value={prefs.ageMin}
+                      onChange={(event) =>
+                        setPrefs({ ...prefs, ageMin: Number(event.target.value) || 18 })
+                      }
+                    />
+                  </label>
+                  <label className="text-xs font-medium">
+                    Âge max
+                    <Input
+                      type="number"
+                      min={18}
+                      max={99}
+                      value={prefs.ageMax}
+                      onChange={(event) =>
+                        setPrefs({ ...prefs, ageMax: Number(event.target.value) || 99 })
+                      }
+                    />
+                  </label>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium">Langues</p>
+                  <div className="flex flex-wrap gap-1">
+                    {ALL_LANGS.map((language) => {
+                      const on = prefs.languages.includes(language);
+                      return (
+                        <button
+                          key={language}
+                          onClick={() =>
+                            setPrefs({
+                              ...prefs,
+                              languages: on
+                                ? prefs.languages.filter((item) => item !== language)
+                                : [...prefs.languages, language],
+                            })
+                          }
+                          className={`rounded-full px-2 py-1 text-[11px] ${on ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}
+                        >
+                          {language}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium">Centres d'intérêt</p>
+                  <div className="flex flex-wrap gap-1">
+                    {ALL_INTERESTS.map((interest) => {
+                      const on = prefs.interests.includes(interest);
+                      return (
+                        <button
+                          key={interest}
+                          onClick={() =>
+                            setPrefs({
+                              ...prefs,
+                              interests: on
+                                ? prefs.interests.filter((item) => item !== interest)
+                                : [...prefs.interests, interest],
+                            })
+                          }
+                          className={`rounded-full px-2 py-1 text-[11px] ${on ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}
+                        >
+                          {interest}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="relative mx-auto h-[585px] w-full max-w-sm select-none">
+              {!current ? (
+                <div className="absolute inset-0 grid place-items-center rounded-3xl border border-dashed border-border bg-card p-8 text-center">
+                  <div>
+                    <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
+                    <p className="font-semibold">Aucun autre profil pour le moment</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Les comptes bloqués, restreints ou déjà ignorés ne sont pas proposés.
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {matches.length} match(s) enregistré(s).
+                    </p>
+                    <Button onClick={reset} className="mt-4">
+                      <RotateCcw className="mr-2 h-4 w-4" /> Revoir la sélection
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {next && (
+                    <SwipeCard
+                      t={next.c.t}
+                      score={next.s.score}
+                      parts={next.s.parts}
+                      sharedInts={next.s.sharedInts}
+                      overlap={next.s.overlap}
+                      age={next.s.age}
+                      verified={next.c.verified}
+                      stacked
+                    />
+                  )}
+                  <div
+                    ref={cardRef}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                    style={{
+                      transform: `translate3d(${drag?.x ?? 0}px, ${drag?.y ?? 0}px, 0) rotate(${rot}deg)`,
+                      transition: startRef.current
+                        ? "none"
+                        : "transform 190ms cubic-bezier(.2,.8,.2,1)",
+                      willChange: "transform",
+                    }}
+                    className="absolute inset-0 touch-none cursor-grab active:cursor-grabbing"
+                  >
+                    <SwipeCard
+                      t={current.c.t}
+                      score={current.s.score}
+                      parts={current.s.parts}
+                      sharedInts={current.s.sharedInts}
+                      overlap={current.s.overlap}
+                      age={current.s.age}
+                      verified={current.c.verified}
+                      likeOpacity={opacityLike}
+                      nopeOpacity={opacityNope}
+                    />
+                  </div>
+                </>
               )}
-              <div
-                ref={cardRef}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-                style={{
-                  transform: `translate3d(${drag?.x ?? 0}px, ${drag?.y ?? 0}px, 0) rotate(${rot}deg)`,
-                  transition: startRef.current
-                    ? "none"
-                    : "transform 190ms cubic-bezier(.2,.8,.2,1)",
-                  willChange: "transform",
-                }}
-                className="absolute inset-0 touch-none cursor-grab active:cursor-grabbing"
-              >
-                <SwipeCard
-                  t={current.c.t}
-                  score={current.s.score}
-                  parts={current.s.parts}
-                  sharedInts={current.s.sharedInts}
-                  overlap={current.s.overlap}
-                  age={current.s.age}
-                  likeOpacity={opacityLike}
-                  nopeOpacity={opacityNope}
-                />
-              </div>
-            </>
-          )}
-        </div>
+            </div>
 
-        {current && (
-          <div className="mt-4 flex items-center justify-center gap-4">
-            <button
-              onClick={() => advance("left")}
-              aria-label="Passer"
-              className="grid h-14 w-14 place-items-center rounded-2xl border border-border/70 bg-card text-destructive shadow-soft transition hover:-translate-y-0.5 hover:shadow-elevated active:translate-y-0 active:scale-95"
-            >
-              <X className="h-6 w-6" />
-            </button>
-            <button
-              onClick={() => navigate({ to: "/messages" })}
-              aria-label="Messagerie"
-              className="grid h-12 w-12 place-items-center rounded-2xl border border-border/70 bg-card text-primary shadow-soft transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
-            >
-              <MessageCircle className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => advance("right")}
-              aria-label="Match"
-              className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-glow transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
-            >
-              <Heart className="h-6 w-6" />
-            </button>
-          </div>
+            {current && (
+              <div className="mt-4 flex items-center justify-center gap-4">
+                <button
+                  onClick={() => advance("left")}
+                  aria-label="Passer"
+                  className="grid h-14 w-14 place-items-center rounded-2xl border border-border/70 bg-card text-destructive shadow-soft transition hover:-translate-y-0.5 hover:shadow-elevated active:translate-y-0 active:scale-95"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+                <button
+                  onClick={() => navigate({ to: "/messages" })}
+                  aria-label="Messagerie"
+                  className="grid h-12 w-12 place-items-center rounded-2xl border border-border/70 bg-card text-primary shadow-soft transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
+                >
+                  <MessageCircle className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => advance("right")}
+                  aria-label="Match"
+                  className="grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-glow transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95"
+                >
+                  <Heart className="h-6 w-6" />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
@@ -667,6 +742,7 @@ function SwipeCard({
   sharedInts,
   overlap,
   age,
+  verified,
   stacked,
   likeOpacity = 0,
   nopeOpacity = 0,
@@ -677,6 +753,7 @@ function SwipeCard({
   sharedInts: string[];
   overlap: number;
   age: number | null;
+  verified: boolean;
   stacked?: boolean;
   likeOpacity?: number;
   nopeOpacity?: number;
@@ -711,9 +788,10 @@ function SwipeCard({
           Nope
         </div>
         <div className="absolute bottom-3 left-4 text-white">
-          <p className="font-display text-2xl font-bold">
+          <p className="flex items-center gap-2 font-display text-2xl font-bold">
             {t.name}
             {age !== null ? `, ${age}` : ""}
+            {verified && <ShieldCheck className="h-5 w-5 text-sky-300" />}
           </p>
           <p className="flex items-center gap-1 text-sm opacity-90">
             <MapPin className="h-3.5 w-3.5" /> {[t.city, t.country].filter(Boolean).join(", ")}
@@ -744,13 +822,13 @@ function SwipeCard({
           </div>
         </div>
         <div className="flex flex-wrap gap-1">
-          {t.interests.slice(0, 6).map((i) => (
+          {t.interests.slice(0, 6).map((interest) => (
             <Badge
-              key={i}
-              variant={sharedInts.includes(i) ? "default" : "secondary"}
+              key={interest}
+              variant={sharedInts.includes(interest) ? "default" : "secondary"}
               className="text-[10px]"
             >
-              {i}
+              {interest}
             </Badge>
           ))}
         </div>
@@ -768,12 +846,12 @@ function SwipeCard({
           </p>
         </div>
         <div className="flex flex-wrap gap-1 pt-1">
-          {parts.map((p) => (
+          {parts.map((part) => (
             <span
-              key={p.label}
+              key={part.label}
               className="rounded-full bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground"
             >
-              {p.label} {p.got}/{p.max}
+              {part.label} {part.got}/{part.max}
             </span>
           ))}
         </div>
