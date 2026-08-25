@@ -32,7 +32,7 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Generate TanStack route tree
-        run: npx --yes @tanstack/router-cli@1.170.16 generate
+        run: npx --yes @tanstack/router-cli@1.167.30 generate
 
       - name: Typecheck
         run: npm run typecheck
