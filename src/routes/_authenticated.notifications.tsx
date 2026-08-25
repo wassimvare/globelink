@@ -19,10 +19,16 @@ import {
   MapPin,
   Plane,
   Trophy,
+  Settings2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { openOrCreateDirectConversation } from "@/lib/social";
+import {
+  loadNotificationPreferences,
+  notificationAllowed,
+  type NotificationPreferences,
+} from "@/lib/user-preferences";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/notifications")({
@@ -48,6 +54,17 @@ function NotificationsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<"all" | "social" | "messages" | "travel">("all");
+  const [preferences, setPreferences] = useState<NotificationPreferences>(() =>
+    loadNotificationPreferences(user?.id),
+  );
+
+  useEffect(() => {
+    setPreferences(loadNotificationPreferences(user?.id));
+    if (!user) return;
+    const onPreferences = () => setPreferences(loadNotificationPreferences(user.id));
+    window.addEventListener("globelink:notification-preferences", onPreferences);
+    return () => window.removeEventListener("globelink:notification-preferences", onPreferences);
+  }, [user]);
 
   const { data: notifs } = useQuery({
     queryKey: ["notifications", user?.id],
@@ -62,7 +79,6 @@ function NotificationsPage() {
       if (error) throw error;
       const rows = (data ?? []) as unknown as Notif[];
 
-      // No FK between notifications.actor_id and profiles → resolve actors separately.
       const actorIds = [...new Set(rows.map((n) => n.actor_id).filter(Boolean))] as string[];
       let actors: Record<string, Notif["actor"]> = {};
       if (actorIds.length) {
@@ -76,7 +92,6 @@ function NotificationsPage() {
     },
   });
 
-  // Mark all as read on mount
   useEffect(() => {
     if (!user) return;
     supabase
@@ -89,7 +104,6 @@ function NotificationsPage() {
       });
   }, [user, qc]);
 
-  // Realtime
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -110,10 +124,18 @@ function NotificationsPage() {
     };
   }, [user, qc]);
 
+  const enabledNotifs = useMemo(
+    () => (notifs ?? []).filter((notification) => notificationAllowed(notification, preferences)),
+    [notifs, preferences],
+  );
+
   const visibleNotifs = useMemo(() => {
-    const rows = notifs ?? [];
+    const rows = enabledNotifs;
     if (filter === "all") return rows;
-    if (filter === "messages") return rows.filter((n) => n.type === "message");
+    if (filter === "messages")
+      return rows.filter(
+        (n) => n.type === "message" || String(n.metadata?.scope ?? "") === "travel_match",
+      );
     if (filter === "travel")
       return rows.filter((n) =>
         ["nearby_spot", "price_drop", "badge", "place_approved", "place_rejected"].includes(n.type),
@@ -121,7 +143,7 @@ function NotificationsPage() {
     return rows.filter((n) =>
       ["like", "reaction", "comment", "reply", "follow", "mention", "review"].includes(n.type),
     );
-  }, [notifs, filter]);
+  }, [enabledNotifs, filter]);
 
   const openMessage = async (n: Notif) => {
     if (!user) return;
@@ -152,23 +174,40 @@ function NotificationsPage() {
           <CheckCheck className="ml-auto h-5 w-5 text-muted-foreground" />
         </header>
 
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {[
-            ["all", "Tout"],
-            ["social", "Social"],
-            ["messages", "Messages"],
-            ["travel", "Voyage"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key as typeof filter)}
-              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${filter === key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"}`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
+            {[
+              ["all", "Tout"],
+              ["social", "Social"],
+              ["messages", "Messages"],
+              ["travel", "Voyage"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key as typeof filter)}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${filter === key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button asChild variant="ghost" size="sm" className="shrink-0 gap-2 rounded-xl">
+            <Link to="/settings/profile">
+              <Settings2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Réglages</span>
+            </Link>
+          </Button>
         </div>
+
+        {preferences.pauseAll && (
+          <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm">
+            <strong>Notifications en pause.</strong>{" "}
+            <span className="text-muted-foreground">
+              Réactive-les depuis Paramètres et confidentialité.
+            </span>
+          </div>
+        )}
 
         {(!notifs || notifs.length === 0) && (
           <div className="rounded-3xl border border-dashed border-border p-10 text-center">
@@ -179,102 +218,107 @@ function NotificationsPage() {
           </div>
         )}
 
-        {notifs && notifs.length > 0 && visibleNotifs.length === 0 && (
+        {notifs && notifs.length > 0 && enabledNotifs.length === 0 && (
+          <div className="rounded-3xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            Les notifications de cette activité sont masquées par tes préférences.
+          </div>
+        )}
+
+        {enabledNotifs.length > 0 && visibleNotifs.length === 0 && (
           <div className="rounded-3xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             Rien dans cette catégorie pour le moment.
           </div>
         )}
 
-        <ul className="divide-y divide-border overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
-          {visibleNotifs.map((n) => {
-            const meta = (n.metadata ?? {}) as {
-              preview?: string;
-              reaction?: string;
-              product_id?: string;
-              place_id?: string;
-              place_name?: string;
-              title?: string;
-              rating?: number;
-              spot_name?: string;
-              destination?: string;
-              drop_percent?: number;
-              badge_name?: string;
-              scope?: string;
-              event?: string;
-              conversation_id?: string;
-            };
-            const isPlaceModeration = n.type === "place_approved" || n.type === "place_rejected";
-            const actorName = isPlaceModeration
-              ? "Administration GlobeLink"
-              : (n.actor?.display_name ?? n.actor?.username ?? "Un voyageur");
-            const label = describe(n.type, meta);
-            const Icon = iconFor(n.type, meta);
-            const goPost = n.post_id
-              ? () => navigate({ to: "/post/$id", params: { id: n.post_id! } })
-              : undefined;
-            const onClick =
-              meta.scope === "travel_match" && meta.event === "match" && meta.conversation_id
-                ? () => navigate({ to: "/messages/$id", params: { id: meta.conversation_id! } })
-                : meta.scope === "travel_match" && n.actor?.username
-                  ? () =>
-                      navigate({
-                        to: "/profile/$username",
-                        params: { username: n.actor!.username },
-                      })
-                  : n.type === "message"
-                    ? () => openMessage(n)
-                    : n.type === "review" && meta.product_id
-                      ? () => navigate({ to: "/marketplace/$id", params: { id: meta.product_id! } })
-                      : isPlaceModeration && meta.place_id
-                        ? () =>
-                            navigate({ to: "/place-status/$id", params: { id: meta.place_id! } })
-                        : n.type === "follow" && n.actor?.username
-                          ? () =>
-                              navigate({
-                                to: "/profile/$username",
-                                params: { username: n.actor!.username },
-                              })
-                          : goPost;
-            return (
-              <li key={n.id}>
-                <button
-                  onClick={onClick}
-                  className="flex w-full items-start gap-3 p-4 text-left transition hover:bg-secondary/50"
-                >
-                  <div className="relative shrink-0">
-                    {n.actor?.avatar_url ? (
-                      <img
-                        src={n.actor.avatar_url}
-                        alt=""
-                        className="h-11 w-11 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary text-sm font-medium">
-                        {actorName[0]?.toUpperCase()}
-                      </div>
-                    )}
-                    <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
-                      <Icon className="h-3 w-3" />
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">
-                      <span className="font-semibold">{actorName}</span> {label}
-                    </p>
-                    {meta.preview && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        « {meta.preview} »
+        {visibleNotifs.length > 0 && (
+          <ul className="divide-y divide-border overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
+            {visibleNotifs.map((n) => {
+              const meta = (n.metadata ?? {}) as {
+                preview?: string;
+                reaction?: string;
+                product_id?: string;
+                place_id?: string;
+                place_name?: string;
+                title?: string;
+                rating?: number;
+                spot_name?: string;
+                destination?: string;
+                drop_percent?: number;
+                badge_name?: string;
+                scope?: string;
+                event?: string;
+                conversation_id?: string;
+              };
+              const isPlaceModeration = n.type === "place_approved" || n.type === "place_rejected";
+              const actorName = isPlaceModeration
+                ? "Administration GlobeLink"
+                : (n.actor?.display_name ?? n.actor?.username ?? "Un voyageur");
+              const label = describe(n.type, meta);
+              const Icon = iconFor(n.type, meta);
+              const goPost = n.post_id
+                ? () => navigate({ to: "/post/$id", params: { id: n.post_id! } })
+                : undefined;
+              const onClick =
+                meta.scope === "travel_match" && meta.event === "match" && meta.conversation_id
+                  ? () => navigate({ to: "/messages/$id", params: { id: meta.conversation_id! } })
+                  : meta.scope === "travel_match" && n.actor?.username
+                    ? () =>
+                        navigate({
+                          to: "/profile/$username",
+                          params: { username: n.actor!.username },
+                        })
+                    : n.type === "message"
+                      ? () => openMessage(n)
+                      : n.type === "review" && meta.product_id
+                        ? () => navigate({ to: "/marketplace/$id", params: { id: meta.product_id! } })
+                        : isPlaceModeration && meta.place_id
+                          ? () => navigate({ to: "/place-status/$id", params: { id: meta.place_id! } })
+                          : n.type === "follow" && n.actor?.username
+                            ? () =>
+                                navigate({
+                                  to: "/profile/$username",
+                                  params: { username: n.actor!.username },
+                                })
+                            : goPost;
+              return (
+                <li key={n.id}>
+                  <button
+                    onClick={onClick}
+                    className="flex w-full items-start gap-3 p-4 text-left transition hover:bg-secondary/50"
+                  >
+                    <div className="relative shrink-0">
+                      {n.actor?.avatar_url ? (
+                        <img
+                          src={n.actor.avatar_url}
+                          alt=""
+                          className="h-11 w-11 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary text-sm font-medium">
+                          {actorName[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-primary text-primary-foreground">
+                        <Icon className="h-3 w-3" />
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        <span className="font-semibold">{actorName}</span> {label}
                       </p>
-                    )}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: fr })}
-                    </p>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                      {meta.preview && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">« {meta.preview} »</p>
+                      )}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: fr })}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
         <div className="mt-6 text-center">
           <Button asChild variant="outline">
@@ -336,6 +380,7 @@ function describe(
       return "a interagi avec toi";
   }
 }
+
 function iconFor(type: string, meta?: { scope?: string; event?: string }) {
   if (meta?.scope === "travel_match") return Heart;
   switch (type) {
