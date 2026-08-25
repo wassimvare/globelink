@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getSignedMediaUrl, uploadMedia } from "@/lib/storage";
 import { AppHeader } from "@/components/AppHeader";
 import { SettingsHub } from "@/components/SettingsHub";
+import { SocialPrivacySettings } from "@/components/SocialPrivacySettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -249,6 +250,7 @@ function EditProfilePage() {
       <AppHeader />
       <main className="mx-auto max-w-3xl px-4 py-7 sm:py-9">
         <SettingsHub />
+        <SocialPrivacySettings />
 
         <section id="profile-editor" className="mt-6 scroll-mt-24">
           <div className="mb-4 flex items-start gap-3">
