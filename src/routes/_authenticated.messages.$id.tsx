@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { getSuggestionExcludedUserIds } from "@/lib/account-settings";
 import { AppHeader } from "@/components/AppHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -95,12 +96,30 @@ function ConversationPage() {
           avatar_url: string | null;
         } | null;
       }[];
-      return arr.find((p) => p.user_id !== user!.id) ?? null;
+      const participant = arr.find((p) => p.user_id !== user!.id) ?? null;
+      return participant ? { ...participant, direct: arr.length === 2 } : null;
     },
   });
 
+  const { data: conversationControlled = false } = useQuery({
+    queryKey: ["conversation-controlled", id, user?.id, other?.user_id],
+    enabled: !!user && !!other?.user_id && other.direct,
+    queryFn: async () => {
+      const excluded = await getSuggestionExcludedUserIds(user!.id);
+      return excluded.has(other!.user_id);
+    },
+    staleTime: 15_000,
+  });
+
+  useEffect(() => {
+    if (!conversationControlled) return;
+    toast.message("Cette conversation est masquée par tes paramètres de confidentialité.");
+    navigate({ to: "/messages", replace: true });
+  }, [conversationControlled, navigate]);
+
   const { data: messages } = useQuery({
     queryKey: ["messages", id],
+    enabled: !conversationControlled,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("messages")
@@ -114,9 +133,8 @@ function ConversationPage() {
     },
   });
 
-  // Mark read + realtime + typing channel
   useEffect(() => {
-    if (!user) return;
+    if (!user || conversationControlled) return;
     supabase
       .from("conversation_participants")
       .update({ last_read_at: new Date().toISOString() })
@@ -125,10 +143,10 @@ function ConversationPage() {
       .then(() => {
         qc.invalidateQueries({ queryKey: ["conv-other", id] });
       });
-  }, [id, user, messages?.length, qc]);
+  }, [id, user, messages?.length, qc, conversationControlled]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || conversationControlled) return;
     const ch = supabase
       .channel(`conv-${id}`, { config: { broadcast: { self: false } } })
       .on(
@@ -175,7 +193,7 @@ function ConversationPage() {
       void supabase.removeChannel(ch);
       typingChannel.current = null;
     };
-  }, [id, qc, user]);
+  }, [id, qc, user, conversationControlled]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -198,7 +216,7 @@ function ConversationPage() {
     attachment_type?: string;
     attachment_meta?: Record<string, unknown>;
   }) => {
-    if (!user) return;
+    if (!user || conversationControlled) return;
     const { data: participant, error: participantError } = await supabase
       .from("conversation_participants")
       .select("conversation_id")
@@ -237,7 +255,7 @@ function ConversationPage() {
   };
 
   const uploadAndSend = async (file: File, kind: "image" | "video" | "voice") => {
-    if (!user) return;
+    if (!user || conversationControlled) return;
     setUploading(true);
     try {
       const path = await uploadMedia(user.id, `dm/${kind}`, file);
@@ -503,7 +521,6 @@ function AttachmentView({ msg }: { msg: Msg }) {
     getSignedMediaUrl(msg.attachment_url).then(setUrl);
   }, [msg.attachment_url]);
 
-  // Share cards (no upload, metadata only)
   const meta = msg.attachment_meta as null | {
     kind?: string;
     title?: string;
