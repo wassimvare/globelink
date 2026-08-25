@@ -4,33 +4,39 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import ReactMarkdown from "react-markdown";
 import {
-  BookOpen,
+  CalendarDays,
   Check,
-  Clock3,
   Compass,
   Crown,
+  Hotel,
   Loader2,
   LockKeyhole,
+  Notebook,
   RotateCcw,
-  Search,
+  Send,
   ShieldCheck,
   Sparkles,
+  Wallet,
   Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
-import { askGlobeLinkPro, createAiProCheckout, getAiProEntitlement } from "@/lib/ai-pro.functions";
+import { createAiPlusCheckout } from "@/lib/ai-plus-checkout.functions";
+import { askGlobeLinkPro, getAiProEntitlement } from "@/lib/ai-pro.functions";
 
 const MODES = [
-  { id: "research", label: "Comprendre", icon: Search, description: "Synthèse claire et pratique" },
-  { id: "compare", label: "Comparer", icon: BookOpen, description: "Avantages, limites et budget" },
-  { id: "plan", label: "Organiser", icon: Wand2, description: "Étapes et itinéraire concret" },
-  { id: "safety", label: "Vérifier", icon: ShieldCheck, description: "Risques et précautions" },
+  { id: "research", label: "Rechercher", icon: Compass },
+  { id: "compare", label: "Comparer", icon: Hotel },
+  { id: "plan", label: "Organiser", icon: Wand2 },
+  { id: "safety", label: "Vérifier", icon: ShieldCheck },
 ] as const;
 
+type Mode = (typeof MODES)[number]["id"];
+type BillingPlan = "monthly" | "annual";
 type ThreadTurn = {
   id: string;
   role: "user" | "assistant";
@@ -38,56 +44,83 @@ type ThreadTurn = {
   updatedAt?: string;
 };
 
-const PROMPTS = [
-  "Compare 10 jours au Japon et en Corée du Sud avec 1 800 € par personne.",
-  "Prépare un itinéraire calme de 8 jours à Bali, loin des zones trop touristiques.",
-  "Quelles précautions vérifier avant un road trip en Indonésie ?",
+const PREMIUM_FEATURES = [
+  "Voyage complet jour par jour",
+  "Comparaison hôtels, vols et activités",
+  "Budget intelligent",
+  "Carnet intelligent",
+  "Modifications automatiques",
+  "Assistant prioritaire",
+];
+
+const QUICK_PROMPTS = [
+  "Optimise mon budget sans sacrifier les activités importantes.",
+  "Compare les meilleurs quartiers où dormir pour mon voyage.",
+  "Ajoute une activité originale et réorganise l’itinéraire.",
 ];
 
 export const Route = createFileRoute("/ai-pro")({
   head: () => ({
     meta: [
-      { title: "GlobeLink AI Pro" },
-      { name: "description", content: "Le conseiller voyage premium de GlobeLink." },
+      { title: "GlobeLink IA+ — Agent de voyage premium" },
+      { name: "description", content: "GlobeLink IA+ planifie, compare et organise ton voyage de A à Z." },
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
-  component: AiProPage,
+  component: AiPlusPage,
 });
 
 function friendlyAiError(error: Error) {
   if (error.message.includes("AI_PRO_SUBSCRIPTION_REQUIRED"))
-    return "Un abonnement AI Pro actif est nécessaire.";
-  if (error.message.includes("AI_DAILY_LIMIT")) return "Ta limite AI Pro du jour est atteinte.";
-  return error.message || "Le conseiller n'a pas pu répondre.";
+    return "Un abonnement IA+ actif est nécessaire.";
+  if (error.message.includes("AI_DAILY_LIMIT")) return "Ta limite IA+ du jour est atteinte.";
+  return error.message || "IA+ n'a pas pu répondre.";
 }
 
-function AiProPage() {
+function AiPlusPage() {
   const { user } = useAuth();
   const entitlementFn = useServerFn(getAiProEntitlement);
   const askFn = useServerFn(askGlobeLinkPro);
-  const checkoutFn = useServerFn(createAiProCheckout);
+  const checkoutFn = useServerFn(createAiPlusCheckout);
+  const [billing, setBilling] = useState<BillingPlan>("monthly");
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("research");
+  const [mode, setMode] = useState<Mode>("plan");
   const [turns, setTurns] = useState<ThreadTurn[]>([]);
 
   const entitlement = useQuery({
     queryKey: ["ai-pro-entitlement", user?.id],
     enabled: !!user,
     retry: 1,
+    staleTime: 60_000,
     queryFn: () => entitlementFn(),
   });
   const hasAccess = !!entitlement.data?.entitled;
 
+  const tripQuery = useQuery({
+    queryKey: ["ai-plus-current-trip", user?.id],
+    enabled: !!user && hasAccess,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("id, title, country, budget, starts_on, ends_on, status")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const checkout = useMutation({
-    mutationFn: () => checkoutFn({ data: {} }),
+    mutationFn: (plan: BillingPlan) => checkoutFn({ data: { plan } }),
     onSuccess: ({ url }) => window.location.assign(url),
-    onError: (error: Error) =>
-      toast.error(error.message || "Le paiement sécurisé n'a pas pu être ouvert."),
+    onError: (error: Error) => toast.error(error.message || "Le paiement sécurisé n'a pas pu être ouvert."),
   });
 
   const research = useMutation({
-    mutationFn: async (request: { query: string; mode: (typeof MODES)[number]["id"] }) => {
+    mutationFn: async (request: { query: string; mode: Mode }) => {
       if (!hasAccess) throw new Error("AI_PRO_SUBSCRIPTION_REQUIRED");
       return askFn({
         data: {
@@ -116,248 +149,368 @@ function AiProPage() {
     onError: (error: Error) => toast.error(friendlyAiError(error)),
   });
 
+  const send = () => {
+    const message = query.trim();
+    if (!hasAccess || message.length < 4 || research.isPending) return;
+    research.mutate({ query: message, mode });
+  };
+
   return (
     <div className="app-page min-h-screen">
       <AppHeader />
-      <main className="page-container pb-20 pt-4 sm:pt-7">
-        <header className="travel-assistant-hero surface-card overflow-hidden p-5 sm:p-8">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
-            <div className="max-w-3xl">
-              <div className="eyebrow">
-                <Crown className="h-4 w-4" /> GlobeLink AI Pro
-              </div>
-              <h1 className="mt-3 max-w-3xl font-display text-3xl font-bold leading-tight sm:text-5xl">
-                Un conseiller premium pour préparer ton prochain départ.
-              </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                L'accès est vérifié côté serveur à chaque demande. Un compte connecté sans
-                abonnement ne peut plus utiliser AI Pro.
-              </p>
-            </div>
-            <div className="assistant-note rounded-2xl border border-border/70 bg-background/75 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Check className="h-4 w-4 text-emerald-600" /> Accès protégé
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {entitlement.data?.isStaff
-                  ? "Accès équipe GlobeLink."
-                  : entitlement.data?.subscribed
-                    ? "Abonnement AI Pro actif."
-                    : "Abonnement requis pour envoyer une demande."}
-              </p>
+      <main className="page-container pb-24 pt-4 sm:pt-7">
+        {user && entitlement.isLoading ? (
+          <div className="surface-card grid min-h-[360px] place-items-center rounded-[2rem]">
+            <div className="text-center text-sm text-muted-foreground">
+              <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-primary" />
+              Vérification de ton accès IA+…
             </div>
           </div>
-        </header>
-
-        {!user && (
-          <section className="surface-card mt-5 p-6 text-center">
-            <LockKeyhole className="mx-auto h-9 w-9 text-primary" />
-            <h2 className="mt-3 font-display text-2xl font-bold">
-              Connecte-toi pour vérifier ton abonnement
-            </h2>
-            <Button asChild className="mt-5 rounded-xl">
-              <Link to="/auth">Se connecter</Link>
-            </Button>
-          </section>
+        ) : hasAccess ? (
+          <PremiumWorkspace
+            trip={tripQuery.data}
+            mode={mode}
+            setMode={setMode}
+            query={query}
+            setQuery={setQuery}
+            turns={turns}
+            send={send}
+            pending={research.isPending}
+            reset={() => {
+              setTurns([]);
+              setQuery("");
+            }}
+          />
+        ) : (
+          <UpgradeScreen
+            user={user}
+            billing={billing}
+            setBilling={setBilling}
+            checkout={() => checkout.mutate(billing)}
+            checkoutPending={checkout.isPending}
+          />
         )}
+      </main>
+    </div>
+  );
+}
 
-        {user && !entitlement.isLoading && !hasAccess && (
-          <section className="surface-card mt-5 border-primary/25 p-6 sm:p-8">
-            <div className="mx-auto max-w-2xl text-center">
-              <Crown className="mx-auto h-10 w-10 text-primary" />
-              <h2 className="mt-3 font-display text-2xl font-bold">
-                AI Pro nécessite un abonnement actif
+function UpgradeScreen({
+  user,
+  billing,
+  setBilling,
+  checkout,
+  checkoutPending,
+}: {
+  user: unknown;
+  billing: BillingPlan;
+  setBilling: (plan: BillingPlan) => void;
+  checkout: () => void;
+  checkoutPending: boolean;
+}) {
+  return (
+    <section className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-violet-400/30 bg-card shadow-[0_32px_100px_-56px_rgba(124,58,237,.9)]">
+      <div className="relative p-5 sm:p-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,.20),transparent_34%),radial-gradient(circle_at_90%_15%,rgba(34,211,238,.10),transparent_28%)]" />
+        <div className="relative">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex items-center gap-2 text-sm font-bold">
+              <Sparkles className="h-4 w-4 text-primary" /> GlobeLink IA+
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/35 bg-violet-500/15 px-3 py-1.5 text-xs font-bold text-violet-400 shadow-[0_0_28px_-10px_rgba(139,92,246,.9)]">
+              <Crown className="h-3.5 w-3.5" /> Premium
+            </div>
+          </div>
+
+          <div className="mt-6 text-center">
+            <h1 className="font-display text-3xl font-bold tracking-tight sm:text-5xl">
+              Ton agent de voyage premium
+            </h1>
+            <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
+              Planifie, compare et organise ton voyage de A à Z.
+            </p>
+          </div>
+
+          <div className="mx-auto mt-7 max-w-2xl rounded-[1.75rem] border border-violet-400/35 bg-gradient-to-b from-violet-500/[0.16] to-background/70 p-5 sm:p-7">
+            <div className="text-center">
+              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-violet-500/15 text-violet-400 shadow-[0_0_40px_-12px_rgba(139,92,246,.9)]">
+                <Crown className="h-8 w-8" />
+              </div>
+              <h2 className="mt-4 text-lg font-bold text-violet-400 sm:text-xl">
+                Profite de toute la puissance de l’IA+
               </h2>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                Le simple fait d'être connecté ou d'avoir une valeur « pro » dans le profil ne
-                débloque plus l'outil. Seul un abonnement Stripe actif, une période d'essai valide
-                ou un compte de l'équipe GlobeLink est accepté par le serveur.
+              <p className="mt-1 text-sm text-muted-foreground">
+                Un assistant intelligent qui s’occupe de chaque détail pour toi.
               </p>
-              <Button
-                onClick={() => checkout.mutate()}
-                disabled={checkout.isPending}
-                size="lg"
-                className="mt-5 rounded-xl"
+            </div>
+
+            <div className="mx-auto mt-6 grid max-w-xl gap-3 sm:grid-cols-2">
+              {PREMIUM_FEATURES.map((feature) => (
+                <div key={feature} className="flex items-center gap-2 text-sm">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-cyan-500 text-slate-950">
+                    <Check className="h-3.5 w-3.5" />
+                  </span>
+                  <span>{feature}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-7 space-y-2.5">
+              <button
+                type="button"
+                onClick={() => setBilling("monthly")}
+                className={`flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition ${billing === "monthly" ? "border-cyan-400/65 bg-cyan-500/[0.08] shadow-[0_0_30px_-18px_rgba(34,211,238,.8)]" : "border-border/70 bg-background/55"}`}
               >
-                {checkout.isPending ? (
+                <span className={`h-5 w-5 rounded-full border-2 p-1 ${billing === "monthly" ? "border-cyan-400" : "border-muted-foreground/50"}`}>
+                  {billing === "monthly" && <span className="block h-full w-full rounded-full bg-cyan-400" />}
+                </span>
+                <span className="flex-1 font-semibold">Mensuel</span>
+                <span className="font-semibold">7,99 €/mois</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBilling("annual")}
+                className={`flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition ${billing === "annual" ? "border-cyan-400/65 bg-cyan-500/[0.08] shadow-[0_0_30px_-18px_rgba(34,211,238,.8)]" : "border-border/70 bg-background/55"}`}
+              >
+                <span className={`h-5 w-5 rounded-full border-2 p-1 ${billing === "annual" ? "border-cyan-400" : "border-muted-foreground/50"}`}>
+                  {billing === "annual" && <span className="block h-full w-full rounded-full bg-cyan-400" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2 font-semibold">
+                    Annuel
+                    <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-400">
+                      Le plus rentable
+                    </span>
+                  </span>
+                </span>
+                <span className="text-right">
+                  <span className="block font-semibold">59,99 €/an</span>
+                  <span className="block text-[10px] text-muted-foreground">Soit 5,00 €/mois</span>
+                </span>
+              </button>
+            </div>
+
+            {user ? (
+              <Button
+                type="button"
+                size="lg"
+                onClick={checkout}
+                disabled={checkoutPending}
+                className="mt-5 h-13 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-500 text-white shadow-[0_14px_45px_-20px_rgba(99,102,241,.9)] hover:opacity-95"
+              >
+                {checkoutPending ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Ouverture du paiement…
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Ouverture du paiement…
                   </>
                 ) : (
                   <>
-                    <Crown className="mr-2 h-4 w-4" />
-                    S'abonner à AI Pro
+                    <Sparkles className="mr-2 h-4 w-4" /> Essayer IA+
                   </>
                 )}
               </Button>
-            </div>
-          </section>
-        )}
+            ) : (
+              <Button asChild size="lg" className="mt-5 h-13 w-full rounded-2xl bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
+                <Link to="/auth">
+                  <LockKeyhole className="mr-2 h-4 w-4" /> Se connecter pour essayer IA+
+                </Link>
+              </Button>
+            )}
 
-        <section className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <div
-            className={`surface-card p-4 sm:p-6 ${user && !entitlement.isLoading && !hasAccess ? "opacity-60" : ""}`}
-          >
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Essai gratuit 7 jours • Sans engagement
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5"><RotateCcw className="h-3.5 w-3.5" /> Annulable à tout moment</span>
+              <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Paiement sécurisé</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PremiumWorkspace({
+  trip,
+  mode,
+  setMode,
+  query,
+  setQuery,
+  turns,
+  send,
+  pending,
+  reset,
+}: {
+  trip: any;
+  mode: Mode;
+  setMode: (mode: Mode) => void;
+  query: string;
+  setQuery: (value: string) => void;
+  turns: ThreadTurn[];
+  send: () => void;
+  pending: boolean;
+  reset: () => void;
+}) {
+  const days = tripDuration(trip?.starts_on, trip?.ends_on);
+
+  return (
+    <div className="mx-auto max-w-5xl">
+      <header className="relative overflow-hidden rounded-[2rem] border border-violet-400/25 bg-card p-5 shadow-soft sm:p-7">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(34,211,238,.10),transparent_35%),radial-gradient(circle_at_85%_5%,rgba(139,92,246,.15),transparent_36%)]" />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 text-sm font-bold text-primary">
+              <Sparkles className="h-4 w-4" /> IA+ en action
+            </div>
+            <h1 className="mt-2 font-display text-3xl font-bold sm:text-4xl">Ton agent de voyage premium</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Demande une modification, une comparaison ou une optimisation : IA+ garde le fil de ton voyage.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/30 bg-violet-500/15 px-3 py-1.5 text-xs font-bold text-violet-400">
+            <Crown className="h-3.5 w-3.5" /> Premium actif
+          </span>
+        </div>
+      </header>
+
+      <section className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
+        <div className="space-y-4">
+          <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Voyage en cours</div>
+                <h2 className="mt-1 font-display text-2xl font-bold">
+                  {trip?.title || trip?.country || "Ton prochain voyage"}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {[
+                    days ? `${days} jour${days > 1 ? "s" : ""}` : null,
+                    trip?.budget ? `Budget : ${Number(trip.budget).toLocaleString("fr-FR")} €` : null,
+                  ].filter(Boolean).join(" • ") || "Ajoute un voyage à ton carnet pour enrichir le contexte IA+."}
+                </p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="rounded-xl">
+                <Link to={trip?.id ? "/trips/$id" : "/trips"} params={trip?.id ? { id: trip.id } : undefined as any}>
+                  <Notebook className="mr-2 h-4 w-4" /> {trip?.id ? "Voir le résumé" : "Ouvrir mon carnet"}
+                </Link>
+              </Button>
+            </div>
+          </div>
+
+          <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-display text-xl font-bold">Comparaison intelligente</h2>
+              <Sparkles className="h-4 w-4 text-primary" />
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <button type="button" onClick={() => { setMode("compare"); setQuery("Compare les meilleures options d’hébergement pour mon voyage."); }} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30">
+                <Hotel className="h-5 w-5 text-cyan-500" />
+                <div className="mt-2 font-semibold">Hôtels</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">Comparer les options</div>
+              </button>
+              <button type="button" onClick={() => { setMode("plan"); setQuery("Propose des activités adaptées à mon voyage et organise-les intelligemment."); }} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30">
+                <Sparkles className="h-5 w-5 text-violet-400" />
+                <div className="mt-2 font-semibold">Activités</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">Enrichir l’itinéraire</div>
+              </button>
+              <button type="button" onClick={() => { setMode("compare"); setQuery("Optimise la répartition de mon budget de voyage."); }} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30">
+                <Wallet className="h-5 w-5 text-amber-500" />
+                <div className="mt-2 font-semibold">Budget</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">Optimiser les dépenses</div>
+              </button>
+            </div>
+          </div>
+
+          {turns.length > 0 && (
+            <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
+              <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
+                <div className="font-display text-xl font-bold">Conseil IA+</div>
+                <Button type="button" variant="ghost" size="sm" onClick={reset} className="rounded-xl">
+                  <RotateCcw className="mr-2 h-3.5 w-3.5" /> Nouvelle
+                </Button>
+              </div>
+              <div className="mt-4 space-y-4">
+                {turns.map((turn) =>
+                  turn.role === "user" ? (
+                    <div key={turn.id} className="ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm text-primary-foreground sm:max-w-[72%]">
+                      {turn.content}
+                    </div>
+                  ) : (
+                    <article key={turn.id} className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-500/[0.08] to-background/60 p-4">
+                      <div className="mb-3 flex items-center gap-2 text-xs font-bold text-violet-400">
+                        <Sparkles className="h-3.5 w-3.5" /> Conseil IA+
+                      </div>
+                      <div className="md-body text-sm"><ReactMarkdown>{turn.content}</ReactMarkdown></div>
+                    </article>
+                  ),
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
+            <div className="flex items-center gap-2 font-semibold">
+              <CalendarDays className="h-4 w-4 text-primary" /> Itinéraire intelligent
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              IA+ peut réorganiser ton séjour, comparer les options et garder une marge dans ton budget.
+            </p>
+            <Button asChild variant="outline" className="mt-4 w-full rounded-xl">
+              <Link to="/ai-trip"><Wand2 className="mr-2 h-4 w-4" /> Créer un itinéraire</Link>
+            </Button>
+          </div>
+
+          <div className="rounded-[1.75rem] border border-violet-400/25 bg-gradient-to-br from-violet-500/[0.10] to-card p-4 shadow-soft sm:p-5">
+            <div className="flex items-center gap-2 font-semibold text-violet-400">
+              <Sparkles className="h-4 w-4" /> Demande à IA+
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {MODES.map((item) => {
                 const Icon = item.icon;
                 const active = mode === item.id;
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    disabled={!hasAccess}
-                    onClick={() => setMode(item.id)}
-                    className={`pressable assistant-mode text-left disabled:cursor-not-allowed ${active ? "is-active" : ""}`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <div className="mt-2 text-sm font-semibold">{item.label}</div>
-                    <div className="mt-0.5 text-[11px] leading-snug opacity-70">
-                      {item.description}
-                    </div>
+                  <button key={item.id} type="button" onClick={() => setMode(item.id)} className={`rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition ${active ? "border-violet-400/50 bg-violet-500/15 text-violet-300" : "border-border/70 bg-background/50 text-muted-foreground"}`}>
+                    <Icon className="mb-1.5 h-4 w-4" /> {item.label}
                   </button>
                 );
               })}
             </div>
-
-            <label className="mt-5 block">
-              <span className="text-sm font-semibold">Ta demande</span>
-              <Textarea
-                value={query}
-                disabled={!hasAccess}
-                onChange={(event) => setQuery(event.target.value.slice(0, 3000))}
-                placeholder="Exemple : compare les meilleurs quartiers de Tokyo pour un premier voyage."
-                className="mt-2 min-h-36 resize-y rounded-xl bg-background/75 text-base leading-relaxed"
-              />
-              <span className="mt-1.5 block text-right text-[11px] text-muted-foreground">
-                {query.length.toLocaleString("fr-FR")} / 3 000
-              </span>
-            </label>
-
-            <Button
-              onClick={() => research.mutate({ query: query.trim(), mode })}
-              disabled={!hasAccess || query.trim().length < 4 || research.isPending}
-              size="lg"
-              className="mt-4 h-12 w-full rounded-xl shadow-soft sm:w-auto sm:min-w-60"
-            >
-              {research.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Préparation de la réponse…
-                </>
-              ) : (
-                <>
-                  <Compass className="mr-2 h-4 w-4" />
-                  {turns.length ? "Continuer" : "Demander à AI Pro"}
-                </>
-              )}
+            <Textarea
+              value={query}
+              onChange={(event) => setQuery(event.target.value.slice(0, 3_000))}
+              placeholder="Demande une modification à l’IA+…"
+              className="mt-3 min-h-28 resize-y rounded-2xl bg-background/65"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <Button type="button" onClick={send} disabled={query.trim().length < 4 || pending} className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
+              {pending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> IA+ réfléchit…</> : <><Send className="mr-2 h-4 w-4" /> Envoyer</>}
             </Button>
-
-            <div className="mt-6 flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
-              {PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  disabled={!hasAccess}
-                  onClick={() => setQuery(prompt)}
-                  className="pressable min-w-[240px] rounded-xl border border-border/70 bg-background/75 px-3 py-2.5 text-left text-xs text-muted-foreground disabled:cursor-not-allowed sm:min-w-0"
-                >
+            <div className="mt-3 space-y-2">
+              {QUICK_PROMPTS.map((prompt) => (
+                <button key={prompt} type="button" onClick={() => setQuery(prompt)} className="w-full rounded-xl border border-border/60 bg-background/45 px-3 py-2 text-left text-[11px] text-muted-foreground transition hover:border-primary/25 hover:text-foreground">
                   {prompt}
                 </button>
               ))}
             </div>
           </div>
-
-          <aside className="surface-subtle p-5 lg:sticky lg:top-20">
-            <div className="eyebrow">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Bon usage
-            </div>
-            <h2 className="mt-2 font-display text-xl font-bold">À vérifier avant d'agir</h2>
-            <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-              <p>
-                <strong className="text-foreground">Formalités :</strong> consulte les sites
-                officiels.
-              </p>
-              <p>
-                <strong className="text-foreground">Prix et horaires :</strong> vérifie auprès du
-                prestataire.
-              </p>
-              <p>
-                <strong className="text-foreground">Données privées :</strong> ne partage pas
-                d'information bancaire.
-              </p>
-            </div>
-          </aside>
-        </section>
-
-        {turns.length > 0 && (
-          <section
-            className="surface-card mt-5 overflow-hidden p-4 sm:p-7"
-            aria-label="Conversation avec le conseiller"
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-4">
-              <div>
-                <div className="eyebrow">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Conversation
-                </div>
-                <h2 className="mt-1 font-display text-2xl font-bold">Carnet de préparation</h2>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setTurns([]);
-                  setQuery("");
-                }}
-                className="rounded-xl"
-              >
-                <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                Nouvelle
-              </Button>
-            </div>
-            <div className="mt-5 space-y-5">
-              {turns.map((turn) =>
-                turn.role === "user" ? (
-                  <div
-                    key={turn.id}
-                    className="ml-auto max-w-[92%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground sm:max-w-[75%]"
-                  >
-                    {turn.content}
-                  </div>
-                ) : (
-                  <article
-                    key={turn.id}
-                    className="assistant-answer rounded-2xl border border-border/65 bg-background/65 p-4 sm:p-5"
-                  >
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-xs font-bold text-primary">
-                        <Compass className="h-4 w-4" />
-                        GlobeLink AI Pro
-                      </div>
-                      {turn.updatedAt && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                          <Clock3 className="h-3 w-3" />
-                          {new Intl.DateTimeFormat("fr-FR", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }).format(new Date(turn.updatedAt))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="md-body">
-                      <ReactMarkdown>{turn.content}</ReactMarkdown>
-                    </div>
-                  </article>
-                ),
-              )}
-            </div>
-          </section>
-        )}
-      </main>
+        </aside>
+      </section>
     </div>
   );
+}
+
+function tripDuration(start?: string | null, end?: string | null) {
+  if (!start || !end) return null;
+  const from = Date.parse(start);
+  const to = Date.parse(end);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return null;
+  return Math.max(1, Math.floor((to - from) / 86_400_000) + 1);
 }
