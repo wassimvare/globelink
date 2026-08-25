@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ImagePlus, Loader2, Play, UploadCloud, Video, X } from "lucide-react";
+import { ImagePlus, Loader2, Play, Tags, UploadCloud, Video, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -14,6 +14,7 @@ import {
   validateMediaFile,
   type VideoMetadata,
 } from "@/lib/storage";
+import { createPostTagsFromUsernames } from "@/lib/social-privacy";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ function NewPostPage() {
   const [checkingFile, setCheckingFile] = useState(false);
   const [progressLabel, setProgressLabel] = useState("");
   const [caption, setCaption] = useState("");
+  const [taggedAccounts, setTaggedAccounts] = useState("");
   const [country, setCountry] = useState<string>("");
   const [city, setCity] = useState("");
 
@@ -144,6 +146,7 @@ function NewPostPage() {
             position: 0,
           });
           if (mediaError) throw mediaError;
+          await createPostTagsFromUsernames(user.id, createdPostId, taggedAccounts);
           return { kind: "image" as const, segments: 1 };
         }
 
@@ -222,6 +225,7 @@ function NewPostPage() {
         );
         if (mediaError) throw mediaError;
 
+        await createPostTagsFromUsernames(user.id, createdPostId, taggedAccounts);
         primeMediaManifestCache(primaryVideoPath, mediaChunks, mediaMimeType || file.type, file);
         setProgressLabel("Publication terminée… 100%");
         return { kind: "video" as const, segments: 1 };
@@ -331,11 +335,7 @@ function NewPostPage() {
 
             {file && mediaDescription && (
               <div className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-xs font-medium text-white backdrop-blur">
-                {isVideo ? (
-                  <Video className="h-3.5 w-3.5" />
-                ) : (
-                  <ImagePlus className="h-3.5 w-3.5" />
-                )}
+                {isVideo ? <Video className="h-3.5 w-3.5" /> : <ImagePlus className="h-3.5 w-3.5" />}
                 {mediaDescription}
               </div>
             )}
@@ -352,12 +352,25 @@ function NewPostPage() {
             <Textarea
               value={caption}
               onChange={(event) => setCaption(event.target.value)}
-              placeholder="Raconte ton voyage…"
+              placeholder="Raconte ton voyage… Utilise @pseudo pour mentionner quelqu'un."
               rows={3}
               maxLength={3000}
             />
-            <p className="mt-1 text-right text-[11px] text-muted-foreground">
-              {caption.length}/3000
+            <p className="mt-1 text-right text-[11px] text-muted-foreground">{caption.length}/3000</p>
+          </div>
+
+          <div className="rounded-2xl border border-border/70 bg-secondary/35 p-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Tags className="h-4 w-4 text-primary" /> Identifier des personnes
+            </div>
+            <Input
+              value={taggedAccounts}
+              onChange={(event) => setTaggedAccounts(event.target.value)}
+              placeholder="@pseudo1, @pseudo2"
+              className="mt-2 bg-background"
+            />
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              GlobeLink respecte les réglages de chaque personne. Si l'approbation manuelle est activée, l'identification restera en attente.
             </p>
           </div>
 
@@ -365,26 +378,15 @@ function NewPostPage() {
             <div>
               <Label>Pays</Label>
               <Select value={country} onValueChange={setCountry}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choisir…" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Choisir…" /></SelectTrigger>
                 <SelectContent>
-                  {COUNTRIES.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value}
-                    </SelectItem>
-                  ))}
+                  {COUNTRIES.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label>Ville</Label>
-              <Input
-                value={city}
-                onChange={(event) => setCity(event.target.value)}
-                placeholder="Ex. Kyoto"
-                maxLength={100}
-              />
+              <Input value={city} onChange={(event) => setCity(event.target.value)} placeholder="Ex. Kyoto" maxLength={100} />
             </div>
           </div>
 
@@ -394,17 +396,11 @@ function NewPostPage() {
             className="h-12 w-full rounded-xl gradient-hero text-primary-foreground shadow-soft"
           >
             {busy ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {progressLabel || "Préparation…"}
-              </>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {progressLabel || "Préparation…"}</>
             ) : isVideo ? (
-              <>
-                <Play className="mr-2 h-4 w-4 fill-current" /> Publier la vidéo
-              </>
+              <><Play className="mr-2 h-4 w-4 fill-current" /> Publier la vidéo</>
             ) : (
-              <>
-                <UploadCloud className="mr-2 h-4 w-4" /> Publier
-              </>
+              <><UploadCloud className="mr-2 h-4 w-4" /> Publier</>
             )}
           </Button>
         </div>
