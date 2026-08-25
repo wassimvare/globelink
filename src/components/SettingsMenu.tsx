@@ -117,6 +117,7 @@ export function SettingsMenu() {
               <Link
                 key={item.href}
                 to={item.href as any}
+                preload="intent"
                 className="group flex min-h-[82px] items-center gap-4 rounded-2xl px-3 py-4 transition hover:bg-secondary/55 active:scale-[0.995] sm:px-4"
               >
                 <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
