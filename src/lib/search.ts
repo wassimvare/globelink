@@ -3,7 +3,7 @@ import { COUNTRIES } from "./countries";
 import type { LiveCatalogItem } from "./live-catalog";
 import { isTrustedVisibleCatalogItem } from "./catalog-source-routing";
 import { slugifyDestination } from "./phase2";
-import { getUnavailableUserIds } from "./account-settings";
+import { getSuggestionExcludedUserIds } from "./account-settings";
 
 export type SearchKind =
   | "user"
@@ -77,8 +77,10 @@ export async function universalSearch(
   };
   if (!q) return empty;
   const like = `%${q}%`;
+  const authResult = await supabase.auth.getUser();
+  const currentUserId = authResult.data.user?.id ?? null;
 
-  const [uRes, pRes, tRes, extRes, qRes, dRes, unavailableUsers] = await Promise.all([
+  const [uRes, pRes, tRes, extRes, qRes, dRes, excludedUsers] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url, bio, country")
@@ -116,7 +118,7 @@ export async function universalSearch(
       .select("id, slug, name, city, country, cover_url, summary, popularity")
       .or(`name.ilike.${like},city.ilike.${like},country.ilike.${like}`)
       .limit(limit * 2),
-    getUnavailableUserIds(),
+    currentUserId ? getSuggestionExcludedUserIds(currentUserId) : Promise.resolve(new Set<string>()),
   ]);
 
   const destinations: SearchResult[] = [
@@ -142,7 +144,7 @@ export async function universalSearch(
   ].filter((r) => r.score > 0);
 
   const users: SearchResult[] = (uRes.data ?? [])
-    .filter((u) => !unavailableUsers.has(u.id))
+    .filter((u) => !excludedUsers.has(u.id))
     .map((u) => ({
       id: u.id,
       kind: "user",
