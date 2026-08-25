@@ -103,18 +103,40 @@ function applyAccountDataSettingsEntry() {
   console.log("[GlobeLink] Account data settings entry applied.");
 }
 
-// Safari/iOS can briefly report CHANNEL_ERROR when Supabase Realtime wakes up or
-// reconnects after the app returns from the background. Supabase automatically
-// reconnects, so this must not be shown as a fatal error on GlobeLink's home page.
-// Apply the source hotfix before both `vite dev` and production builds.
-applyCallRealtimeHotfix();
+function applyInstagramStyleSettingsNavigation() {
+  const appHeaderPath = path.resolve("src/components/AppHeader.tsx");
+  if (fs.existsSync(appHeaderPath)) {
+    const source = fs.readFileSync(appHeaderPath, "utf8");
+    const next = source.replace(
+      '<Link to="/settings/profile" className="rounded-xl">\n                      <Settings className="mr-2 h-4 w-4" /> Paramètres et confidentialité',
+      '<Link to="/settings" className="rounded-xl">\n                      <Settings className="mr-2 h-4 w-4" /> Paramètres et confidentialité',
+    );
+    if (next !== source) {
+      fs.writeFileSync(appHeaderPath, next);
+      console.log("[GlobeLink] Profile menu now opens the settings hub.");
+    }
+  }
 
-// Keep the activity center discoverable from Settings without mounting a client-only
-// shortcut in the authenticated route layout. That layout-level shortcut caused a
-// TanStack Start server bundle regression on Vercel, while this settings-only entry
-// keeps the feature visible and isolated from the server middleware graph.
+  const profileSettingsPath = path.resolve("src/routes/_authenticated.settings.profile.tsx");
+  if (fs.existsSync(profileSettingsPath)) {
+    const source = fs.readFileSync(profileSettingsPath, "utf8");
+    const next = source
+      .replace('import { SettingsHub } from "@/components/SettingsHub";\n', "")
+      .replace('import { SocialPrivacySettings } from "@/components/SocialPrivacySettings";\n', "")
+      .replace('      { title: "Paramètres et confidentialité — GlobeLink" },', '      { title: "Votre compte — GlobeLink" },')
+      .replace('        content: "Gère ton compte, ta confidentialité, tes notifications et ton profil GlobeLink.",', '        content: "Modifie ton profil et tes informations personnelles GlobeLink.",')
+      .replace('        <SettingsHub />\n        <SocialPrivacySettings />\n\n', "");
+    if (next !== source) {
+      fs.writeFileSync(profileSettingsPath, next);
+      console.log("[GlobeLink] Profile settings page isolated from the settings hub.");
+    }
+  }
+}
+
+applyCallRealtimeHotfix();
 applyActivitySettingsEntry();
 applyAccountDataSettingsEntry();
+applyInstagramStyleSettingsNavigation();
 
 const payloadDir = path.resolve(".v11-api-payload");
 if (!fs.existsSync(payloadDir)) {
