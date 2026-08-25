@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/apply-v11-api-patch.mjs && vite dev",
-    "generate-routes": "npx --yes @tanstack/router-cli@1.170.16 generate",
+    "generate-routes": "npx --yes @tanstack/router-cli@1.167.30 generate",
     "build": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts && npm run generate-routes && tsc --noEmit && vite build",
     "build:dev": "node scripts/apply-v11-api-patch.mjs && node scripts/phase3-validate.mjs && npm run generate-routes && vite build --mode development",
     "preview": "vite preview",
