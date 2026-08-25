@@ -4,10 +4,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import ReactMarkdown from "react-markdown";
 import {
+  BookmarkPlus,
   CalendarDays,
   Check,
+  CheckCircle2,
   Compass,
   Crown,
+  Database,
+  ExternalLink,
+  Globe2,
   Hotel,
   Loader2,
   LockKeyhole,
@@ -18,6 +23,7 @@ import {
   Sparkles,
   Wallet,
   Wand2,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
@@ -26,10 +32,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { createAiPlusCheckout } from "@/lib/ai-plus-checkout.functions";
-import { askGlobeLinkPro, getAiProEntitlement } from "@/lib/ai-pro.functions";
+import {
+  askGlobeLinkPro,
+  getAiProEntitlement,
+  saveAiPlusRecommendation,
+} from "@/lib/ai-pro.functions";
 
 const MODES = [
-  { id: "research", label: "Rechercher", icon: Compass },
+  { id: "research", label: "Rechercher", icon: Globe2 },
   { id: "compare", label: "Comparer", icon: Hotel },
   { id: "plan", label: "Organiser", icon: Wand2 },
   { id: "safety", label: "Vérifier", icon: ShieldCheck },
@@ -37,33 +47,52 @@ const MODES = [
 
 type Mode = (typeof MODES)[number]["id"];
 type BillingPlan = "monthly" | "annual";
+type Source = { title: string; url: string; snippet: string };
 type ThreadTurn = {
   id: string;
   role: "user" | "assistant";
   content: string;
   updatedAt?: string;
+  sources?: Source[];
+  liveSearch?: boolean;
+  remaining?: number;
 };
 
 const PREMIUM_FEATURES = [
-  "Voyage complet jour par jour",
-  "Comparaison hôtels, vols et activités",
-  "Budget intelligent",
-  "Carnet intelligent",
-  "Modifications automatiques",
-  "Assistant prioritaire",
+  "Recherche web et sources récentes",
+  "Carnet GlobeLink connecté automatiquement",
+  "Voyage complet et réorganisation intelligente",
+  "Comparaisons détaillées avec verdict",
+  "Budget analysé selon tes vraies dépenses",
+  "250 demandes IA+ par jour par défaut",
 ];
 
+const COMPARISON = [
+  ["Conseils voyage", "Essentiels", "Approfondis et contextualisés"],
+  ["Itinéraire", "Plan de départ", "Voyage complet et réorganisable"],
+  ["Recherche web", "Non", "Oui, avec sources quand disponibles"],
+  ["Carnet GlobeLink", "Non connecté", "Lu automatiquement par IA+"],
+  ["Comparaisons", "Simples", "Tableaux, alternatives et verdict"],
+  ["Budget", "Enveloppe indicative", "Budget restant + dépenses du carnet"],
+  ["Quota chat", "40 / jour", "250 / jour par défaut"],
+] as const;
+
 const QUICK_PROMPTS = [
-  "Optimise mon budget sans sacrifier les activités importantes.",
-  "Compare les meilleurs quartiers où dormir pour mon voyage.",
-  "Ajoute une activité originale et réorganise l’itinéraire.",
+  "Analyse mon voyage enregistré et dis-moi ce que tu améliorerais en priorité.",
+  "Compare les meilleurs quartiers où dormir avec avantages, limites et sources.",
+  "Réorganise mon itinéraire pour réduire les trajets et préserver mon budget.",
+  "Vérifie les points à risque ou à confirmer avant mon départ et propose des plans B.",
 ];
 
 export const Route = createFileRoute("/ai-pro")({
   head: () => ({
     meta: [
       { title: "GlobeLink IA+ — Agent de voyage premium" },
-      { name: "description", content: "GlobeLink IA+ planifie, compare et organise ton voyage de A à Z." },
+      {
+        name: "description",
+        content:
+          "GlobeLink IA+ recherche, compare et organise ton voyage en utilisant ton carnet GlobeLink.",
+      },
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
@@ -81,8 +110,9 @@ function AiPlusPage() {
   const { user } = useAuth();
   const entitlementFn = useServerFn(getAiProEntitlement);
   const askFn = useServerFn(askGlobeLinkPro);
+  const saveFn = useServerFn(saveAiPlusRecommendation);
   const checkoutFn = useServerFn(createAiPlusCheckout);
-  const [billing, setBilling] = useState<BillingPlan>("monthly");
+  const [billing, setBilling] = useState<BillingPlan>("annual");
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<Mode>("plan");
   const [turns, setTurns] = useState<ThreadTurn[]>([]);
@@ -103,7 +133,7 @@ function AiPlusPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("trips")
-        .select("id, title, country, budget, starts_on, ends_on, status")
+        .select("id, title, city, country, budget, starts_on, ends_on, status")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -116,7 +146,8 @@ function AiPlusPage() {
   const checkout = useMutation({
     mutationFn: (plan: BillingPlan) => checkoutFn({ data: { plan } }),
     onSuccess: ({ url }) => window.location.assign(url),
-    onError: (error: Error) => toast.error(error.message || "Le paiement sécurisé n'a pas pu être ouvert."),
+    onError: (error: Error) =>
+      toast.error(error.message || "Le paiement sécurisé n'a pas pu être ouvert."),
   });
 
   const research = useMutation({
@@ -141,11 +172,29 @@ function AiPlusPage() {
             role: "assistant",
             content: data.answer,
             updatedAt: data.updatedAt,
+            sources: data.sources,
+            liveSearch: data.liveSearch,
+            remaining: data.remaining,
           } satisfies ThreadTurn,
         ].slice(-12),
       );
       setQuery("");
     },
+    onError: (error: Error) => toast.error(friendlyAiError(error)),
+  });
+
+  const save = useMutation({
+    mutationFn: async (turn: ThreadTurn) => {
+      if (!tripQuery.data?.id) throw new Error("Ajoute d'abord un voyage à ton carnet.");
+      return saveFn({
+        data: {
+          tripId: tripQuery.data.id,
+          title: "Conseil enregistré depuis IA+",
+          content: turn.content,
+        },
+      });
+    },
+    onSuccess: () => toast.success("Conseil IA+ enregistré dans ton carnet ✨"),
     onError: (error: Error) => toast.error(friendlyAiError(error)),
   });
 
@@ -163,7 +212,7 @@ function AiPlusPage() {
           <div className="surface-card grid min-h-[360px] place-items-center rounded-[2rem]">
             <div className="text-center text-sm text-muted-foreground">
               <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-primary" />
-              Vérification de ton accès IA+…
+              Connexion de ton espace IA+…
             </div>
           </div>
         ) : hasAccess ? (
@@ -176,6 +225,8 @@ function AiPlusPage() {
             turns={turns}
             send={send}
             pending={research.isPending}
+            savePending={save.isPending}
+            saveTurn={(turn) => save.mutate(turn)}
             reset={() => {
               setTurns([]);
               setQuery("");
@@ -209,7 +260,7 @@ function UpgradeScreen({
   checkoutPending: boolean;
 }) {
   return (
-    <section className="mx-auto max-w-3xl overflow-hidden rounded-[2rem] border border-violet-400/30 bg-card shadow-[0_32px_100px_-56px_rgba(124,58,237,.9)]">
+    <section className="mx-auto max-w-5xl overflow-hidden rounded-[2rem] border border-violet-400/30 bg-card shadow-[0_32px_100px_-56px_rgba(124,58,237,.9)]">
       <div className="relative p-5 sm:p-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,.20),transparent_34%),radial-gradient(circle_at_90%_15%,rgba(34,211,238,.10),transparent_28%)]" />
         <div className="relative">
@@ -222,13 +273,35 @@ function UpgradeScreen({
             </div>
           </div>
 
-          <div className="mt-6 text-center">
+          <div className="mx-auto mt-6 max-w-3xl text-center">
             <h1 className="font-display text-3xl font-bold tracking-tight sm:text-5xl">
-              Ton agent de voyage premium
+              Passe d’un assistant à un vrai agent de voyage IA.
             </h1>
-            <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-              Planifie, compare et organise ton voyage de A à Z.
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+              IA+ ne se contente pas de donner des idées : il utilise ton carnet, recherche des informations récentes, compare les options et adapte ses recommandations à ton budget réel.
             </p>
+          </div>
+
+          <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Benefit icon={Globe2} title="Recherche récente" text="Sources web et informations à vérifier directement." />
+            <Benefit icon={Database} title="Carnet connecté" text="Ton voyage, tes journées et tes dépenses servent de contexte." />
+            <Benefit icon={Hotel} title="Comparaisons" text="Options, avantages, limites et verdict clair." />
+            <Benefit icon={Zap} title="Beaucoup plus d'usage" text="250 demandes IA+ par jour par défaut." />
+          </div>
+
+          <div className="mt-7 overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/55">
+            <div className="grid grid-cols-[1.2fr_.8fr_1fr] border-b border-border/70 bg-secondary/30 px-4 py-3 text-xs font-bold uppercase tracking-wider sm:px-5">
+              <span>Fonction</span>
+              <span className="text-center">Gratuit</span>
+              <span className="text-center text-violet-400">IA+</span>
+            </div>
+            {COMPARISON.map(([feature, free, plus]) => (
+              <div key={feature} className="grid grid-cols-[1.2fr_.8fr_1fr] items-center border-b border-border/50 px-4 py-3 text-xs last:border-0 sm:px-5 sm:text-sm">
+                <span className="font-medium">{feature}</span>
+                <span className="text-center text-muted-foreground">{free}</span>
+                <span className="text-center font-semibold text-violet-300">{plus}</span>
+              </div>
+            ))}
           </div>
 
           <div className="mx-auto mt-7 max-w-2xl rounded-[1.75rem] border border-violet-400/35 bg-gradient-to-b from-violet-500/[0.16] to-background/70 p-5 sm:p-7">
@@ -237,17 +310,17 @@ function UpgradeScreen({
                 <Crown className="h-8 w-8" />
               </div>
               <h2 className="mt-4 text-lg font-bold text-violet-400 sm:text-xl">
-                Profite de toute la puissance de l’IA+
+                Toute la puissance de GlobeLink IA+
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Un assistant intelligent qui s’occupe de chaque détail pour toi.
+                Le niveau conçu pour préparer et ajuster un vrai voyage, pas seulement trouver des idées.
               </p>
             </div>
 
             <div className="mx-auto mt-6 grid max-w-xl gap-3 sm:grid-cols-2">
               {PREMIUM_FEATURES.map((feature) => (
-                <div key={feature} className="flex items-center gap-2 text-sm">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-cyan-500 text-slate-950">
+                <div key={feature} className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-cyan-500 text-slate-950">
                     <Check className="h-3.5 w-3.5" />
                   </span>
                   <span>{feature}</span>
@@ -279,9 +352,7 @@ function UpgradeScreen({
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2 font-semibold">
                     Annuel
-                    <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-400">
-                      Le plus rentable
-                    </span>
+                    <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-400">Le plus rentable</span>
                   </span>
                 </span>
                 <span className="text-right">
@@ -305,7 +376,7 @@ function UpgradeScreen({
                   </>
                 ) : (
                   <>
-                    <Sparkles className="mr-2 h-4 w-4" /> Essayer IA+
+                    <Sparkles className="mr-2 h-4 w-4" /> Passer à IA+ — 7 jours gratuits
                   </>
                 )}
               </Button>
@@ -318,16 +389,22 @@ function UpgradeScreen({
             )}
 
             <p className="mt-3 text-center text-xs text-muted-foreground">
-              Essai gratuit 7 jours • Sans engagement
+              Essai gratuit 7 jours • Sans engagement • Annulable à tout moment
             </p>
-            <div className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1.5"><RotateCcw className="h-3.5 w-3.5" /> Annulable à tout moment</span>
-              <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Paiement sécurisé</span>
-            </div>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+function Benefit({ icon: Icon, title, text }: { icon: typeof Globe2; title: string; text: string }) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-background/55 p-4">
+      <Icon className="h-5 w-5 text-violet-400" />
+      <div className="mt-2 font-semibold">{title}</div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{text}</p>
+    </div>
   );
 }
 
@@ -340,6 +417,8 @@ function PremiumWorkspace({
   turns,
   send,
   pending,
+  savePending,
+  saveTurn,
   reset,
 }: {
   trip: any;
@@ -350,12 +429,15 @@ function PremiumWorkspace({
   turns: ThreadTurn[];
   send: () => void;
   pending: boolean;
+  savePending: boolean;
+  saveTurn: (turn: ThreadTurn) => void;
   reset: () => void;
 }) {
   const days = tripDuration(trip?.starts_on, trip?.ends_on);
+  const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-6xl">
       <header className="relative overflow-hidden rounded-[2rem] border border-violet-400/25 bg-card p-5 shadow-soft sm:p-7">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(34,211,238,.10),transparent_35%),radial-gradient(circle_at_85%_5%,rgba(139,92,246,.15),transparent_36%)]" />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
@@ -363,36 +445,45 @@ function PremiumWorkspace({
             <div className="inline-flex items-center gap-2 text-sm font-bold text-primary">
               <Sparkles className="h-4 w-4" /> IA+ en action
             </div>
-            <h1 className="mt-2 font-display text-3xl font-bold sm:text-4xl">Ton agent de voyage premium</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Demande une modification, une comparaison ou une optimisation : IA+ garde le fil de ton voyage.
+            <h1 className="mt-2 font-display text-3xl font-bold sm:text-4xl">
+              Ton voyage devient le contexte de l’IA.
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              IA+ lit ton dernier voyage enregistré, tient compte de tes journées et de tes dépenses, puis combine ce contexte avec ses recherches pour te donner une réponse plus utile qu’un simple conseil générique.
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/30 bg-violet-500/15 px-3 py-1.5 text-xs font-bold text-violet-400">
             <Crown className="h-3.5 w-3.5" /> Premium actif
           </span>
         </div>
+
+        <div className="relative mt-5 grid gap-2 sm:grid-cols-3">
+          <StatusPill icon={Database} title="Carnet connecté" text={trip?.id ? "Voyage chargé automatiquement" : "Ajoute un voyage pour l'activer"} />
+          <StatusPill icon={Globe2} title="Recherche web" text={latestAssistant?.liveSearch ? "Sources trouvées sur la dernière réponse" : "Activée quand des sources sont disponibles"} />
+          <StatusPill icon={Zap} title="Quota IA+" text={latestAssistant?.remaining != null ? `${latestAssistant.remaining} demandes restantes aujourd'hui` : "250 demandes / jour par défaut"} />
+        </div>
       </header>
 
-      <section className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
+      <section className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
         <div className="space-y-4">
           <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Voyage en cours</div>
+                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Contexte utilisé par IA+</div>
                 <h2 className="mt-1 font-display text-2xl font-bold">
-                  {trip?.title || trip?.country || "Ton prochain voyage"}
+                  {trip?.title || trip?.country || "Aucun voyage enregistré"}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {[
+                    [trip?.city, trip?.country].filter(Boolean).join(", ") || null,
                     days ? `${days} jour${days > 1 ? "s" : ""}` : null,
                     trip?.budget ? `Budget : ${Number(trip.budget).toLocaleString("fr-FR")} €` : null,
-                  ].filter(Boolean).join(" • ") || "Ajoute un voyage à ton carnet pour enrichir le contexte IA+."}
+                  ].filter(Boolean).join(" • ") || "Ajoute un voyage à ton carnet pour que IA+ personnalise réellement ses décisions."}
                 </p>
               </div>
               <Button asChild variant="outline" size="sm" className="rounded-xl">
                 <Link to={trip?.id ? "/trips/$id" : "/trips"} params={trip?.id ? { id: trip.id } : undefined as any}>
-                  <Notebook className="mr-2 h-4 w-4" /> {trip?.id ? "Voir le résumé" : "Ouvrir mon carnet"}
+                  <Notebook className="mr-2 h-4 w-4" /> {trip?.id ? "Voir le carnet" : "Créer mon carnet"}
                 </Link>
               </Button>
             </div>
@@ -400,32 +491,27 @@ function PremiumWorkspace({
 
           <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-display text-xl font-bold">Comparaison intelligente</h2>
+              <div>
+                <h2 className="font-display text-xl font-bold">Actions premium</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Des demandes conçues pour exploiter le contexte réel de ton voyage.</p>
+              </div>
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <button type="button" onClick={() => { setMode("compare"); setQuery("Compare les meilleures options d’hébergement pour mon voyage."); }} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30">
-                <Hotel className="h-5 w-5 text-cyan-500" />
-                <div className="mt-2 font-semibold">Hôtels</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">Comparer les options</div>
-              </button>
-              <button type="button" onClick={() => { setMode("plan"); setQuery("Propose des activités adaptées à mon voyage et organise-les intelligemment."); }} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30">
-                <Sparkles className="h-5 w-5 text-violet-400" />
-                <div className="mt-2 font-semibold">Activités</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">Enrichir l’itinéraire</div>
-              </button>
-              <button type="button" onClick={() => { setMode("compare"); setQuery("Optimise la répartition de mon budget de voyage."); }} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30">
-                <Wallet className="h-5 w-5 text-amber-500" />
-                <div className="mt-2 font-semibold">Budget</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">Optimiser les dépenses</div>
-              </button>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <ActionCard icon={Database} title="Auditer mon voyage" text="Analyse le carnet et trouve les points faibles." onClick={() => { setMode("research"); setQuery("Analyse tout mon voyage enregistré et donne-moi les 5 améliorations les plus importantes, avec leur impact concret."); }} />
+              <ActionCard icon={Hotel} title="Comparer avec sources" text="Hôtels, quartiers ou options selon mes critères." onClick={() => { setMode("compare"); setQuery("Compare les meilleures options d’hébergement pour mon voyage avec des sources récentes, puis recommande celle qui correspond le mieux à mon budget et à mon itinéraire."); }} />
+              <ActionCard icon={Wand2} title="Réorganiser le séjour" text="Réduit les trajets et améliore le rythme." onClick={() => { setMode("plan"); setQuery("Réorganise mon voyage enregistré pour réduire les trajets inutiles, garder un bon rythme et respecter mon budget. Explique précisément ce que tu changerais dans le carnet."); }} />
+              <ActionCard icon={ShieldCheck} title="Vérifier avant départ" text="Risques, horaires, conditions et plans B." onClick={() => { setMode("safety"); setQuery("Vérifie les points importants de mon voyage avant le départ : risques, horaires ou conditions à confirmer, réservations sensibles et plans B."); }} />
             </div>
           </div>
 
           {turns.length > 0 && (
             <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
               <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
-                <div className="font-display text-xl font-bold">Conseil IA+</div>
+                <div>
+                  <div className="font-display text-xl font-bold">Conversation IA+</div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Les réponses premium peuvent utiliser le carnet et des sources web.</p>
+                </div>
                 <Button type="button" variant="ghost" size="sm" onClick={reset} className="rounded-xl">
                   <RotateCcw className="mr-2 h-3.5 w-3.5" /> Nouvelle
                 </Button>
@@ -433,15 +519,56 @@ function PremiumWorkspace({
               <div className="mt-4 space-y-4">
                 {turns.map((turn) =>
                   turn.role === "user" ? (
-                    <div key={turn.id} className="ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm text-primary-foreground sm:max-w-[72%]">
+                    <div key={turn.id} className="ml-auto max-w-[90%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm text-primary-foreground sm:max-w-[75%]">
                       {turn.content}
                     </div>
                   ) : (
-                    <article key={turn.id} className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-500/[0.08] to-background/60 p-4">
-                      <div className="mb-3 flex items-center gap-2 text-xs font-bold text-violet-400">
-                        <Sparkles className="h-3.5 w-3.5" /> Conseil IA+
+                    <article key={turn.id} className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-500/[0.08] to-background/60 p-4 sm:p-5">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-violet-400">
+                          <Sparkles className="h-3.5 w-3.5" /> Conseil IA+
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          {turn.liveSearch ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-500"><Globe2 className="h-3 w-3" /> Sources web utilisées</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1"><Compass className="h-3 w-3" /> Analyse IA+</span>
+                          )}
+                        </div>
                       </div>
                       <div className="md-body text-sm"><ReactMarkdown>{turn.content}</ReactMarkdown></div>
+
+                      {turn.sources && turn.sources.length > 0 && (
+                        <div className="mt-5 border-t border-border/60 pt-4">
+                          <div className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Sources consultées</div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {turn.sources.slice(0, 6).map((source, index) => (
+                              <a key={`${source.url}-${index}`} href={source.url} target="_blank" rel="noreferrer" className="group rounded-xl border border-border/70 bg-background/55 p-3 transition hover:border-primary/30">
+                                <div className="flex items-start gap-2">
+                                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">{index + 1}</span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="line-clamp-1 text-xs font-semibold group-hover:text-primary">{source.title}</div>
+                                    <div className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">{source.snippet}</div>
+                                  </div>
+                                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+                        <span className="text-[10px] text-muted-foreground">
+                          {turn.remaining != null ? `${turn.remaining} demandes IA+ restantes aujourd'hui` : "Réponse premium"}
+                        </span>
+                        {trip?.id && (
+                          <Button type="button" variant="outline" size="sm" disabled={savePending} onClick={() => saveTurn(turn)} className="rounded-xl">
+                            {savePending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <BookmarkPlus className="mr-2 h-3.5 w-3.5" />}
+                            Enregistrer dans mon carnet
+                          </Button>
+                        )}
+                      </div>
                     </article>
                   ),
                 )}
@@ -451,18 +578,6 @@ function PremiumWorkspace({
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-          <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
-            <div className="flex items-center gap-2 font-semibold">
-              <CalendarDays className="h-4 w-4 text-primary" /> Itinéraire intelligent
-            </div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              IA+ peut réorganiser ton séjour, comparer les options et garder une marge dans ton budget.
-            </p>
-            <Button asChild variant="outline" className="mt-4 w-full rounded-xl">
-              <Link to="/ai-trip"><Wand2 className="mr-2 h-4 w-4" /> Créer un itinéraire</Link>
-            </Button>
-          </div>
-
           <div className="rounded-[1.75rem] border border-violet-400/25 bg-gradient-to-br from-violet-500/[0.10] to-card p-4 shadow-soft sm:p-5">
             <div className="flex items-center gap-2 font-semibold text-violet-400">
               <Sparkles className="h-4 w-4" /> Demande à IA+
@@ -481,8 +596,8 @@ function PremiumWorkspace({
             <Textarea
               value={query}
               onChange={(event) => setQuery(event.target.value.slice(0, 3_000))}
-              placeholder="Demande une modification à l’IA+…"
-              className="mt-3 min-h-28 resize-y rounded-2xl bg-background/65"
+              placeholder="Ex. Réorganise mon voyage en gardant 300 € de marge…"
+              className="mt-3 min-h-32 resize-y rounded-2xl bg-background/65"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -491,19 +606,51 @@ function PremiumWorkspace({
               }}
             />
             <Button type="button" onClick={send} disabled={query.trim().length < 4 || pending} className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
-              {pending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> IA+ réfléchit…</> : <><Send className="mr-2 h-4 w-4" /> Envoyer</>}
+              {pending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> IA+ analyse le voyage…</> : <><Send className="mr-2 h-4 w-4" /> Lancer l’analyse IA+</>}
             </Button>
             <div className="mt-3 space-y-2">
               {QUICK_PROMPTS.map((prompt) => (
-                <button key={prompt} type="button" onClick={() => setQuery(prompt)} className="w-full rounded-xl border border-border/60 bg-background/45 px-3 py-2 text-left text-[11px] text-muted-foreground transition hover:border-primary/25 hover:text-foreground">
+                <button key={prompt} type="button" onClick={() => setQuery(prompt)} className="w-full rounded-xl border border-border/60 bg-background/45 px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground transition hover:border-primary/25 hover:text-foreground">
                   {prompt}
                 </button>
               ))}
             </div>
           </div>
+
+          <div className="rounded-[1.75rem] border border-border/70 bg-card p-4 shadow-soft sm:p-5">
+            <div className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Ce que IA+ fait différemment
+            </div>
+            <ul className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
+              <li>• utilise automatiquement le dernier voyage de ton carnet ;</li>
+              <li>• tient compte de tes dépenses déjà enregistrées ;</li>
+              <li>• peut rechercher et citer des sources récentes ;</li>
+              <li>• compare plusieurs options au lieu de donner une seule idée ;</li>
+              <li>• te permet d’enregistrer ses recommandations dans le carnet.</li>
+            </ul>
+          </div>
         </aside>
       </section>
     </div>
+  );
+}
+
+function StatusPill({ icon: Icon, title, text }: { icon: typeof Database; title: string; text: string }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-background/55 p-3">
+      <div className="flex items-center gap-2 text-xs font-bold"><Icon className="h-4 w-4 text-violet-400" /> {title}</div>
+      <p className="mt-1 text-[10px] text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+function ActionCard({ icon: Icon, title, text, onClick }: { icon: typeof Database; title: string; text: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="rounded-2xl border border-border/70 bg-background/60 p-4 text-left transition hover:border-primary/30 hover:bg-secondary/40">
+      <Icon className="h-5 w-5 text-violet-400" />
+      <div className="mt-2 font-semibold">{title}</div>
+      <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{text}</div>
+    </button>
   );
 }
 
