@@ -104,11 +104,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/icons/globelink-app-icon-180-v20260824b.png", type: "image/png" },
-      { rel: "manifest", href: "/manifest.webmanifest" },
+      {
+        rel: "icon",
+        href: "/apple-touch-icon-v20260825.png",
+        type: "image/png",
+        sizes: "180x180",
+      },
+      { rel: "manifest", href: "/manifest.webmanifest?v=20260825-2" },
       {
         rel: "apple-touch-icon",
-        href: "/icons/globelink-app-icon-180-v20260824b.png",
+        href: "/apple-touch-icon-v20260825.png",
+        sizes: "180x180",
+      },
+      {
+        rel: "apple-touch-icon-precomposed",
+        href: "/apple-touch-icon-v20260825.png",
         sizes: "180x180",
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
