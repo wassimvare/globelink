@@ -9,6 +9,7 @@ import {
   respondToMessageRequest,
 } from "@/lib/social-privacy";
 import { AppHeader } from "@/components/AppHeader";
+import { OnlineStatus } from "@/components/OnlineStatus";
 import { Button } from "@/components/ui/button";
 import { Check, Circle, Inbox, MessageSquare, Search, UserRoundPlus, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -88,7 +89,9 @@ function MessagesPage() {
         .filter((row) => {
           if (!row.conversation) return false;
           if (row.conversation.participants.length !== 2) return true;
-          const other = row.conversation.participants.find((participant) => participant.user_id !== user!.id);
+          const other = row.conversation.participants.find(
+            (participant) => participant.user_id !== user!.id,
+          );
           return !other || !excluded.has(other.user_id);
         })
         .sort(
@@ -134,8 +137,10 @@ function MessagesPage() {
           qc.invalidateQueries({ queryKey: ["incoming-message-requests", user.id] });
         },
       )
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, () =>
-        qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversations" },
+        () => qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
       )
       .subscribe();
     return () => {
@@ -223,20 +228,31 @@ function MessagesPage() {
               {requestRows.map((row) => {
                 const other = row.conversation!.participants.find((p) => p.user_id !== user!.id);
                 const name = other?.profile?.display_name ?? other?.profile?.username ?? "Voyageur";
-                const visibleMessages = row.conversation!.messages.filter((message) => message.attachment_type !== "rtc");
-                const first = [...visibleMessages].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))[0];
+                const visibleMessages = row.conversation!.messages.filter(
+                  (message) => message.attachment_type !== "rtc",
+                );
+                const first = [...visibleMessages].sort(
+                  (a, b) => +new Date(a.created_at) - +new Date(b.created_at),
+                )[0];
                 return (
                   <div key={row.conversation_id} className="p-4">
                     <div className="flex items-center gap-3">
                       {other?.profile?.avatar_url ? (
-                        <img src={other.profile.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
+                        <img
+                          src={other.profile.avatar_url}
+                          alt=""
+                          className="h-11 w-11 rounded-full object-cover"
+                        />
                       ) : (
                         <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary font-semibold">
                           {name[0]?.toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-semibold">{name}</p>
+                          {other && <OnlineStatus userId={other.user_id} showLabel={false} />}
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {first?.content || "Souhaite t'envoyer un message"}
                         </p>
@@ -323,7 +339,11 @@ function MessagesPage() {
                     className="flex items-center gap-3 p-4 transition hover:bg-secondary/50"
                   >
                     {other?.profile?.avatar_url ? (
-                      <img src={other.profile.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />
+                      <img
+                        src={other.profile.avatar_url}
+                        alt=""
+                        className="h-12 w-12 rounded-full object-cover"
+                      />
                     ) : (
                       <div className="grid h-12 w-12 place-items-center rounded-full bg-secondary text-sm font-medium">
                         {name[0]?.toUpperCase()}
@@ -331,14 +351,22 @@ function MessagesPage() {
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="truncate font-semibold">{name}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-semibold">{name}</span>
+                          {other && <OnlineStatus userId={other.user_id} showLabel={false} />}
+                        </span>
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {last
-                            ? formatDistanceToNow(new Date(last.created_at), { addSuffix: true, locale: fr })
+                            ? formatDistanceToNow(new Date(last.created_at), {
+                                addSuffix: true,
+                                locale: fr,
+                              })
                             : "—"}
                         </span>
                       </div>
-                      <p className={`truncate text-sm ${unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                      <p
+                        className={`truncate text-sm ${unread ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                      >
                         {last?.content ??
                           (last?.attachment_type
                             ? attachmentPreview(last.attachment_type)
