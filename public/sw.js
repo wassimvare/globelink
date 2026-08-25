@@ -1,11 +1,10 @@
 /* GlobeLink production service worker: static assets only, never auth/API data. */
-const CACHE = "globelink-static-icon-v20260825-3";
+const CACHE = "globelink-static-icon-v20260825-final";
 const OFFLINE = "/offline.html";
 const PRECACHE = [
   OFFLINE,
   "/manifest.webmanifest",
   "/brand/globelink-logo.png",
-  "/apple-touch-icon-v20260825c.png",
   "/icons/globelink-app-icon-192-v20260824.png",
   "/icons/globelink-app-icon-512-v20260824.jpg",
 ];
