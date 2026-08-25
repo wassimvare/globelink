@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import {
   Bell,
   ChevronDown,
-  Crown,
   Heart,
   Home,
   LayoutDashboard,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BackButton } from "@/components/BackButton";
+import { BrandLogo } from "@/components/BrandLogo";
 import { QuickCreate } from "@/components/QuickCreate";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -32,11 +32,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getSignedMediaUrl } from "@/lib/storage";
-import { useAuth } from "@/lib/auth-context";
-import { loadNotificationPreferences, notificationAllowed } from "@/lib/user-preferences";
 import { supabase } from "@/integrations/supabase/client";
-import { BrandLogo } from "@/components/BrandLogo";
+import { useAuth } from "@/lib/auth-context";
+import { getSignedMediaUrl } from "@/lib/storage";
+import { loadNotificationPreferences, notificationAllowed } from "@/lib/user-preferences";
 
 const navClass =
   "group inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold text-muted-foreground transition hover:bg-secondary/80 hover:text-foreground";
@@ -108,7 +107,7 @@ export function AppHeader() {
 
   useEffect(() => {
     if (!user) return;
-    const ch = supabase
+    const channel = supabase
       .channel(`header-notif-${user.id}`)
       .on(
         "postgres_changes",
@@ -122,7 +121,7 @@ export function AppHeader() {
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(ch);
+      supabase.removeChannel(channel);
     };
   }, [user, qc]);
 
@@ -131,8 +130,7 @@ export function AppHeader() {
     const refreshUnread = () =>
       qc.invalidateQueries({ queryKey: ["notifications-unread", user.id] });
     window.addEventListener("globelink:notification-preferences", refreshUnread);
-    return () =>
-      window.removeEventListener("globelink:notification-preferences", refreshUnread);
+    return () => window.removeEventListener("globelink:notification-preferences", refreshUnread);
   }, [user, qc]);
 
   async function signOut() {
@@ -144,7 +142,11 @@ export function AppHeader() {
 
   return (
     <header
-      className={`app-header safe-top sticky top-0 z-50 border-b transition-all duration-300 ${scrolled ? "border-border/70 bg-background/88 shadow-[0_10px_35px_-22px_rgba(3,28,43,.45)] backdrop-blur-2xl" : "border-transparent bg-background/72 backdrop-blur-xl"}`}
+      className={`app-header safe-top sticky top-0 z-50 border-b transition-all duration-300 ${
+        scrolled
+          ? "border-border/70 bg-background/88 shadow-[0_10px_35px_-22px_rgba(3,28,43,.45)] backdrop-blur-2xl"
+          : "border-transparent bg-background/72 backdrop-blur-xl"
+      }`}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-3 sm:px-4">
         {!isHome && <BackButton compact />}
@@ -201,14 +203,16 @@ export function AppHeader() {
           >
             <Sparkles className="h-4 w-4" /> Activités
           </Link>
-          <Link
-            to="/ai-trip"
-            preload="intent"
-            className={navClass}
-            activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
-          >
-            <Map className="h-4 w-4" /> Itinéraires
-          </Link>
+          {user && (
+            <Link
+              to="/intelligence"
+              preload="intent"
+              className={navClass}
+              activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
+            >
+              <Sparkles className="h-4 w-4" /> GlobeLink IA
+            </Link>
+          )}
           {user && (
             <Link
               to="/match"
@@ -223,8 +227,7 @@ export function AppHeader() {
             <DropdownMenuTrigger
               className={`${navClass} outline-none data-[state=open]:bg-secondary data-[state=open]:text-foreground`}
             >
-              Plus{" "}
-              <ChevronDown className="h-3.5 w-3.5 transition group-data-[state=open]:rotate-180" />
+              Plus <ChevronDown className="h-3.5 w-3.5 transition group-data-[state=open]:rotate-180" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
@@ -243,15 +246,10 @@ export function AppHeader() {
               {user && (
                 <DropdownMenuItem asChild>
                   <Link to="/intelligence" preload="intent" className="rounded-xl">
-                    <Sparkles className="mr-2 h-4 w-4 text-primary" /> Intelligence GlobeLink
+                    <Sparkles className="mr-2 h-4 w-4 text-primary" /> GlobeLink IA
                   </Link>
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem asChild>
-                <Link to="/ai-pro" preload="intent" className="rounded-xl">
-                  <Crown className="mr-2 h-4 w-4 text-amber-500" /> Conseils voyage
-                </Link>
-              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/marketplace" preload="intent" className="rounded-xl">
                   <ShoppingBag className="mr-2 h-4 w-4" /> Marketplace
@@ -310,9 +308,7 @@ export function AppHeader() {
                   </span>
                 )}
               </Link>
-              <div className="hidden sm:block">
-                <QuickCreate />
-              </div>
+              <div className="hidden sm:block"><QuickCreate /></div>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -321,11 +317,7 @@ export function AppHeader() {
                     className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border/70 bg-secondary transition hover:border-primary/25 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
                     {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt="Photo de profil"
-                        className="h-full w-full object-cover"
-                      />
+                      <img src={avatarUrl} alt="Photo de profil" className="h-full w-full object-cover" />
                     ) : (
                       <UserIcon className="h-4 w-4" />
                     )}
@@ -340,15 +332,13 @@ export function AppHeader() {
                       {profile?.display_name || profile?.username || "Mon compte"}
                     </div>
                     {profile?.username && (
-                      <div className="truncate text-xs font-normal text-muted-foreground">
-                        @{profile.username}
-                      </div>
+                      <div className="truncate text-xs font-normal text-muted-foreground">@{profile.username}</div>
                     )}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link to="/intelligence" preload="intent" className="rounded-xl">
-                      <Sparkles className="mr-2 h-4 w-4 text-primary" /> Intelligence GlobeLink
+                      <Sparkles className="mr-2 h-4 w-4 text-primary" /> GlobeLink IA
                     </Link>
                   </DropdownMenuItem>
                   {profile?.username && (
@@ -391,21 +381,14 @@ export function AppHeader() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={signOut}
-                    className="rounded-xl text-destructive focus:text-destructive"
-                  >
+                  <DropdownMenuItem onClick={signOut} className="rounded-xl text-destructive focus:text-destructive">
                     <LogOut className="mr-2 h-4 w-4" /> Déconnexion
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </>
           ) : (
-            <Button
-              asChild
-              size="sm"
-              className="h-10 rounded-xl bg-primary px-4 text-primary-foreground shadow-soft transition hover:-translate-y-0.5 hover:shadow-glow"
-            >
+            <Button asChild size="sm" className="h-10 rounded-xl bg-primary px-4 text-primary-foreground shadow-soft transition hover:-translate-y-0.5 hover:shadow-glow">
               <Link to="/auth" preload="intent">Connexion</Link>
             </Button>
           )}
