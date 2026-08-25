@@ -31,16 +31,23 @@ export function saveNotificationPreferences(
 ) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(keyFor(userId), JSON.stringify(preferences));
-  window.dispatchEvent(new CustomEvent("globelink:notification-preferences", { detail: { userId } }));
+  window.dispatchEvent(
+    new CustomEvent("globelink:notification-preferences", { detail: { userId } }),
+  );
 }
 
 type NotificationLike = {
   type: string;
-  metadata?: Record<string, unknown> | null;
+  metadata?: unknown;
 };
 
+function metadataScope(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "";
+  return String((metadata as Record<string, unknown>).scope ?? "");
+}
+
 export function notificationCategory(notification: NotificationLike): "social" | "messages" | "travel" {
-  const scope = String(notification.metadata?.scope ?? "");
+  const scope = metadataScope(notification.metadata);
   if (scope === "travel_match") return "messages";
   if (notification.type === "message") return "messages";
   if (
