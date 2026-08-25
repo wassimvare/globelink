@@ -1,7 +1,7 @@
 import fs from "node:fs";
 
 const checks = [
-  ["src/routes/_authenticated.intelligence.tsx", ["Organise ta journée", "Travel Match intelligent", "Ticketmaster", "Open‑Meteo"]],
+  ["src/routes/_authenticated.intelligence.tsx", ["GlobeLink IA", "Ton assistant voyage", "Gratuit", "IA+"]],
   ["src/lib/phase3-intelligence.functions.ts", ["organizeSmartDay", "getPhase3Context", "fetchWeather", "fetchTicketmasterEvents", "reserve_free_ai_usage"]],
   ["src/lib/phase3-intelligence.ts", ["calculatePhase3Compatibility", "weatherCodeLabel", "overlapDays"]],
   ["src/lib/phase3-intelligence.test.ts", ["score élevé", "codes météo"]],
