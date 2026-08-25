@@ -3,6 +3,7 @@ import { COUNTRIES } from "./countries";
 import type { LiveCatalogItem } from "./live-catalog";
 import { isTrustedVisibleCatalogItem } from "./catalog-source-routing";
 import { slugifyDestination } from "./phase2";
+import { getUnavailableUserIds } from "./account-settings";
 
 export type SearchKind =
   | "user"
@@ -77,7 +78,7 @@ export async function universalSearch(
   if (!q) return empty;
   const like = `%${q}%`;
 
-  const [uRes, pRes, tRes, extRes, qRes, dRes] = await Promise.all([
+  const [uRes, pRes, tRes, extRes, qRes, dRes, unavailableUsers] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url, bio, country")
@@ -115,6 +116,7 @@ export async function universalSearch(
       .select("id, slug, name, city, country, cover_url, summary, popularity")
       .or(`name.ilike.${like},city.ilike.${like},country.ilike.${like}`)
       .limit(limit * 2),
+    getUnavailableUserIds(),
   ]);
 
   const destinations: SearchResult[] = [
@@ -139,15 +141,17 @@ export async function universalSearch(
     })),
   ].filter((r) => r.score > 0);
 
-  const users: SearchResult[] = (uRes.data ?? []).map((u) => ({
-    id: u.id,
-    kind: "user",
-    title: u.display_name || u.username,
-    subtitle: `@${u.username}${u.country ? ` · ${u.country}` : ""}`,
-    image: u.avatar_url ?? undefined,
-    to: `/profile/${u.username}`,
-    score: best(q, u.username, u.display_name, u.country, u.bio),
-  }));
+  const users: SearchResult[] = (uRes.data ?? [])
+    .filter((u) => !unavailableUsers.has(u.id))
+    .map((u) => ({
+      id: u.id,
+      kind: "user",
+      title: u.display_name || u.username,
+      subtitle: `@${u.username}${u.country ? ` · ${u.country}` : ""}`,
+      image: u.avatar_url ?? undefined,
+      to: `/profile/${u.username}`,
+      score: best(q, u.username, u.display_name, u.country, u.bio),
+    }));
   const posts: SearchResult[] = (pRes.data ?? []).map((p) => ({
     id: p.id,
     kind: "post",
