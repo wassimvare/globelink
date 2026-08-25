@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
       ["close_friends", "owner_id"], ["user_mutes", "owner_id"], ["story_hidden_accounts", "owner_id"],
       ["match_passes", "user_id"], ["match_group_members", "user_id"], ["match_groups", "owner_id"],
       ["ai_subscriptions", "user_id"], ["ai_usage", "user_id"], ["account_security_events", "user_id"],
+      ["support_tickets", "user_id"], ["reports", "reporter_id"],
     ];
 
     const data: Record<string, unknown> = {};
