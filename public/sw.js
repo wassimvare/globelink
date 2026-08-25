@@ -1,12 +1,13 @@
 /* GlobeLink production service worker: static assets only, never auth/API data. */
-const CACHE = "globelink-static-icon-v20260825-final";
+const CACHE = "globelink-static-icon-v20260825-rgb2";
 const OFFLINE = "/offline.html";
 const PRECACHE = [
   OFFLINE,
-  "/manifest.webmanifest",
+  "/manifest.webmanifest?v=20260825-rgb2",
   "/brand/globelink-logo.png",
-  "/icons/globelink-app-icon-192-v20260824.png",
-  "/icons/globelink-app-icon-512-v20260824.jpg",
+  "/apple-touch-icon.png?v=20260825-rgb2",
+  "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
+  "/icons/globelink-app-icon-512-v20260824.jpg?v=20260825-rgb2",
 ];
 const STATIC_EXT = /\.(?:css|js|mjs|woff2?|png|jpe?g|webp|avif|svg|ico)$/i;
 
