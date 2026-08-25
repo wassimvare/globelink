@@ -20,6 +20,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { REACTIONS, setReaction, toggleFollow, type ReactionKey } from "@/lib/social";
+import { getMutedUserIds, setMute } from "@/lib/social-privacy";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -118,6 +119,14 @@ export function PostCard({ post }: { post: Post }) {
   const isReel = current.media_type === "reel";
   const isVideo = current.media_type === "video" || isReel;
   const isSelf = user?.id === post.user_id;
+
+  const { data: mutedPostAuthors = new Set<string>() } = useQuery({
+    queryKey: ["muted-post-authors", user?.id],
+    enabled: !!user,
+    queryFn: () => getMutedUserIds(user!.id, "posts"),
+    staleTime: 30_000,
+  });
+  const authorMuted = !!user && !isSelf && mutedPostAuthors.has(post.user_id);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -239,7 +248,6 @@ export function PostCard({ post }: { post: Post }) {
   const username = post.profiles?.username ?? "voyageur";
   const displayName = post.profiles?.display_name ?? username;
 
-  // Follow state (real users only)
   const { data: isFollowing } = useQuery({
     queryKey: ["follow-card", user?.id, post.user_id],
     enabled: !!user && !isSelf,
@@ -273,6 +281,25 @@ export function PostCard({ post }: { post: Post }) {
       } else toast.error("Abonnement non enregistré.");
     },
   });
+
+  const muteAuthor = useMutation({
+    mutationFn: async () => {
+      if (!user || isSelf) throw new Error("auth");
+      await setMute(user.id, post.user_id, { mute_posts: true, mute_stories: true });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["muted-post-authors", user?.id] }),
+        qc.invalidateQueries({ queryKey: ["muted-profiles", user?.id] }),
+        qc.invalidateQueries({ queryKey: ["feed"] }),
+        qc.invalidateQueries({ queryKey: ["stories"] }),
+      ]);
+      toast.success(`@${username} est en sourdine`);
+    },
+    onError: () => toast.error("Impossible de mettre ce compte en sourdine."),
+  });
+
+  if (authorMuted) return null;
 
   if (hidden) {
     return (
@@ -363,6 +390,11 @@ export function PostCard({ post }: { post: Post }) {
               <DropdownMenuItem onClick={() => setHidden(true)} className="rounded-xl">
                 <EyeOff className="mr-2 h-4 w-4" /> Ne plus voir
               </DropdownMenuItem>
+              {!isSelf && (
+                <DropdownMenuItem onClick={() => muteAuthor.mutate()} className="rounded-xl">
+                  <VolumeX className="mr-2 h-4 w-4" /> Mettre @{username} en sourdine
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={share} className="rounded-xl">
                 <Share2 className="mr-2 h-4 w-4" /> Partager le lien
               </DropdownMenuItem>
