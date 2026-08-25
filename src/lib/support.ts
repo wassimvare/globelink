@@ -5,6 +5,7 @@ const db = supabase as any;
 export type SupportCategory = "bug" | "technical" | "account" | "safety" | "feedback" | "other";
 export type SupportStatus = "open" | "in_progress" | "waiting_user" | "resolved" | "closed";
 export type SupportPriority = "low" | "normal" | "high" | "urgent";
+export type SupportSenderKind = "user" | "staff";
 export type ReportTargetType = "post" | "comment" | "profile" | "message";
 
 export type SupportTicket = {
@@ -21,6 +22,15 @@ export type SupportTicket = {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type SupportTicketMessage = {
+  id: string;
+  ticket_id: string;
+  sender_id: string | null;
+  sender_kind: SupportSenderKind;
+  body: string;
+  created_at: string;
 };
 
 export type MyReport = {
@@ -72,10 +82,44 @@ export async function listMySupportTickets(userId: string) {
     .from("support_tickets")
     .select("*")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
+    .order("updated_at", { ascending: false })
     .limit(100);
   if (error) throw error;
   return (data ?? []) as SupportTicket[];
+}
+
+export async function listSupportMessagesForTickets(ticketIds: string[]) {
+  if (!ticketIds.length) return [] as SupportTicketMessage[];
+  const { data, error } = await db
+    .from("support_ticket_messages")
+    .select("id,ticket_id,sender_id,sender_kind,body,created_at")
+    .in("ticket_id", ticketIds)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as SupportTicketMessage[];
+}
+
+export async function sendSupportMessage(input: {
+  ticketId: string;
+  senderId: string;
+  senderKind: SupportSenderKind;
+  body: string;
+}) {
+  const body = input.body.trim();
+  if (!body) throw new Error("Le message est vide.");
+  if (body.length > 5000) throw new Error("Le message est limité à 5 000 caractères.");
+  const { data, error } = await db
+    .from("support_ticket_messages")
+    .insert({
+      ticket_id: input.ticketId,
+      sender_id: input.senderId,
+      sender_kind: input.senderKind,
+      body,
+    })
+    .select("id,ticket_id,sender_id,sender_kind,body,created_at")
+    .single();
+  if (error) throw error;
+  return data as SupportTicketMessage;
 }
 
 export async function listMyReports(userId: string) {
@@ -127,22 +171,27 @@ export async function searchProfilesForReport(userId: string, query: string) {
   return (data ?? []) as ReportProfile[];
 }
 
-export async function isCurrentUserAdmin(userId: string) {
+export async function isCurrentUserSupportStaff(userId: string) {
   const { data, error } = await db
     .from("user_roles")
     .select("role")
     .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
+    .in("role", ["admin", "moderator"]);
   if (error) return false;
-  return Boolean(data);
+  return (data ?? []).some((row: { role?: string }) => row.role === "admin" || row.role === "moderator");
+}
+
+// Backwards-compatible name used by the help center. Support management is intentionally
+// available to moderators as well as administrators.
+export async function isCurrentUserAdmin(userId: string) {
+  return isCurrentUserSupportStaff(userId);
 }
 
 export async function listSupportTicketsForStaff(status?: SupportStatus | "all") {
   let query = db
     .from("support_tickets")
     .select("*")
-    .order("created_at", { ascending: false })
+    .order("updated_at", { ascending: false })
     .limit(250);
   if (status && status !== "all") query = query.eq("status", status);
   const { data, error } = await query;
