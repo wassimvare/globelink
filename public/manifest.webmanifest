@@ -16,19 +16,19 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icons/globelink-app-icon-192-v20260824.png?v=20260825-final",
+      "src": "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/globelink-app-icon-512-v20260824.jpg?v=20260825-final",
+      "src": "/icons/globelink-app-icon-512-v20260824.jpg?v=20260825-rgb2",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "/icons/globelink-app-icon-512-v20260824.jpg?v=20260825-final",
+      "src": "/icons/globelink-app-icon-512-v20260824.jpg?v=20260825-rgb2",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "maskable"
