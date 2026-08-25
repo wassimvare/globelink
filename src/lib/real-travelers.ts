@@ -4,6 +4,7 @@
 // per-user jitter so markers don't stack on the exact same pixel.
 import { supabase } from "@/integrations/supabase/client";
 import { COUNTRY_BY_NAME } from "@/lib/country-info";
+import { getSuggestionExcludedUserIds } from "@/lib/account-settings";
 
 export type LocatedTraveler = {
   id: string;
@@ -40,8 +41,10 @@ function coordsFor(id: string, country: string, city?: string | null): [number, 
 
 export async function fetchLocatedTravelers(): Promise<LocatedTraveler[]> {
   const today = new Date().toISOString().slice(0, 10);
+  const authResult = await supabase.auth.getUser();
+  const currentUserId = authResult.data.user?.id ?? null;
 
-  const [tripsRes, profilesRes] = await Promise.all([
+  const [tripsRes, profilesRes, excluded] = await Promise.all([
     supabase
       .from("travel_intents")
       .select(
@@ -54,14 +57,18 @@ export async function fetchLocatedTravelers(): Promise<LocatedTraveler[]> {
     supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url, country, bio, languages")
+      .eq("status", "active")
+      .neq("visibility", "hidden")
       .not("country", "is", null)
       .limit(400),
+    currentUserId ? getSuggestionExcludedUserIds(currentUserId) : Promise.resolve(new Set<string>()),
   ]);
 
   const profiles = new Map((profilesRes.data ?? []).map((p) => [p.id, p]));
   const out = new Map<string, LocatedTraveler>();
 
   for (const t of tripsRes.data ?? []) {
+    if (t.user_id === currentUserId || excluded.has(t.user_id)) continue;
     const p = profiles.get(t.user_id);
     if (!p) continue;
     const co = coordsFor(t.user_id, t.destination_country, t.destination_city);
@@ -86,7 +93,7 @@ export async function fetchLocatedTravelers(): Promise<LocatedTraveler[]> {
   }
 
   for (const p of profilesRes.data ?? []) {
-    if (out.has(p.id) || !p.country) continue;
+    if (p.id === currentUserId || excluded.has(p.id) || out.has(p.id) || !p.country) continue;
     const co = coordsFor(p.id, p.country, null);
     if (!co) continue;
     out.set(p.id, {
