@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { heartbeatPresence } from "@/lib/social-privacy";
 
 type AuthCtx = {
   session: Session | null;
@@ -42,6 +43,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId || typeof document === "undefined") return;
+    let stopped = false;
+
+    const beat = () => {
+      if (stopped || document.visibilityState !== "visible") return;
+      void heartbeatPresence(userId).catch(() => undefined);
+    };
+    beat();
+    const timer = window.setInterval(beat, 60_000);
+    const onVisible = () => beat();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", beat);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", beat);
+    };
+  }, [session?.user?.id]);
 
   return (
     <Ctx.Provider value={{ session, user: session?.user ?? null, loading }}>
