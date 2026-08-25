@@ -67,6 +67,42 @@ function applyActivitySettingsEntry() {
   console.log("[GlobeLink] Your Activity settings entry applied.");
 }
 
+function applyAccountDataSettingsEntry() {
+  const settingsHubPath = path.resolve("src/components/SettingsHub.tsx");
+  if (!fs.existsSync(settingsHubPath)) return;
+
+  const source = fs.readFileSync(settingsHubPath, "utf8");
+  if (source.includes('aria-label="Ouvrir Compte, données et sécurité"')) return;
+
+  const marker = `        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">`;
+  if (!source.includes(marker)) {
+    console.warn("[GlobeLink] SettingsHub account data insertion point not found; entry skipped.");
+    return;
+  }
+
+  const accountEntry = `        <Link
+          to="/settings/account"
+          aria-label="Ouvrir Compte, données et sécurité"
+          className="group mt-3 flex min-h-20 items-center gap-4 rounded-2xl border border-border/70 bg-background/65 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-soft"
+        >
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 font-semibold text-foreground">
+              Compte, données et sécurité
+              <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+              Appareils connectés, export, permissions, cache, désactivation et suppression du compte.
+            </p>
+          </div>
+        </Link>`;
+
+  fs.writeFileSync(settingsHubPath, source.replace(marker, `${accountEntry}\n\n${marker}`));
+  console.log("[GlobeLink] Account data settings entry applied.");
+}
+
 // Safari/iOS can briefly report CHANNEL_ERROR when Supabase Realtime wakes up or
 // reconnects after the app returns from the background. Supabase automatically
 // reconnects, so this must not be shown as a fatal error on GlobeLink's home page.
@@ -78,6 +114,7 @@ applyCallRealtimeHotfix();
 // TanStack Start server bundle regression on Vercel, while this settings-only entry
 // keeps the feature visible and isolated from the server middleware graph.
 applyActivitySettingsEntry();
+applyAccountDataSettingsEntry();
 
 const payloadDir = path.resolve(".v11-api-payload");
 if (!fs.existsSync(payloadDir)) {
