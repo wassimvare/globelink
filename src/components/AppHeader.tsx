@@ -150,6 +150,7 @@ export function AppHeader() {
         {!isHome && <BackButton compact />}
         <Link
           to="/"
+          preload="intent"
           className="group flex min-w-0 shrink-0 items-center gap-2 pr-1 sm:pr-2"
           aria-label="Accueil GlobeLink"
         >
@@ -169,6 +170,7 @@ export function AppHeader() {
         <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label="Navigation principale">
           <Link
             to="/"
+            preload="intent"
             className={navClass}
             activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
             activeOptions={{ exact: true }}
@@ -177,6 +179,7 @@ export function AppHeader() {
           </Link>
           <Link
             to="/map"
+            preload="intent"
             className={navClass}
             activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
           >
@@ -200,6 +203,7 @@ export function AppHeader() {
           </Link>
           <Link
             to="/ai-trip"
+            preload="intent"
             className={navClass}
             activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
           >
@@ -208,6 +212,7 @@ export function AppHeader() {
           {user && (
             <Link
               to="/match"
+              preload="intent"
               className={navClass}
               activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
             >
@@ -237,31 +242,31 @@ export function AppHeader() {
               </DropdownMenuItem>
               {user && (
                 <DropdownMenuItem asChild>
-                  <Link to="/intelligence" className="rounded-xl">
+                  <Link to="/intelligence" preload="intent" className="rounded-xl">
                     <Sparkles className="mr-2 h-4 w-4 text-primary" /> Intelligence GlobeLink
                   </Link>
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem asChild>
-                <Link to="/ai-pro" className="rounded-xl">
+                <Link to="/ai-pro" preload="intent" className="rounded-xl">
                   <Crown className="mr-2 h-4 w-4 text-amber-500" /> Conseils voyage
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link to="/marketplace" className="rounded-xl">
+                <Link to="/marketplace" preload="intent" className="rounded-xl">
                   <ShoppingBag className="mr-2 h-4 w-4" /> Marketplace
                 </Link>
               </DropdownMenuItem>
               {user && (
                 <DropdownMenuItem asChild>
-                  <Link to="/dashboard" className="rounded-xl">
+                  <Link to="/dashboard" preload="intent" className="rounded-xl">
                     <LayoutDashboard className="mr-2 h-4 w-4" /> Tableau de bord
                   </Link>
                 </DropdownMenuItem>
               )}
               {user && (
                 <DropdownMenuItem asChild>
-                  <Link to="/trips" className="rounded-xl">
+                  <Link to="/trips" preload="intent" className="rounded-xl">
                     <Notebook className="mr-2 h-4 w-4" /> Carnet de voyage
                   </Link>
                 </DropdownMenuItem>
@@ -273,6 +278,7 @@ export function AppHeader() {
         <div className="ml-auto flex items-center gap-1.5">
           <Link
             to="/search"
+            preload="intent"
             aria-label="Rechercher"
             className="group inline-flex h-10 items-center gap-2 rounded-xl border border-border/70 bg-card/80 px-3 text-sm font-medium text-muted-foreground shadow-[0_1px_0_rgba(255,255,255,.6)_inset] transition hover:border-primary/25 hover:text-foreground hover:shadow-soft"
           >
@@ -285,6 +291,7 @@ export function AppHeader() {
             <>
               <Link
                 to="/messages"
+                preload="intent"
                 aria-label="Messages"
                 className="relative hidden h-10 w-10 place-items-center rounded-full border border-border/70 bg-card/80 text-foreground transition hover:border-primary/25 hover:shadow-soft sm:grid"
               >
@@ -292,6 +299,7 @@ export function AppHeader() {
               </Link>
               <Link
                 to="/notifications"
+                preload="intent"
                 aria-label="Notifications"
                 className="relative grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-card/80 text-foreground transition hover:border-primary/25 hover:shadow-soft"
               >
@@ -339,7 +347,7 @@ export function AppHeader() {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link to="/intelligence" className="rounded-xl">
+                    <Link to="/intelligence" preload="intent" className="rounded-xl">
                       <Sparkles className="mr-2 h-4 w-4 text-primary" /> Intelligence GlobeLink
                     </Link>
                   </DropdownMenuItem>
@@ -348,6 +356,7 @@ export function AppHeader() {
                       <Link
                         to="/profile/$username"
                         params={{ username: profile.username }}
+                        preload="intent"
                         className="rounded-xl"
                       >
                         <UserIcon className="mr-2 h-4 w-4" /> Mon profil
@@ -355,28 +364,28 @@ export function AppHeader() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem asChild>
-                    <Link to="/settings/profile" className="rounded-xl">
+                    <Link to="/settings" preload="intent" className="rounded-xl">
                       <Settings className="mr-2 h-4 w-4" /> Paramètres et confidentialité
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/security" className="rounded-xl">
+                    <Link to="/security" preload="intent" className="rounded-xl">
                       <Shield className="mr-2 h-4 w-4 text-emerald-600" /> Sécurité du compte
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/dashboard" className="rounded-xl">
+                    <Link to="/dashboard" preload="intent" className="rounded-xl">
                       <LayoutDashboard className="mr-2 h-4 w-4" /> Tableau de bord
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/achievements" className="rounded-xl">
+                    <Link to="/achievements" preload="intent" className="rounded-xl">
                       <Trophy className="mr-2 h-4 w-4 text-accent" /> Récompenses
                     </Link>
                   </DropdownMenuItem>
                   {isAdmin && (
                     <DropdownMenuItem asChild>
-                      <Link to="/admin" className="rounded-xl">
+                      <Link to="/admin" preload="intent" className="rounded-xl">
                         <Shield className="mr-2 h-4 w-4" /> Administration
                       </Link>
                     </DropdownMenuItem>
@@ -397,7 +406,7 @@ export function AppHeader() {
               size="sm"
               className="h-10 rounded-xl bg-primary px-4 text-primary-foreground shadow-soft transition hover:-translate-y-0.5 hover:shadow-glow"
             >
-              <Link to="/auth">Connexion</Link>
+              <Link to="/auth" preload="intent">Connexion</Link>
             </Button>
           )}
         </div>
