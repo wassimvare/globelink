@@ -182,9 +182,21 @@ export async function getUnavailableUserIds(): Promise<Set<string>> {
       args?: Record<string, never>,
     ) => Promise<{ data: Array<{ user_id: string }> | null; error: { message: string } | null }>;
   };
-  const { data, error } = await rpcClient.rpc("get_unavailable_user_ids");
-  if (error) return new Set();
-  return new Set((data ?? []).map((row) => row.user_id));
+  const [{ data, error }, authResult] = await Promise.all([
+    rpcClient.rpc("get_unavailable_user_ids"),
+    supabase.auth.getUser(),
+  ]);
+  const unavailable = new Set((error ? [] : (data ?? [])).map((row) => row.user_id));
+  const currentUserId = authResult.data.user?.id;
+  if (!currentUserId) return unavailable;
+
+  const { data: controls } = await db
+    .from("user_relationship_controls")
+    .select("target_id")
+    .eq("owner_id", currentUserId)
+    .in("mode", ["blocked", "restricted"]);
+  for (const row of controls ?? []) unavailable.add(row.target_id);
+  return unavailable;
 }
 
 export async function getSuggestionExcludedUserIds(userId: string): Promise<Set<string>> {
