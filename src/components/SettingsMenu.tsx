@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Compass,
   Heart,
+  LifeBuoy,
   LockKeyhole,
   MessageCircle,
   Search,
@@ -70,6 +71,12 @@ const items = [
     label: "Compte, données et sécurité",
     description: "Appareils, export, permissions, désactivation et suppression",
     icon: ShieldCheck,
+  },
+  {
+    href: "/settings/help",
+    label: "Aide et support",
+    description: "FAQ, bugs, support, signalements, règles et informations GlobeLink",
+    icon: LifeBuoy,
   },
 ] as const;
 
