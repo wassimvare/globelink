@@ -20,6 +20,7 @@ import { PageTransition } from "@/components/PageTransition";
 import { NetworkStatus } from "@/components/NetworkStatus";
 import { PwaBootstrap } from "@/components/PwaBootstrap";
 import { MobileBootstrap } from "@/components/MobileBootstrap";
+import { NavigationProgress } from "@/components/NavigationProgress";
 import { CallProvider } from "@/components/CallProvider";
 import { OnboardingGate } from "@/components/OnboardingGate";
 
@@ -31,7 +32,8 @@ function NotFoundComponent() {
         <p className="mt-2 text-muted-foreground">Cette page n'existe pas.</p>
         <Link
           to="/"
-          className="mt-6 inline-flex rounded-full gradient-hero px-5 py-2 text-sm font-medium text-primary-foreground shadow-soft"
+          preload="intent"
+          className="mt-6 inline-flex min-h-11 items-center rounded-full gradient-hero px-5 py-2 text-sm font-medium text-primary-foreground shadow-soft"
         >
           Retour à l'accueil
         </Link>
@@ -50,24 +52,29 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="font-display text-2xl">Quelque chose a mal tourné</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Réessaie ou reviens à l'accueil.</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Réessaie. Si le problème continue, reviens à l'accueil ou contacte le support depuis les paramètres.
+        </p>
         {import.meta.env.DEV && (
           <details className="mt-4 rounded-2xl border border-border bg-muted/40 p-3 text-left text-xs">
             <summary className="cursor-pointer font-semibold">Voir la cause technique</summary>
             <p className="mt-2 break-words text-muted-foreground">{error.message}</p>
           </details>
         )}
-        <div className="mt-6 flex justify-center gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
               router.invalidate();
               reset();
             }}
-            className="rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground"
+            className="min-h-11 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground"
           >
             Réessayer
           </button>
-          <a href="/" className="rounded-full border border-border bg-background px-4 py-2 text-sm">
+          <a
+            href="/"
+            className="inline-flex min-h-11 items-center rounded-full border border-border bg-background px-5 py-2 text-sm font-semibold"
+          >
             Accueil
           </a>
         </div>
@@ -161,6 +168,7 @@ function AuthSync() {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
+      queryClient.removeQueries({ queryKey: ["auth-profile-status"] });
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
     });
     return () => sub.subscription.unsubscribe();
@@ -178,6 +186,7 @@ function RootComponent() {
             <AuthSync />
             <PwaBootstrap />
             <MobileBootstrap />
+            <NavigationProgress />
             <OnboardingGate>
               <div className="mobile-app-content">
                 <PageTransition>
