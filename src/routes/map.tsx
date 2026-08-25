@@ -51,6 +51,12 @@ import {
 import { getSignedMediaUrl } from "@/lib/storage";
 import { catalogIdentityKey, getCachedViewportCatalog } from "@/lib/viewport-catalog-cache";
 import { WORLD_MAP_HUBS } from "@/lib/world-map-hubs";
+import { useAuth } from "@/lib/auth-context";
+import {
+  DEFAULT_ACCOUNT_SETTINGS,
+  getAccountSettings,
+  type AccountSettings,
+} from "@/lib/account-settings";
 
 export const Route = createFileRoute("/map")({
   head: () => ({
@@ -108,6 +114,19 @@ const PRIMARY_PLACE_CATEGORIES = new Set(["deal", "restaurant", "hotel", "activi
 const SECONDARY_PLACE_CATEGORIES = MAP_PLACE_CATEGORIES.filter(
   (category) => !PRIMARY_PLACE_CATEGORIES.has(category.value),
 );
+
+function categoriesFromSettings(settings: AccountSettings) {
+  const categories = new Set<string>(ALL_PLACE_CATEGORIES);
+  if (!settings.map_offers) categories.delete("deal");
+  if (!settings.map_hotels) categories.delete("hotel");
+  if (!settings.map_restaurants) categories.delete("restaurant");
+  if (!settings.map_activities) {
+    for (const category of ALL_PLACE_CATEGORIES) {
+      if (!["deal", "hotel", "restaurant"].includes(category)) categories.delete(category);
+    }
+  }
+  return categories;
+}
 
 async function fetchMapCatalog(options: { limit: number; city?: string; country?: string }) {
   const [baseItems, dealItems] = await Promise.all([
@@ -221,8 +240,6 @@ function verifiedExternalImageUrl(value: string | null | undefined) {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:") return null;
-    // Older GlobeLink builds used Unsplash as a generic category illustration.
-    // Never promote that illustration to a photo of a named place.
     if (/^(images\.)?unsplash\.com$/i.test(url.hostname)) return null;
     return url.toString();
   } catch {
@@ -286,8 +303,19 @@ function preloadPlaceMediaUrl(value: string | null | undefined, highPriority = f
 }
 
 function MapPage() {
+  const { user } = useAuth();
   const mediaQueryClient = useQueryClient();
   const resolvePlaceMedia = useServerFn(resolveVerifiedPlaceMedia);
+  const appliedMapPreferencesForUser = useRef<string | null>(null);
+  const autoLocatedForUser = useRef<string | null>(null);
+
+  const { data: accountSettings } = useQuery({
+    queryKey: ["account-settings", user?.id],
+    enabled: !!user,
+    queryFn: () => getAccountSettings(user!.id),
+    staleTime: 60_000,
+  });
+  const effectiveAccountSettings = accountSettings ?? DEFAULT_ACCOUNT_SETTINGS;
 
   const { data: dbPlaces } = useQuery({
     queryKey: ["places"],
@@ -320,8 +348,6 @@ function MapPage() {
     retry: 1,
   });
 
-  // All categories are selected by default. Tapping one category from this
-  // state isolates it, which is clearer on mobile.
   const [activeCats, setActiveCats] = useState<Set<string>>(() => new Set(ALL_PLACE_CATEGORIES));
   const [budgets, setBudgets] = useState<Set<1 | 2 | 3 | 4>>(new Set([1, 2, 3, 4]));
   const [countryQuery, setCountryQuery] = useState("");
@@ -338,6 +364,63 @@ function MapPage() {
   const [userAccuracy, setUserAccuracy] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
   const [viewport, setViewport] = useState<MapViewport | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      appliedMapPreferencesForUser.current = null;
+      autoLocatedForUser.current = null;
+      setActiveCats(new Set(ALL_PLACE_CATEGORIES));
+      return;
+    }
+    if (!accountSettings || appliedMapPreferencesForUser.current === user.id) return;
+    setActiveCats(categoriesFromSettings(accountSettings));
+    appliedMapPreferencesForUser.current = user.id;
+  }, [user?.id, accountSettings]);
+
+  const locateMe = useCallback(
+    (silent = false) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        if (!silent) toast.error("La géolocalisation n'est pas disponible sur cet appareil.");
+        return;
+      }
+      const precise = effectiveAccountSettings.use_location && effectiveAccountSettings.precise_location;
+      setLocating(true);
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const latitude = precise ? coords.latitude : Math.round(coords.latitude * 100) / 100;
+          const longitude = precise ? coords.longitude : Math.round(coords.longitude * 100) / 100;
+          const rawAccuracy = Number.isFinite(coords.accuracy) ? Math.min(coords.accuracy, 5000) : null;
+          const accuracy = precise ? rawAccuracy : Math.max(rawAccuracy ?? 0, 1500);
+          setUserPosition([latitude, longitude]);
+          setUserAccuracy(accuracy || null);
+          setLocating(false);
+          if (!silent)
+            toast.success(precise ? "Ta position précise est affichée" : "Ta position approximative est affichée");
+        },
+        (error) => {
+          setLocating(false);
+          if (silent) return;
+          const message =
+            error.code === error.PERMISSION_DENIED
+              ? "Autorise la localisation dans ton navigateur pour te voir sur la carte."
+              : "Impossible de récupérer ta position pour le moment.";
+          toast.error(message);
+        },
+        {
+          enableHighAccuracy: precise,
+          timeout: 10000,
+          maximumAge: precise ? 120000 : 600000,
+        },
+      );
+    },
+    [effectiveAccountSettings.precise_location, effectiveAccountSettings.use_location],
+  );
+
+  useEffect(() => {
+    if (!user || !accountSettings?.use_location || autoLocatedForUser.current === user.id) return;
+    autoLocatedForUser.current = user.id;
+    locateMe(true);
+  }, [user?.id, accountSettings?.use_location, locateMe]);
 
   const viewportKey = viewport
     ? [
@@ -578,10 +661,6 @@ function MapPage() {
       ATTEMPTED_PLACE_MEDIA.set(prefetchId, Date.now());
       PREFETCHING_PLACE_MEDIA.add(prefetchId);
       try {
-        // Fast prefetch deliberately stops after linked media + Google Places.
-        // If it succeeds, seed the exact query used by CatalogImage. If it does
-        // not, do NOT cache a null result: opening the sheet can still run the
-        // deeper official-source fallbacks.
         const media = await resolvePlaceMedia({ data: { ...input, fastOnly: true } });
         if (media?.url) {
           mediaQueryClient.setQueryData(queryKey, media);
@@ -600,9 +679,6 @@ function MapPage() {
     if (!viewport || viewport.zoom < 10) return [] as AnyPlace[];
     const centerLat = (viewport.south + viewport.north) / 2;
     const centerLng = (viewport.west + viewport.east) / 2;
-    // Warm only the places the user is most likely to open next. Prefetching
-    // dozens of Google Places records at once can exhaust quotas and make every
-    // photo slower instead of faster.
     const limit = viewport.zoom >= 13 ? 6 : viewport.zoom >= 11 ? 4 : 2;
     return displayedPlaces
       .filter((place) => !place.isCommunity)
@@ -638,7 +714,7 @@ function MapPage() {
   }, [mediaPrefetchCandidates, prefetchPlaceMedia]);
 
   const { data: locatedTravelers = [] } = useQuery({
-    queryKey: ["located-travelers"],
+    queryKey: ["located-travelers", user?.id],
     queryFn: fetchLocatedTravelers,
     staleTime: 60_000,
   });
@@ -650,31 +726,6 @@ function MapPage() {
       (t) => !q || t.country.toLowerCase().includes(q) || t.city.toLowerCase().includes(q),
     );
   }, [locatedTravelers, countryQuery, showTravelers]);
-
-  const locateMe = () => {
-    if (!navigator.geolocation) {
-      toast.error("La géolocalisation n'est pas disponible sur cet appareil.");
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setUserPosition([coords.latitude, coords.longitude]);
-        setUserAccuracy(Number.isFinite(coords.accuracy) ? Math.min(coords.accuracy, 5000) : null);
-        setLocating(false);
-        toast.success("Ta position est affichée sur la carte");
-      },
-      (error) => {
-        setLocating(false);
-        const message =
-          error.code === error.PERMISSION_DENIED
-            ? "Autorise la localisation dans ton navigateur pour te voir sur la carte."
-            : "Impossible de récupérer ta position pour le moment.";
-        toast.error(message);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 120000 },
-    );
-  };
 
   const selectAllMapContent = () => {
     setActiveCats(new Set(ALL_PLACE_CATEGORIES));
@@ -694,10 +745,7 @@ function MapPage() {
       const next = new Set(current);
       if (next.has(v)) next.delete(v);
       else next.add(v);
-      if (next.size === 0) {
-        setShowTravelers(true);
-        return new Set(ALL_PLACE_CATEGORIES);
-      }
+      if (next.size === 0 && !showTravelers) return new Set(ALL_PLACE_CATEGORIES);
       return next;
     });
   };
@@ -802,11 +850,7 @@ function MapPage() {
             >
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="hidden h-11 rounded-full px-4 sm:inline-flex"
-            >
+            <Button asChild variant="outline" className="hidden h-11 rounded-full px-4 sm:inline-flex">
               <Link to="/match">
                 <Sparkles className="mr-2 h-4 w-4 text-accent" /> Travel Match
               </Link>
@@ -970,12 +1014,7 @@ function MapPage() {
             <LeafletMap
               places={displayedPlaces}
               travelers={filteredTravelers}
-              onSelect={(place) => {
-                // CatalogImage performs the full lookup on open. Pointer/touch
-                // prefetch already had a chance to warm the cache, so do not
-                // launch a duplicate Google request here.
-                setSelected(place);
-              }}
+              onSelect={(place) => setSelected(place)}
               onPrefetch={(place) => void prefetchPlaceMedia(place, true)}
               onTraveler={setSelectedTraveler}
               onCountry={setSelectedCountry}
@@ -1026,7 +1065,7 @@ function MapPage() {
               size="sm"
               variant={userPosition ? "default" : "secondary"}
               className="pointer-events-auto rounded-full border border-border/70 bg-background/95 px-3 shadow-elevated backdrop-blur"
-              onClick={locateMe}
+              onClick={() => locateMe(false)}
               disabled={locating}
             >
               {locating ? (
@@ -1034,7 +1073,9 @@ function MapPage() {
               ) : (
                 <LocateFixed className="mr-2 h-4 w-4" />
               )}
-              Ma position
+              {effectiveAccountSettings.precise_location && effectiveAccountSettings.use_location
+                ? "Ma position précise"
+                : "Ma position"}
             </Button>
             <Button
               asChild
@@ -1123,24 +1164,16 @@ function ViewportReporter({
     }, delay);
   };
 
-  // React-Leaflet owns the map lifecycle. Listening from a child of MapContainer
-  // guarantees that the map instance already exists. The previous implementation
-  // tried to attach listeners from an outer effect while mapRef.current could still
-  // be null; in that case no listener was ever registered and viewport stayed null.
   const map = useMapEventsHook({
     moveend: (event: any) => schedule(event.target),
     zoomend: (event: any) => schedule(event.target),
   });
 
   useEffect(() => {
-    // Emit the initial viewport immediately so the first city view loads POIs
-    // without requiring the user to jiggle the map.
     schedule(map, 0);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-    // map and onViewportChange are stable for the lifetime of this reporter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, onViewportChange]);
 
   return null;
@@ -1659,12 +1692,7 @@ function PlaceSheet({
                   Utilise Travel Match pour découvrir les voyageurs présents dans cette zone et
                   organise une sortie autour de ce lieu.
                 </p>
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="mt-3 rounded-full bg-background"
-                >
+                <Button asChild size="sm" variant="outline" className="mt-3 rounded-full bg-background">
                   <Link to="/match">Voir Travel Match</Link>
                 </Button>
               </div>
