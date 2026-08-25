@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { HelpCenter } from "@/components/HelpCenter";
+import { SupportConversations } from "@/components/SupportConversations";
 
 export const Route = createFileRoute("/_authenticated/settings/help")({
   head: () => ({
@@ -24,6 +25,7 @@ function HelpSettingsPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Retour aux paramètres
         </Link>
+        <SupportConversations />
         <HelpCenter />
       </main>
     </div>
