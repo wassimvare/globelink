@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
+import { loadNotificationPreferences, notificationAllowed } from "@/lib/user-preferences";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -79,12 +80,14 @@ export function AppHeader() {
     enabled: !!user,
     refetchInterval: 60_000,
     queryFn: async () => {
-      const { count } = await supabase
+      const { data } = await supabase
         .from("notifications")
-        .select("id", { count: "exact", head: true })
+        .select("id, type, metadata")
         .eq("recipient_id", user!.id)
-        .is("read_at", null);
-      return count ?? 0;
+        .is("read_at", null)
+        .limit(100);
+      const preferences = loadNotificationPreferences(user!.id);
+      return (data ?? []).filter((notification) => notificationAllowed(notification, preferences)).length;
     },
   });
 
@@ -121,6 +124,15 @@ export function AppHeader() {
     return () => {
       supabase.removeChannel(ch);
     };
+  }, [user, qc]);
+
+  useEffect(() => {
+    if (!user) return;
+    const refreshUnread = () =>
+      qc.invalidateQueries({ queryKey: ["notifications-unread", user.id] });
+    window.addEventListener("globelink:notification-preferences", refreshUnread);
+    return () =>
+      window.removeEventListener("globelink:notification-preferences", refreshUnread);
   }, [user, qc]);
 
   async function signOut() {
@@ -344,7 +356,7 @@ export function AppHeader() {
                   )}
                   <DropdownMenuItem asChild>
                     <Link to="/settings/profile" className="rounded-xl">
-                      <Settings className="mr-2 h-4 w-4" /> Paramètres du profil
+                      <Settings className="mr-2 h-4 w-4" /> Paramètres et confidentialité
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
