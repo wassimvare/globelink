@@ -14,10 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typecheck:
-    name: TypeScript
+  build:
+    name: Production build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,8 +31,5 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
-      - name: Generate TanStack route tree
-        run: npx --yes @tanstack/router-cli@1.167.30 generate
-
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Build GlobeLink
+        run: npm run build
