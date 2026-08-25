@@ -1,30 +1,28 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { getSignedMediaUrl, uploadMedia } from "@/lib/storage";
 import { AppHeader } from "@/components/AppHeader";
+import { SettingsHub } from "@/components/SettingsHub";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth-context";
-import { Camera, ImagePlus, Loader2, Save, ShieldCheck, ArrowRight } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Save, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/settings/profile")({
   head: () => ({
     meta: [
-      { title: "Modifier mon profil — GlobeLink" },
+      { title: "Paramètres et confidentialité — GlobeLink" },
       {
         name: "description",
-        content: "Personnalise ta photo, ton pseudo, ta bio et tes réseaux sociaux sur GlobeLink.",
+        content: "Gère ton compte, ta confidentialité, tes notifications et ton profil GlobeLink.",
       },
-      { property: "og:title", content: "Modifier mon profil — GlobeLink" },
-      { property: "og:description", content: "Personnalise ton profil voyageur GlobeLink." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "robots", content: "noindex, nofollow" },
     ],
   }),
   component: EditProfilePage,
@@ -111,16 +109,16 @@ function EditProfilePage() {
       display_name: profile.display_name ?? "",
       bio: profile.bio ?? "",
       country: profile.country ?? "",
-      city: (profile as { city?: string | null }).city ?? "",
-      birth_date: (profile as { birth_date?: string | null }).birth_date ?? "",
-      travel_style: (profile as { travel_style?: string | null }).travel_style ?? "",
-      website_url: (profile as { website_url?: string | null }).website_url ?? "",
-      instagram: (profile as { instagram?: string | null }).instagram ?? "",
-      tiktok: (profile as { tiktok?: string | null }).tiktok ?? "",
-      youtube: (profile as { youtube?: string | null }).youtube ?? "",
-      x_handle: (profile as { x_handle?: string | null }).x_handle ?? "",
+      city: profile.city ?? "",
+      birth_date: profile.birth_date ?? "",
+      travel_style: profile.travel_style ?? "",
+      website_url: profile.website_url ?? "",
+      instagram: profile.instagram ?? "",
+      tiktok: profile.tiktok ?? "",
+      youtube: profile.youtube ?? "",
+      x_handle: profile.x_handle ?? "",
       languages: (profile.languages ?? []).join(", "),
-      interests: ((profile as { interests?: string[] | null }).interests ?? []).join(", "),
+      interests: (profile.interests ?? []).join(", "),
       visited_countries: (profile.visited_countries ?? []).join(", "),
     });
     setAvatarPath(profile.avatar_url ?? null);
@@ -212,7 +210,7 @@ function EditProfilePage() {
           languages: toList(form.languages),
           interests: toList(form.interests),
           visited_countries: toList(form.visited_countries),
-        } as never)
+        })
         .eq("id", user.id);
       if (error) {
         if (error.code === "23505") {
@@ -239,7 +237,7 @@ function EditProfilePage() {
     return (
       <div className="app-page">
         <AppHeader />
-        <div className="mx-auto max-w-2xl px-4 py-16 text-center text-muted-foreground">
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted-foreground">
           Chargement…
         </div>
       </div>
@@ -249,189 +247,188 @@ function EditProfilePage() {
   return (
     <div className="min-h-screen bg-background pb-24">
       <AppHeader />
-      <div className="mx-auto max-w-2xl px-4 py-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="font-display text-3xl">Modifier mon profil</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Photo, pseudo, biographie, infos et réseaux sociaux.
-            </p>
-          </div>
-          <Link
-            to="/security"
-            className="pressable inline-flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.07] px-4 text-sm font-semibold text-emerald-700 dark:text-emerald-300"
-          >
-            <ShieldCheck className="h-4 w-4" /> Sécurité du compte{" "}
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
+      <main className="mx-auto max-w-3xl px-4 py-7 sm:py-9">
+        <SettingsHub />
 
-        {/* Bannière + avatar */}
-        <section className="mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
-          <div className="relative h-36 bg-gradient-to-br from-primary via-primary/80 to-accent">
-            {bannerUrl && <img src={bannerUrl} alt="" className="h-full w-full object-cover" />}
-            <button
-              onClick={() => bannerInput.current?.click()}
-              className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full bg-background/85 px-3 py-1.5 text-xs font-medium shadow-soft backdrop-blur"
-            >
-              {uploading === "banner" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ImagePlus className="h-3.5 w-3.5" />
-              )}{" "}
-              Bannière
-            </button>
-            <input
-              ref={bannerInput}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => pickImage("banner", e.target.files?.[0])}
-            />
+        <section id="profile-editor" className="mt-6 scroll-mt-24">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <UserRound className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-display text-2xl">Votre compte</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Modifiez votre photo, votre identité, vos informations de voyage et vos réseaux.
+              </p>
+            </div>
           </div>
-          <div className="flex items-end gap-4 px-6 pb-6">
-            <div className="relative -mt-12">
-              <div className="grid h-24 w-24 place-items-center overflow-hidden rounded-full bg-secondary text-3xl ring-4 ring-card">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  (form.username[0]?.toUpperCase() ?? "?")
-                )}
-              </div>
+
+          <section className="overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
+            <div className="relative h-36 bg-gradient-to-br from-primary via-primary/80 to-accent">
+              {bannerUrl && <img src={bannerUrl} alt="" className="h-full w-full object-cover" />}
               <button
-                onClick={() => avatarInput.current?.click()}
-                aria-label="Changer la photo de profil"
-                className="absolute -bottom-1 -right-1 grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground shadow-elevated"
+                onClick={() => bannerInput.current?.click()}
+                className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full bg-background/85 px-3 py-1.5 text-xs font-medium shadow-soft backdrop-blur"
               >
-                {uploading === "avatar" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {uploading === "banner" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Camera className="h-4 w-4" />
-                )}
+                  <ImagePlus className="h-3.5 w-3.5" />
+                )}{" "}
+                Bannière
               </button>
               <input
-                ref={avatarInput}
+                ref={bannerInput}
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => pickImage("avatar", e.target.files?.[0])}
+                onChange={(e) => pickImage("banner", e.target.files?.[0])}
               />
             </div>
-            <p className="pb-2 text-sm text-muted-foreground">JPG ou PNG, 8 Mo max.</p>
+            <div className="flex items-end gap-4 px-6 pb-6">
+              <div className="relative -mt-12">
+                <div className="grid h-24 w-24 place-items-center overflow-hidden rounded-full bg-secondary text-3xl ring-4 ring-card">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    (form.username[0]?.toUpperCase() ?? "?")
+                  )}
+                </div>
+                <button
+                  onClick={() => avatarInput.current?.click()}
+                  aria-label="Changer la photo de profil"
+                  className="absolute -bottom-1 -right-1 grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground shadow-elevated"
+                >
+                  {uploading === "avatar" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Camera className="h-4 w-4" />
+                  )}
+                </button>
+                <input
+                  ref={avatarInput}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => pickImage("avatar", e.target.files?.[0])}
+                />
+              </div>
+              <p className="pb-2 text-sm text-muted-foreground">JPG ou PNG, 8 Mo max.</p>
+            </div>
+          </section>
+
+          <div className="mt-6 space-y-6">
+            <Block title="Identité">
+              <Field label="Nom d'utilisateur" error={errors.username}>
+                <Input
+                  value={form.username}
+                  onChange={set("username")}
+                  placeholder="globetrotteur"
+                  maxLength={30}
+                />
+              </Field>
+              <Field label="Nom affiché" error={errors.display_name}>
+                <Input
+                  value={form.display_name}
+                  onChange={set("display_name")}
+                  placeholder="Camille Martin"
+                  maxLength={60}
+                />
+              </Field>
+              <Field label="Biographie" error={errors.bio}>
+                <Textarea
+                  value={form.bio}
+                  onChange={set("bio")}
+                  rows={4}
+                  maxLength={500}
+                  placeholder="Raconte ton style de voyage en quelques lignes…"
+                />
+                <span className="mt-1 block text-right text-xs text-muted-foreground">
+                  {form.bio.length}/500
+                </span>
+              </Field>
+            </Block>
+
+            <Block title="Informations personnelles">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Pays" error={errors.country}>
+                  <Input value={form.country} onChange={set("country")} placeholder="France" />
+                </Field>
+                <Field label="Ville" error={errors.city}>
+                  <Input value={form.city} onChange={set("city")} placeholder="Lyon" />
+                </Field>
+                <Field label="Date de naissance" error={errors.birth_date}>
+                  <Input type="date" value={form.birth_date} onChange={set("birth_date")} />
+                </Field>
+                <Field label="Style de voyage" error={errors.travel_style}>
+                  <Input
+                    value={form.travel_style}
+                    onChange={set("travel_style")}
+                    placeholder="Backpack, slow travel…"
+                  />
+                </Field>
+              </div>
+              <Field label="Langues parlées (séparées par des virgules)">
+                <Input
+                  value={form.languages}
+                  onChange={set("languages")}
+                  placeholder="Français, Anglais, Espagnol"
+                />
+              </Field>
+              <Field label="Centres d'intérêt (séparés par des virgules)">
+                <Input
+                  value={form.interests}
+                  onChange={set("interests")}
+                  placeholder="Randonnée, Street food, Photo"
+                />
+              </Field>
+              <Field label="Pays visités (séparés par des virgules)">
+                <Input
+                  value={form.visited_countries}
+                  onChange={set("visited_countries")}
+                  placeholder="Japon, Pérou, Islande"
+                />
+              </Field>
+            </Block>
+
+            <Block title="Réseaux sociaux">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Site web" error={errors.website_url}>
+                  <Input
+                    value={form.website_url}
+                    onChange={set("website_url")}
+                    placeholder="https://monblog.com"
+                  />
+                </Field>
+                <Field label="Instagram" error={errors.instagram}>
+                  <Input value={form.instagram} onChange={set("instagram")} placeholder="@pseudo" />
+                </Field>
+                <Field label="TikTok" error={errors.tiktok}>
+                  <Input value={form.tiktok} onChange={set("tiktok")} placeholder="@pseudo" />
+                </Field>
+                <Field label="YouTube" error={errors.youtube}>
+                  <Input value={form.youtube} onChange={set("youtube")} placeholder="@chaine" />
+                </Field>
+                <Field label="X (Twitter)" error={errors.x_handle}>
+                  <Input value={form.x_handle} onChange={set("x_handle")} placeholder="@pseudo" />
+                </Field>
+              </div>
+            </Block>
+          </div>
+
+          <div className="sticky bottom-4 mt-8 flex gap-3">
+            <Button
+              onClick={save}
+              disabled={saving}
+              size="lg"
+              className="flex-1 gap-2 shadow-elevated"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{" "}
+              Enregistrer les modifications
+            </Button>
           </div>
         </section>
-
-        <div className="mt-6 space-y-6">
-          <Block title="Identité">
-            <Field label="Nom d'utilisateur" error={errors.username}>
-              <Input
-                value={form.username}
-                onChange={set("username")}
-                placeholder="globetrotteur"
-                maxLength={30}
-              />
-            </Field>
-            <Field label="Nom affiché" error={errors.display_name}>
-              <Input
-                value={form.display_name}
-                onChange={set("display_name")}
-                placeholder="Camille Martin"
-                maxLength={60}
-              />
-            </Field>
-            <Field label="Biographie" error={errors.bio}>
-              <Textarea
-                value={form.bio}
-                onChange={set("bio")}
-                rows={4}
-                maxLength={500}
-                placeholder="Raconte ton style de voyage en quelques lignes…"
-              />
-              <span className="mt-1 block text-right text-xs text-muted-foreground">
-                {form.bio.length}/500
-              </span>
-            </Field>
-          </Block>
-
-          <Block title="Informations personnelles">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Pays" error={errors.country}>
-                <Input value={form.country} onChange={set("country")} placeholder="France" />
-              </Field>
-              <Field label="Ville" error={errors.city}>
-                <Input value={form.city} onChange={set("city")} placeholder="Lyon" />
-              </Field>
-              <Field label="Date de naissance" error={errors.birth_date}>
-                <Input type="date" value={form.birth_date} onChange={set("birth_date")} />
-              </Field>
-              <Field label="Style de voyage" error={errors.travel_style}>
-                <Input
-                  value={form.travel_style}
-                  onChange={set("travel_style")}
-                  placeholder="Backpack, slow travel…"
-                />
-              </Field>
-            </div>
-            <Field label="Langues parlées (séparées par des virgules)">
-              <Input
-                value={form.languages}
-                onChange={set("languages")}
-                placeholder="Français, Anglais, Espagnol"
-              />
-            </Field>
-            <Field label="Centres d'intérêt (séparés par des virgules)">
-              <Input
-                value={form.interests}
-                onChange={set("interests")}
-                placeholder="Randonnée, Street food, Photo"
-              />
-            </Field>
-            <Field label="Pays visités (séparés par des virgules)">
-              <Input
-                value={form.visited_countries}
-                onChange={set("visited_countries")}
-                placeholder="Japon, Pérou, Islande"
-              />
-            </Field>
-          </Block>
-
-          <Block title="Réseaux sociaux">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Site web" error={errors.website_url}>
-                <Input
-                  value={form.website_url}
-                  onChange={set("website_url")}
-                  placeholder="https://monblog.com"
-                />
-              </Field>
-              <Field label="Instagram" error={errors.instagram}>
-                <Input value={form.instagram} onChange={set("instagram")} placeholder="@pseudo" />
-              </Field>
-              <Field label="TikTok" error={errors.tiktok}>
-                <Input value={form.tiktok} onChange={set("tiktok")} placeholder="@pseudo" />
-              </Field>
-              <Field label="YouTube" error={errors.youtube}>
-                <Input value={form.youtube} onChange={set("youtube")} placeholder="@chaine" />
-              </Field>
-              <Field label="X (Twitter)" error={errors.x_handle}>
-                <Input value={form.x_handle} onChange={set("x_handle")} placeholder="@pseudo" />
-              </Field>
-            </div>
-          </Block>
-        </div>
-
-        <div className="sticky bottom-4 mt-8 flex gap-3">
-          <Button
-            onClick={save}
-            disabled={saving}
-            size="lg"
-            className="flex-1 gap-2 shadow-elevated"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{" "}
-            Enregistrer
-          </Button>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -439,7 +436,7 @@ function EditProfilePage() {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-soft">
-      <h2 className="font-display text-lg">{title}</h2>
+      <h3 className="font-display text-lg">{title}</h3>
       {children}
     </section>
   );
