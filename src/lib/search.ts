@@ -5,7 +5,14 @@ import { isTrustedVisibleCatalogItem } from "./catalog-source-routing";
 import { slugifyDestination } from "./phase2";
 
 export type SearchKind =
-  "user" | "destination" | "activity" | "post" | "hotel" | "restaurant" | "trip" | "question";
+  | "user"
+  | "destination"
+  | "activity"
+  | "post"
+  | "hotel"
+  | "restaurant"
+  | "trip"
+  | "question";
 export type SearchResult = {
   id: string;
   kind: SearchKind;
@@ -74,6 +81,8 @@ export async function universalSearch(
     supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url, bio, country")
+      .eq("status", "active")
+      .neq("visibility", "hidden")
       .or(`username.ilike.${like},display_name.ilike.${like},country.ilike.${like}`)
       .limit(limit * 2),
     supabase
