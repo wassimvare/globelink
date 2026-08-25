@@ -167,6 +167,7 @@ export async function searchProfilesForControl(userId: string, term: string) {
     .from("profiles")
     .select("id, username, display_name, avatar_url, verified")
     .eq("status", "active")
+    .neq("visibility", "hidden")
     .neq("id", userId)
     .or(`username.ilike.${like},display_name.ilike.${like}`)
     .limit(8);
