@@ -4,6 +4,7 @@ import type { LiveCatalogItem } from "./live-catalog";
 import { isTrustedVisibleCatalogItem } from "./catalog-source-routing";
 import { slugifyDestination } from "./phase2";
 import { getSuggestionExcludedUserIds } from "./account-settings";
+import { recordSearchHistory } from "./activity";
 
 export type SearchKind =
   | "user"
@@ -79,6 +80,7 @@ export async function universalSearch(
   const like = `%${q}%`;
   const authResult = await supabase.auth.getUser();
   const currentUserId = authResult.data.user?.id ?? null;
+  if (currentUserId && q.length >= 2) void recordSearchHistory(q);
 
   const [uRes, pRes, tRes, extRes, qRes, dRes, excludedUsers] = await Promise.all([
     supabase
