@@ -12,6 +12,16 @@ export const Route = createFileRoute("/_authenticated")({
     if (!data.user.email_confirmed_at && !data.user.phone_confirmed_at) {
       throw redirect({ to: "/verify-email" });
     }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("status")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profile?.status === "deactivated") {
+      throw redirect({ to: "/account-deactivated" });
+    }
+
     return { user: data.user };
   },
 
