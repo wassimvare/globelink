@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { getSuggestionExcludedUserIds } from "@/lib/account-settings";
 import { AppHeader } from "@/components/AppHeader";
 import { MessageSquare, Search, Inbox, Circle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -58,23 +59,31 @@ function MessagesPage() {
     queryKey: ["conversations", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase
-        .from("conversation_participants")
-        .select(
-          `
-          conversation_id,
-          last_read_at,
-          conversation:conversation_id (
-            id, last_message_at,
-            participants:conversation_participants ( user_id, profile:user_id ( username, display_name, avatar_url ) ),
-            messages ( content, created_at, sender_id, attachment_type )
+      const [conversationResult, excluded] = await Promise.all([
+        supabase
+          .from("conversation_participants")
+          .select(
+            `
+            conversation_id,
+            last_read_at,
+            conversation:conversation_id (
+              id, last_message_at,
+              participants:conversation_participants ( user_id, profile:user_id ( username, display_name, avatar_url ) ),
+              messages ( content, created_at, sender_id, attachment_type )
+            )
+          `,
           )
-        `,
-        )
-        .eq("user_id", user!.id);
-      const list = (data ?? []) as unknown as Row[];
+          .eq("user_id", user!.id),
+        getSuggestionExcludedUserIds(user!.id),
+      ]);
+      const list = (conversationResult.data ?? []) as unknown as Row[];
       return list
-        .filter((r) => r.conversation)
+        .filter((row) => {
+          if (!row.conversation) return false;
+          if (row.conversation.participants.length !== 2) return true;
+          const other = row.conversation.participants.find((participant) => participant.user_id !== user!.id);
+          return !other || !excluded.has(other.user_id);
+        })
         .sort(
           (a, b) =>
             new Date(b.conversation!.last_message_at).getTime() -
