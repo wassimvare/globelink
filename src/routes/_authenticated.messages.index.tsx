@@ -4,10 +4,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { getSuggestionExcludedUserIds } from "@/lib/account-settings";
+import {
+  listIncomingMessageRequests,
+  respondToMessageRequest,
+} from "@/lib/social-privacy";
 import { AppHeader } from "@/components/AppHeader";
-import { MessageSquare, Search, Inbox, Circle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Check, Circle, Inbox, MessageSquare, Search, UserRoundPlus, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/messages/")({
   head: () => ({
@@ -54,6 +60,7 @@ function MessagesPage() {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
   const [onlyUnread, setOnlyUnread] = useState(false);
+  const [requestBusy, setRequestBusy] = useState<string | null>(null);
 
   const { data: rows } = useQuery({
     queryKey: ["conversations", user?.id],
@@ -92,6 +99,13 @@ function MessagesPage() {
     },
   });
 
+  const { data: incomingRequests = [] } = useQuery({
+    queryKey: ["incoming-message-requests", user?.id],
+    enabled: !!user,
+    queryFn: () => listIncomingMessageRequests(user!.id),
+    staleTime: 10_000,
+  });
+
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -101,8 +115,10 @@ function MessagesPage() {
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
           const inserted = payload.new as { attachment_type?: string | null };
-          if (inserted.attachment_type !== "rtc")
+          if (inserted.attachment_type !== "rtc") {
             qc.invalidateQueries({ queryKey: ["conversations", user.id] });
+            qc.invalidateQueries({ queryKey: ["incoming-message-requests", user.id] });
+          }
         },
       )
       .on(
@@ -113,7 +129,10 @@ function MessagesPage() {
           table: "conversation_participants",
           filter: `user_id=eq.${user.id}`,
         },
-        () => qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
+        () => {
+          qc.invalidateQueries({ queryKey: ["conversations", user.id] });
+          qc.invalidateQueries({ queryKey: ["incoming-message-requests", user.id] });
+        },
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, () =>
         qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
@@ -124,9 +143,19 @@ function MessagesPage() {
     };
   }, [user, qc]);
 
+  const incomingIds = useMemo(
+    () => new Set(incomingRequests.map((request) => request.conversation_id)),
+    [incomingRequests],
+  );
+  const requestRows = useMemo(
+    () => (rows ?? []).filter((row) => incomingIds.has(row.conversation_id)),
+    [rows, incomingIds],
+  );
+
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (rows ?? []).filter((r) => {
+      if (incomingIds.has(r.conversation_id)) return false;
       const other = r.conversation!.participants.find((p) => p.user_id !== user?.id);
       const name = (
         other?.profile?.display_name ??
@@ -147,7 +176,25 @@ function MessagesPage() {
       if (!needle) return true;
       return name.includes(needle) || (last?.content ?? "").toLowerCase().includes(needle);
     });
-  }, [rows, user?.id, query, onlyUnread]);
+  }, [rows, incomingIds, user?.id, query, onlyUnread]);
+
+  async function answerRequest(conversationId: string, action: "accepted" | "declined") {
+    if (!user || requestBusy) return;
+    setRequestBusy(conversationId);
+    try {
+      await respondToMessageRequest(conversationId, action);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["incoming-message-requests", user.id] }),
+        qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
+        qc.invalidateQueries({ queryKey: ["message-request", conversationId] }),
+      ]);
+      toast.success(action === "accepted" ? "Demande acceptée" : "Demande refusée");
+    } catch (error) {
+      toast.error((error as Error).message || "Action impossible");
+    } finally {
+      setRequestBusy(null);
+    }
+  }
 
   return (
     <div className="app-page">
@@ -162,6 +209,62 @@ function MessagesPage() {
             <p className="text-sm text-muted-foreground">Discussions privées avec la communauté</p>
           </div>
         </header>
+
+        {requestRows.length > 0 && (
+          <section className="mb-5 overflow-hidden rounded-3xl border border-primary/20 bg-primary/[0.035] shadow-soft">
+            <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3 text-sm font-semibold">
+              <UserRoundPlus className="h-4 w-4 text-primary" />
+              Demandes de messages
+              <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                {requestRows.length}
+              </span>
+            </div>
+            <div className="divide-y divide-border/70">
+              {requestRows.map((row) => {
+                const other = row.conversation!.participants.find((p) => p.user_id !== user!.id);
+                const name = other?.profile?.display_name ?? other?.profile?.username ?? "Voyageur";
+                const visibleMessages = row.conversation!.messages.filter((message) => message.attachment_type !== "rtc");
+                const first = [...visibleMessages].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))[0];
+                return (
+                  <div key={row.conversation_id} className="p-4">
+                    <div className="flex items-center gap-3">
+                      {other?.profile?.avatar_url ? (
+                        <img src={other.profile.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
+                      ) : (
+                        <div className="grid h-11 w-11 place-items-center rounded-full bg-secondary font-semibold">
+                          {name[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {first?.content || "Souhaite t'envoyer un message"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        disabled={requestBusy === row.conversation_id}
+                        onClick={() => void answerRequest(row.conversation_id, "declined")}
+                        className="rounded-xl"
+                      >
+                        <X className="mr-1 h-4 w-4" /> Refuser
+                      </Button>
+                      <Button
+                        disabled={requestBusy === row.conversation_id}
+                        onClick={() => void answerRequest(row.conversation_id, "accepted")}
+                        className="rounded-xl"
+                      >
+                        <Check className="mr-1 h-4 w-4" /> Accepter
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <div className="mb-4 flex gap-2">
           <label className="relative min-w-0 flex-1">
@@ -182,7 +285,7 @@ function MessagesPage() {
           </button>
         </div>
 
-        {!rows || rows.length === 0 ? (
+        {!rows || (rows.length === 0 && requestRows.length === 0) ? (
           <div className="rounded-3xl border border-dashed border-border p-10 text-center">
             <Search className="mx-auto h-6 w-6 text-accent" />
             <p className="mt-3 text-sm text-muted-foreground">
@@ -220,11 +323,7 @@ function MessagesPage() {
                     className="flex items-center gap-3 p-4 transition hover:bg-secondary/50"
                   >
                     {other?.profile?.avatar_url ? (
-                      <img
-                        src={other.profile.avatar_url}
-                        alt=""
-                        className="h-12 w-12 rounded-full object-cover"
-                      />
+                      <img src={other.profile.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />
                     ) : (
                       <div className="grid h-12 w-12 place-items-center rounded-full bg-secondary text-sm font-medium">
                         {name[0]?.toUpperCase()}
@@ -235,20 +334,15 @@ function MessagesPage() {
                         <span className="truncate font-semibold">{name}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {last
-                            ? formatDistanceToNow(new Date(last.created_at), {
-                                addSuffix: true,
-                                locale: fr,
-                              })
+                            ? formatDistanceToNow(new Date(last.created_at), { addSuffix: true, locale: fr })
                             : "—"}
                         </span>
                       </div>
-                      <p
-                        className={`truncate text-sm ${unread ? "font-medium text-foreground" : "text-muted-foreground"}`}
-                      >
+                      <p className={`truncate text-sm ${unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>
                         {last?.content ??
                           (last?.attachment_type
                             ? attachmentPreview(last.attachment_type)
-                            : "✨ Nouveau match — envoie le premier message")}
+                            : "✨ Conversation ouverte — envoie le premier message")}
                       </p>
                     </div>
                     {unread && <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />}
