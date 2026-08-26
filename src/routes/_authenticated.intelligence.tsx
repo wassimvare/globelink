@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_authenticated/intelligence")({
       {
         name: "description",
         content:
-          "GlobeLink IA aide gratuitement à cadrer un voyage, tandis que IA+ recherche, compare et utilise le carnet GlobeLink.",
+          "GlobeLink IA aide gratuitement à trouver des idées, tandis que IA+ recherche, compare et organise le vrai voyage avec le carnet GlobeLink.",
       },
     ],
   }),
@@ -50,26 +50,27 @@ type ChatTurn = {
 const FREE_FEATURES = [
   "Questions et conseils rapides",
   "Idées de destinations",
-  "Plan de départ et journée exemple",
-  "Suggestions générales d’hôtels, restaurants et activités",
+  "Exemple de journée",
+  "Conseils généraux sur le budget et l’organisation",
   "40 demandes de chat par jour",
 ];
 
 const PRO_FEATURES = [
-  "Recherche web et sources récentes",
-  "Carnet GlobeLink connecté automatiquement",
-  "Voyage complet et réorganisation intelligente",
-  "Comparaison détaillée avec verdict",
-  "Budget analysé avec les dépenses enregistrées",
-  "250 demandes par jour par défaut",
+  "Analyse de ton voyage et de ton carnet",
+  "Recherche de vrais hôtels, restaurants et activités",
+  "Comparaison des options et des prix",
+  "Itinéraire complet jour par jour",
+  "Recommandations adaptées à tes dates, ton budget et tes préférences",
+  "Ajustements du voyage pendant la préparation",
 ];
 
 const SUGGESTIONS = [
   {
-    label: "Préparer un voyage",
-    sublabel: "Obtenir un plan de départ gratuit",
+    label: "Imaginer un voyage",
+    sublabel: "Obtenir des idées pour commencer",
     icon: Plane,
-    href: "/ai-trip",
+    prompt:
+      "Aide-moi à imaginer un voyage : propose-moi quelques pistes de destinations et les grandes lignes selon mes envies.",
   },
   {
     label: "Trouver une destination",
@@ -81,11 +82,11 @@ const SUGGESTIONS = [
     label: "Que faire sur place ?",
     sublabel: "Quelques idées pour commencer",
     icon: Compass,
-    prompt: "Donne-moi des idées de choses à faire sur ma prochaine destination.",
+    prompt: "Donne-moi des idées générales de choses à faire sur ma prochaine destination.",
   },
   {
-    label: "Comparer des hôtels avec sources",
-    sublabel: "Fonction IA+",
+    label: "Comparer de vraies options",
+    sublabel: "Recherche et comparaison avec IA+",
     icon: Hotel,
     href: "/ai-pro",
     premium: true,
@@ -138,6 +139,11 @@ function IntelligencePage() {
     assistant.mutate(message);
   };
 
+  const openFreeAssistant = () => {
+    document.getElementById("assistant-gratuit")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => document.getElementById("globelink-free-input")?.focus(), 450);
+  };
+
   return (
     <div className="app-page min-h-screen">
       <AppHeader />
@@ -152,7 +158,7 @@ function IntelligencePage() {
               Ton assistant voyage
             </h1>
             <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Commence gratuitement pour trouver des idées. Passe à IA+ quand tu veux que GlobeLink analyse ton vrai voyage, recherche des options et t’aide à prendre des décisions plus précises.
+              Gratuit pour trouver des idées et préparer les grandes lignes. Passe à IA+ quand tu veux que GlobeLink recherche de vraies options, compare et organise ton voyage avec plus de contexte.
             </p>
           </div>
 
@@ -164,7 +170,7 @@ function IntelligencePage() {
                 </div>
                 <div>
                   <div className="text-xl font-bold text-cyan-500">Gratuit</div>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Pour chercher une idée et cadrer rapidement un voyage.</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">Pour t’inspirer et préparer les grandes lignes.</p>
                 </div>
               </div>
               <div className="mt-5 space-y-2.5">
@@ -176,12 +182,10 @@ function IntelligencePage() {
                 ))}
               </div>
               <div className="mt-5 rounded-2xl border border-border/60 bg-background/55 p-3 text-xs leading-relaxed text-muted-foreground">
-                <strong className="text-foreground">Limite du mode gratuit :</strong> il ne consulte pas ton carnet, ne fait pas de comparaison web approfondie et te donne un plan de départ plutôt qu’un voyage entièrement orchestré.
+                <strong className="text-foreground">Ce que le gratuit ne fait pas :</strong> il ne consulte pas ton carnet et ne recherche pas les prix, disponibilités ou établissements en temps réel.
               </div>
-              <Button asChild variant="outline" className="mt-5 w-full rounded-2xl border-cyan-400/30">
-                <Link to="/ai-trip">
-                  <Wand2 className="mr-2 h-4 w-4" /> Créer mon plan de départ
-                </Link>
+              <Button type="button" variant="outline" className="mt-5 w-full rounded-2xl border-cyan-400/30" onClick={openFreeAssistant}>
+                <Wand2 className="mr-2 h-4 w-4" /> Demander une idée à l’IA
               </Button>
             </section>
 
@@ -202,7 +206,7 @@ function IntelligencePage() {
                       )}
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
-                      Pour organiser un vrai voyage avec beaucoup plus de contexte.
+                      Pour organiser réellement ton voyage avec des données et du contexte.
                     </p>
                   </div>
                 </div>
@@ -210,9 +214,9 @@ function IntelligencePage() {
               </div>
 
               <div className="relative mt-5 grid gap-2 sm:grid-cols-2">
-                <PremiumMini icon={Globe2} title="Recherche récente" text="Sources web quand disponibles" />
+                <PremiumMini icon={Globe2} title="Recherche réelle" text="Hôtels, restaurants et activités" />
                 <PremiumMini icon={Database} title="Carnet connecté" text="Voyage, journées et dépenses" />
-                <PremiumMini icon={Hotel} title="Vraies comparaisons" text="Options + verdict clair" />
+                <PremiumMini icon={Hotel} title="Comparaisons" text="Options, prix et verdict clair" />
                 <PremiumMini icon={Zap} title="250 demandes/jour" text="Usage bien plus confortable" />
               </div>
 
@@ -233,14 +237,14 @@ function IntelligencePage() {
           </div>
         </header>
 
-        <section className="mx-auto mt-5 max-w-5xl rounded-[2rem] border border-border/70 bg-card p-4 shadow-soft sm:p-6">
+        <section id="assistant-gratuit" className="mx-auto mt-5 max-w-5xl scroll-mt-24 rounded-[2rem] border border-border/70 bg-card p-4 shadow-soft sm:p-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="eyebrow">
                 <Sparkles className="h-3.5 w-3.5" /> Assistant gratuit
               </div>
-              <h2 className="mt-1 font-display text-2xl font-bold">Que veux-tu savoir ?</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Pour une question rapide, le mode gratuit reste disponible ici.</p>
+              <h2 className="mt-1 font-display text-2xl font-bold">Besoin d’une idée ?</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Le mode gratuit t’aide à t’inspirer et préparer les grandes lignes, sans recherche en temps réel.</p>
             </div>
             {remaining !== null && (
               <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground">
@@ -292,7 +296,7 @@ function IntelligencePage() {
                     <div className="md-body"><ReactMarkdown>{turn.content}</ReactMarkdown></div>
                     {!hasPlus && (
                       <div className="mt-4 rounded-xl border border-violet-400/20 bg-violet-500/[0.06] p-3 text-xs leading-relaxed text-muted-foreground">
-                        Besoin d’une comparaison avec sources, d’un plan complet ou d’une analyse de ton carnet ? <Link to="/ai-pro" className="font-semibold text-violet-400 hover:underline">IA+ est conçu pour ça.</Link>
+                        Besoin de rechercher de vrais établissements, comparer des options ou construire un itinéraire complet ? <Link to="/ai-pro" className="font-semibold text-violet-400 hover:underline">IA+ est conçu pour ça.</Link>
                       </div>
                     )}
                   </article>
@@ -303,6 +307,7 @@ function IntelligencePage() {
 
           <div className="mt-5 flex items-center gap-2 rounded-2xl border border-border/80 bg-background/75 p-2 focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10">
             <Input
+              id="globelink-free-input"
               value={query}
               onChange={(event) => setQuery(event.target.value.slice(0, 1_200))}
               onKeyDown={(event) => {
@@ -311,7 +316,7 @@ function IntelligencePage() {
                   send();
                 }
               }}
-              placeholder="Pose une question rapide à GlobeLink IA…"
+              placeholder="Demande une idée à GlobeLink IA…"
               className="h-11 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
             />
             <Button type="button" size="icon" onClick={send} disabled={query.trim().length < 3 || assistant.isPending} className="h-11 w-11 shrink-0 rounded-xl" aria-label="Envoyer à GlobeLink IA">
@@ -319,7 +324,7 @@ function IntelligencePage() {
             </Button>
           </div>
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            GlobeLink IA peut faire des erreurs. Vérifie les informations importantes avant de réserver.
+            Le mode gratuit ne vérifie pas les prix ni les disponibilités en temps réel. Vérifie les informations importantes avant de réserver.
           </p>
         </section>
       </main>
