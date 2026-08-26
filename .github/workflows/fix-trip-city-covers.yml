@@ -1,0 +1,67 @@
+name: Fix trip city covers
+
+on:
+  push:
+    paths:
+      - .github/workflows/fix-trip-city-covers.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prefer city-specific trip covers
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          index = Path('src/routes/_authenticated.trips.index.tsx')
+          text = index.read_text()
+          text = text.replace(
+              'import { destinationCover } from "@/lib/destination-cover";',
+              'import { destinationCover, resolvedDestinationCover } from "@/lib/destination-cover";',
+          )
+          text = text.replace(
+              'src={focusTrip.cover_url || destinationCover(focusTrip.country, focusTrip.city)}',
+              'src={resolvedDestinationCover(focusTrip.cover_url, focusTrip.country, focusTrip.city)}',
+          )
+          text = text.replace(
+              'src={trip.cover_url || destinationCover(trip.country, trip.city)}',
+              'src={resolvedDestinationCover(trip.cover_url, trip.country, trip.city)}',
+          )
+          index.write_text(text)
+
+          detail = Path('src/routes/_authenticated.trips.$id.tsx')
+          text = detail.read_text()
+          import_marker = 'import { finalizeTrip } from "@/lib/trip-finalize.functions";\n'
+          if 'resolvedDestinationCover' not in text:
+              text = text.replace(
+                  import_marker,
+                  import_marker + 'import { resolvedDestinationCover } from "@/lib/destination-cover";\n',
+                  1,
+              )
+          text = text.replace(
+              'src={trip.cover_url} alt="" className="h-full w-full object-cover"',
+              'src={resolvedDestinationCover(trip.cover_url, trip.country, trip.city)} alt="" className="h-full w-full object-cover"',
+          )
+          detail.write_text(text)
+          PY
+
+      - name: Remove temporary workflow
+        run: git rm .github/workflows/fix-trip-city-covers.yml
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "GlobeLink Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/routes/_authenticated.trips.index.tsx src/routes/_authenticated.trips.'$id'.tsx
+          git commit -m "fix(trips): show city-specific covers for legacy trips" || exit 0
+          git push
