@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Camera, MapPin, Notebook, Plus, Sparkles } from "lucide-react";
+import { Camera, MapPin, Plus, Sparkles } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -27,24 +27,6 @@ const actions = [
     title: "Ajouter un lieu",
     description: "Recommande une adresse à la communauté.",
     accent: "from-emerald-500/15 to-teal-500/5 text-emerald-700 dark:text-emerald-300",
-    auth: true,
-  },
-  {
-    to: "/intelligence",
-    icon: Sparkles,
-    title: "Créer un voyage avec GlobeLink IA",
-    description: "Ton assistant crée un itinéraire sur mesure.",
-    accent: "from-violet-500/15 to-cyan-500/5 text-violet-700 dark:text-violet-300",
-    auth: true,
-    badge: "Gratuit",
-    featured: true,
-  },
-  {
-    to: "/trips",
-    icon: Notebook,
-    title: "Ouvrir mon carnet",
-    description: "Retrouve tes projets et tes voyages enregistrés.",
-    accent: "from-amber-500/15 to-orange-500/5 text-amber-700 dark:text-amber-300",
     auth: true,
   },
 ] as const;
@@ -96,19 +78,12 @@ export function QuickCreate({
           {actions.map((action) => {
             const Icon = action.icon;
             const target = action.auth && !user ? "/auth" : action.to;
-            const featured = "featured" in action && action.featured;
-            const badge = "badge" in action ? action.badge : undefined;
             return (
               <Link
                 key={action.to}
                 to={target as any}
                 onClick={() => setOpen(false)}
-                className={cn(
-                  "group relative flex min-h-[72px] items-center gap-3 rounded-2xl border bg-background/70 p-3 text-left transition hover:-translate-y-0.5 hover:bg-card hover:shadow-soft active:translate-y-0 sm:min-h-0 sm:gap-4 sm:p-4",
-                  featured
-                    ? "border-cyan-400/55 shadow-[0_0_0_1px_rgba(34,211,238,.08),0_16px_45px_-32px_rgba(34,211,238,.9)] hover:border-cyan-400/75"
-                    : "border-border/70 hover:border-primary/25",
-                )}
+                className="group relative flex min-h-[72px] items-center gap-3 rounded-2xl border border-border/70 bg-background/70 p-3 text-left transition hover:-translate-y-0.5 hover:border-primary/25 hover:bg-card hover:shadow-soft active:translate-y-0 sm:min-h-0 sm:gap-4 sm:p-4"
               >
                 <div
                   className={cn(
@@ -119,13 +94,8 @@ export function QuickCreate({
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground sm:text-base">
-                    <span>{action.title}</span>
-                    {badge && (
-                      <span className="rounded-full border border-cyan-400/35 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold text-cyan-600 dark:text-cyan-300">
-                        {badge}
-                      </span>
-                    )}
+                  <div className="text-sm font-semibold text-foreground sm:text-base">
+                    {action.title}
                   </div>
                   <div className="mt-0.5 text-xs leading-snug text-muted-foreground sm:text-sm">
                     {action.description}
