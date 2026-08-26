@@ -1,0 +1,383 @@
+name: Temporary IA+ expense breakdown fix
+
+on:
+  push:
+    paths:
+      - .github/workflows/temp-ai-plus-expense-breakdown-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch GlobeLink IA+ expense details
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"Missing patch marker: {label}")
+              return text.replace(old, new, 1)
+
+          # --- Trip day UI -------------------------------------------------
+          path = Path("src/components/TripDaySectionPremium.tsx")
+          text = path.read_text()
+
+          text = replace_once(
+              text,
+              '  entries: any[];\n  expenses: any[];\n};',
+              '  entries: any[];\n  expenses: any[];\n  tripNotes?: string | null;\n};',
+              "TripDay props",
+          )
+
+          marker = '''function forecastTitle(label: string) {
+            return label
+              .replace(/^IA\\+\\s*·\\s*/i, "")
+              .replace(/^Budget prévu\\s*·\\s*/i, "")
+              .trim() || "Prévision IA+";
+          }
+          '''
+          helpers = marker + r'''
+
+type ForecastBreakdownItem = {
+  label: string;
+  amount: number;
+};
+
+type ForecastBreakdown = {
+  items: ForecastBreakdownItem[];
+  estimated: boolean;
+  note: string;
+};
+
+function normalizeBudgetCategory(value: string) {
+  const cleaned = cleanMarkdownLine(value)
+    .replace(/[.:;–—-]+$/g, "")
+    .trim();
+  if (/restauration|restaurant|repas/i.test(cleaned)) return "Restauration";
+  if (/transport|trajet|déplacement/i.test(cleaned)) return "Transports";
+  if (/activité|activite|extra|divers|achat|shopping|souvenir/i.test(cleaned)) {
+    return "Activités & extras";
+  }
+  return cleaned || "Autres";
+}
+
+function parseForecastBreakdown(
+  notes: string | null | undefined,
+  day: string,
+  dayIndex: number,
+  total: number,
+): ForecastBreakdown {
+  const safeTotal = Math.max(0, Number(total || 0));
+  const raw = String(notes ?? "").replace(/\r/g, "");
+  const latestBlock = raw.split(/\n\n---\n## ✨ IA\+\s*·\s*/).at(-1) ?? raw;
+  const [, month = "", date = ""] = day.split("-");
+  const ddmm = `${date}/${month}`;
+  const dayTokens = [day, ddmm, `jour ${dayIndex}`].map((token) => token.toLowerCase());
+
+  const explicitItems: ForecastBreakdownItem[] = [];
+  for (const line of latestBlock.split("\n")) {
+    if (!line.includes("|") || !line.includes("€")) continue;
+    const plain = line.replace(/\*\*/g, "").replace(/`/g, "").trim();
+    const lower = plain.toLowerCase();
+    if (!dayTokens.some((token) => lower.includes(token))) continue;
+    if (/\btotal\b/i.test(plain)) continue;
+    if (!/(restauration|restaurant|repas|transport|activité|activite|extra|divers|achat|shopping|souvenir)/i.test(plain)) continue;
+
+    const cells = plain.split("|").map((cell) => cell.trim()).filter(Boolean);
+    const categoryCell = cells.find((cell) =>
+      /(restauration|restaurant|repas|transport|activité|activite|extra|divers|achat|shopping|souvenir)/i.test(cell),
+    );
+    const amountCell = cells.find((cell) => /[0-9]+(?:[.,][0-9]{1,2})?\s*€/.test(cell));
+    const amountMatch = amountCell?.match(/([0-9]+(?:[.,][0-9]{1,2})?)\s*€/);
+    if (!categoryCell || !amountMatch) continue;
+    const amount = Number(amountMatch[1].replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    explicitItems.push({ label: normalizeBudgetCategory(categoryCell), amount });
+  }
+
+  const explicitSum = explicitItems.reduce((sum, item) => sum + item.amount, 0);
+  if (explicitItems.length > 0 && Math.abs(explicitSum - safeTotal) < 0.011) {
+    return {
+      items: explicitItems,
+      estimated: false,
+      note: "Ventilation détaillée fournie directement par IA+ pour cette journée.",
+    };
+  }
+
+  const allocationLine = raw
+    .split("\n")
+    .filter(
+      (line) =>
+        /allocation\s+prévisionnelle|allocation\s+previsionnelle/i.test(line) &&
+        line.includes("€") &&
+        line.includes("/"),
+    )
+    .at(-1);
+
+  if (allocationLine) {
+    const weights: Array<{ label: string; weight: number }> = [];
+    const cleanLine = allocationLine.replace(/\*\*/g, "").replace(/`/g, "");
+    const pattern = /([0-9]+(?:[.,][0-9]{1,2})?)\s*€\s*([^/|\n]+)/g;
+    for (const match of cleanLine.matchAll(pattern)) {
+      const weight = Number(match[1].replace(",", "."));
+      const label = normalizeBudgetCategory(match[2]);
+      if (!Number.isFinite(weight) || weight <= 0 || /total|budget/i.test(label)) continue;
+      weights.push({ label, weight });
+    }
+
+    const totalWeight = weights.reduce((sum, item) => sum + item.weight, 0);
+    if (weights.length >= 2 && totalWeight > 0 && safeTotal > 0) {
+      const totalCents = Math.round(safeTotal * 100);
+      let remainingCents = totalCents;
+      const items = weights.map((item, itemIndex) => {
+        const cents =
+          itemIndex === weights.length - 1
+            ? remainingCents
+            : Math.min(
+                remainingCents,
+                Math.max(0, Math.round((totalCents * item.weight) / totalWeight)),
+              );
+        remainingCents -= cents;
+        return { label: item.label, amount: cents / 100 };
+      });
+      return {
+        items,
+        estimated: true,
+        note: "Répartition estimée à partir de l’allocation IA+ enregistrée pour ce voyage.",
+      };
+    }
+  }
+
+  return {
+    items: [{ label: "Budget non ventilé", amount: safeTotal }],
+    estimated: true,
+    note: "IA+ n’a pas encore détaillé ce total par poste de dépense.",
+  };
+}
+'''
+          text = replace_once(text, marker, helpers, "forecast helpers")
+
+          text = replace_once(
+              text,
+              'export function TripDaySectionPremium({ index, day, tripId, userId, meta, entries, expenses }: Props) {',
+              '''export function TripDaySectionPremium({
+  index,
+  day,
+  tripId,
+  userId,
+  meta,
+  entries,
+  expenses,
+  tripNotes,
+}: Props) {''',
+              "component signature",
+          )
+
+          text = replace_once(
+              text,
+              '''                <ForecastExpenseRow
+                  key={expense.id}
+                  expense={expense}
+                  day={day}
+                  program={program}
+                />''',
+              '''                <ForecastExpenseRow
+                  key={expense.id}
+                  expense={expense}
+                  day={day}
+                  dayIndex={index}
+                  tripNotes={tripNotes}
+                />''',
+              "forecast row props",
+          )
+
+          text = replace_once(
+              text,
+              '''function ForecastExpenseRow({
+  expense,
+  day,
+  program,
+}: {
+  expense: any;
+  day: string;
+  program: ProgramSection[];
+}) {''',
+              '''function ForecastExpenseRow({
+  expense,
+  day,
+  dayIndex,
+  tripNotes,
+}: {
+  expense: any;
+  day: string;
+  dayIndex: number;
+  tripNotes?: string | null;
+}) {''',
+              "forecast function signature",
+          )
+
+          text = replace_once(
+              text,
+              '''  const dateLabel = new Date(`${day}T12:00:00`).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  return (''',
+              '''  const dateLabel = new Date(`${day}T12:00:00`).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const breakdown = parseForecastBreakdown(
+    tripNotes,
+    day,
+    dayIndex,
+    Number(expense.amount || 0),
+  );
+
+  return (''',
+              "forecast breakdown calculation",
+          )
+
+          old_program = '''            {program.length > 0 && (
+              <div className="rounded-2xl border border-border/70 p-4">
+                <div className="mb-3 flex items-center gap-2 font-semibold">
+                  <CalendarDays className="h-4 w-4 text-primary" /> Programme associé à cette journée
+                </div>
+                <div className="space-y-3">
+                  {program.map((section, sectionIndex) => (
+                    <div key={`${section.title}-forecast-${sectionIndex}`}>
+                      <p className="text-sm font-semibold text-primary">{section.title}</p>
+                      <ul className="mt-1.5 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
+                        {section.items.map((item, itemIndex) => (
+                          <li key={`${section.title}-forecast-item-${itemIndex}`} className="flex gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}'''
+          new_breakdown = '''            <div className="overflow-hidden rounded-2xl border border-border/70">
+              <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3 font-semibold">
+                <Wallet className="h-4 w-4 text-primary" /> Détail des dépenses prévues
+              </div>
+              <div className="divide-y divide-border/60">
+                {breakdown.items.map((item, itemIndex) => {
+                  const DetailIcon = expenseIcon(item.label);
+                  return (
+                    <div
+                      key={`${item.label}-${itemIndex}`}
+                      className="flex items-center gap-3 px-4 py-3.5"
+                    >
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                        <DetailIcon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1 text-sm font-medium sm:text-base">
+                        {item.label}
+                      </span>
+                      <span className="tabular-nums text-sm font-bold sm:text-base">
+                        {item.amount.toFixed(2)} €
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between border-t border-border/80 bg-background/40 px-4 py-3.5">
+                <span className="font-semibold">Total prévu</span>
+                <span className="tabular-nums text-lg font-bold text-primary">
+                  {Number(expense.amount).toFixed(2)} €
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {breakdown.note}
+            </p>'''
+          text = replace_once(text, old_program, new_breakdown, "remove program from forecast modal")
+          path.write_text(text)
+
+          # --- Trip route passes the complete IA+ notes --------------------
+          path = Path("src/routes/_authenticated.trips.$id.tsx")
+          text = path.read_text()
+          text = replace_once(
+              text,
+              '''                  expenses={(expenses ?? []).filter((expense) => expense.spent_on === date)}
+                />''',
+              '''                  expenses={(expenses ?? []).filter((expense) => expense.spent_on === date)}
+                  tripNotes={trip.notes}
+                />''',
+              "trip notes prop",
+          )
+          path.write_text(text)
+
+          # --- IA+ connected budget context + future structured budgets ----
+          path = Path("src/lib/ai-pro.functions.ts")
+          text = path.read_text()
+          text = replace_once(
+              text,
+              '''  const entries = entriesResult.data ?? [];
+  const expenses = expensesResult.data ?? [];
+  const days = daysResult.data ?? [];
+  const spent = expenses.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);''',
+              '''  const entries = entriesResult.data ?? [];
+  const expenses = expensesResult.data ?? [];
+  const days = daysResult.data ?? [];
+  const actualExpenses = expenses.filter((item: any) => item.category !== "Prévision IA+");
+  const forecastExpenses = expenses.filter((item: any) => item.category === "Prévision IA+");
+  const spent = actualExpenses.reduce(
+    (sum: number, item: any) => sum + Number(item.amount || 0),
+    0,
+  );''',
+              "actual spending only",
+          )
+
+          text = replace_once(
+              text,
+              '''    const sameDayExpenses = expenses
+      .filter((expense: any) => expense.spent_on === day.day_date)
+      .reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+    return `- ${day.day_date}${day.headline ? ` — ${cleanText(day.headline, 120)}` : ""}${sameDayEntries ? ` | ${sameDayEntries}` : ""}${sameDayExpenses ? ` | dépenses: ${sameDayExpenses.toFixed(0)} €` : ""}${day.notes ? ` | notes: ${cleanText(day.notes, 180)}` : ""}`;''',
+              '''    const sameDayExpenses = actualExpenses
+      .filter((expense: any) => expense.spent_on === day.day_date)
+      .reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+    const sameDayForecast = forecastExpenses
+      .filter((expense: any) => expense.spent_on === day.day_date)
+      .reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+    return `- ${day.day_date}${day.headline ? ` — ${cleanText(day.headline, 120)}` : ""}${sameDayEntries ? ` | ${sameDayEntries}` : ""}${sameDayExpenses ? ` | dépenses réelles: ${sameDayExpenses.toFixed(0)} €` : ""}${sameDayForecast ? ` | prévision IA+: ${sameDayForecast.toFixed(0)} €` : ""}${day.notes ? ` | notes: ${cleanText(day.notes, 180)}` : ""}`;''',
+              "daily real and forecast budget context",
+          )
+
+          old_prompt_tail = '''Si le carnet contient un budget ou des journées, explique concrètement l'impact de ta recommandation dessus. ${sources.length ? "Utilise uniquement les numéros des sources fournies." : "Indique brièvement que la recherche web en direct n'a pas retourné de source pour cette demande."}`,'''
+          new_prompt_tail = '''Si le carnet contient un budget ou des journées, explique concrètement l'impact de ta recommandation dessus. Si tu proposes ou modifies un budget pour un voyage daté, détaille obligatoirement chaque journée par catégorie dans la section "## Budget" avec un tableau Markdown ayant exactement les colonnes "Date | Catégorie | Montant prévu | Détail". Utilise les dates ISO YYYY-MM-DD. Les montants des catégories d'une journée doivent sommer exactement au budget prévu de cette journée. Sépare la marge de sécurité des dépenses prévues et ne présente jamais une prévision comme une dépense déjà effectuée. ${sources.length ? "Utilise uniquement les numéros des sources fournies." : "Indique brièvement que la recherche web en direct n'a pas retourné de source pour cette demande."}`,'''
+          text = replace_once(text, old_prompt_tail, new_prompt_tail, "structured per-day budget prompt")
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- src/components/TripDaySectionPremium.tsx src/routes/_authenticated.trips.\$id.tsx src/lib/ai-pro.functions.ts
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "GlobeLink Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/components/TripDaySectionPremium.tsx 'src/routes/_authenticated.trips.$id.tsx' src/lib/ai-pro.functions.ts
+          git commit -m "fix(ai+): show forecast expense breakdown by category"
+          git push
