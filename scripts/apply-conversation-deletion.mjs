@@ -47,3 +47,5 @@ replaceRequired(
 
 fs.writeFileSync(path, source);
 console.log("[GlobeLink] Conversation deletion control applied.");
+
+// Production deployment trigger for the inbox conversation deletion release.
