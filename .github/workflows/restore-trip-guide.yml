@@ -1,0 +1,78 @@
+name: Restore trip journal guide
+
+on:
+  push:
+    paths:
+      - .github/workflows/restore-trip-guide.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore 3-step guide
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/routes/_authenticated.trips.$id.tsx')
+          text = path.read_text()
+
+          guide = '''
+          <div className="mb-6 grid gap-2 sm:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                1
+              </span>
+              <div>
+                <p className="text-sm font-medium">Ajoute une journée</p>
+                <p className="text-xs text-muted-foreground">Choisis simplement la date.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                2
+              </span>
+              <div>
+                <p className="text-sm font-medium">Raconte ta journée</p>
+                <p className="text-xs text-muted-foreground">Programme, photos, lieux et dépenses.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                3
+              </span>
+              <div>
+                <p className="text-sm font-medium">Génère ton souvenir</p>
+                <p className="text-xs text-muted-foreground">Finalise quand tout est prêt.</p>
+              </div>
+            </div>
+          </div>
+
+'''
+
+          marker = '          {dayList.length === 0 ? (\n'
+          if 'Ajoute une journée</p>' not in text and marker in text:
+              text = text.replace(marker, guide + marker, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Remove temporary workflow
+        run: git rm .github/workflows/restore-trip-guide.yml
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "GlobeLink Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/routes/_authenticated.trips.'$id'.tsx
+          git commit -m "fix(trips): restore 3-step journal guide" || exit 0
+          git push
