@@ -251,6 +251,36 @@ function TripDetail() {
             )}
           </div>
 
+          <div className="mb-6 grid gap-2 sm:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                1
+              </span>
+              <div>
+                <p className="text-sm font-medium">Ajoute une journée</p>
+                <p className="text-xs text-muted-foreground">Choisis simplement la date.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                2
+              </span>
+              <div>
+                <p className="text-sm font-medium">Raconte ta journée</p>
+                <p className="text-xs text-muted-foreground">Programme, photos, lieux et dépenses.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                3
+              </span>
+              <div>
+                <p className="text-sm font-medium">Génère ton souvenir</p>
+                <p className="text-xs text-muted-foreground">Finalise quand tout est prêt.</p>
+              </div>
+            </div>
+          </div>
+
           {dayList.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-border bg-card/40 p-6 text-center sm:p-10">
               <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
