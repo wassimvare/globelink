@@ -11,7 +11,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { OnlineStatus } from "@/components/OnlineStatus";
 import { Button } from "@/components/ui/button";
-import { Check, Circle, Inbox, MessageSquare, Search, UserRoundPlus, X } from "lucide-react";
+import { Check, Circle, Inbox, MessageSquare, Search, Trash2, UserRoundPlus, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -62,6 +62,8 @@ function MessagesPage() {
   const [query, setQuery] = useState("");
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [requestBusy, setRequestBusy] = useState<string | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  // CONVERSATION_DELETION_V1
 
   const { data: rows } = useQuery({
     queryKey: ["conversations", user?.id],
@@ -201,6 +203,34 @@ function MessagesPage() {
     }
   }
 
+  async function deleteConversation(conversationId: string, name: string) {
+    if (!user || deletingConversationId) return;
+    const confirmed = window.confirm(
+      `Supprimer la conversation avec ${name} ? Elle disparaîtra de ta messagerie, mais restera visible chez l’autre personne.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingConversationId(conversationId);
+    try {
+      const { error } = await supabase
+        .from("conversation_participants")
+        .delete()
+        .eq("conversation_id", conversationId)
+        .eq("user_id", user.id);
+      if (error) throw error;
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
+        qc.invalidateQueries({ queryKey: ["incoming-message-requests", user.id] }),
+      ]);
+      toast.success("Conversation supprimée de ta messagerie");
+    } catch (error) {
+      toast.error((error as Error).message || "Impossible de supprimer cette conversation.");
+    } finally {
+      setDeletingConversationId(null);
+    }
+  }
+
   return (
     <div className="app-page">
       <AppHeader />
@@ -332,11 +362,11 @@ function MessagesPage() {
                 new Date(last.created_at) > new Date(r.last_read_at);
               const name = other?.profile?.display_name ?? other?.profile?.username ?? "Voyageur";
               return (
-                <li key={r.conversation_id}>
+                <li key={r.conversation_id} className="relative">
                   <Link
                     to="/messages/$id"
                     params={{ id: r.conversation_id }}
-                    className="flex items-center gap-3 p-4 transition hover:bg-secondary/50"
+                    className="flex items-center gap-3 py-4 pl-4 pr-14 transition hover:bg-secondary/50"
                   >
                     {other?.profile?.avatar_url ? (
                       <img
@@ -375,6 +405,16 @@ function MessagesPage() {
                     </div>
                     {unread && <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />}
                   </Link>
+                  <button
+                    type="button"
+                    disabled={deletingConversationId === r.conversation_id}
+                    onClick={() => void deleteConversation(r.conversation_id, name)}
+                    aria-label={`Supprimer la conversation avec ${name}`}
+                    title="Supprimer la conversation"
+                    className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </li>
               );
             })}
