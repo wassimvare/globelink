@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Bed,
@@ -86,6 +86,16 @@ type ProgramSection = {
   key: "morning" | "afternoon" | "evening" | "other";
   title: string;
   items: string[];
+};
+
+type ForecastBreakdownItem = {
+  label: string;
+  amount: number;
+};
+
+type ForecastBreakdown = {
+  items: ForecastBreakdownItem[];
+  note: string;
 };
 
 function normalizeProgramTitle(value: string): ProgramSection["key"] {
@@ -183,6 +193,109 @@ function forecastTitle(label: string) {
     .replace(/^IA\+\s*·\s*/i, "")
     .replace(/^Budget prévu\s*·\s*/i, "")
     .trim() || "Prévision IA+";
+}
+
+function normalizeBudgetCategory(value: string) {
+  const cleaned = cleanMarkdownLine(value)
+    .replace(/[.:;–—-]+$/g, "")
+    .trim();
+  if (/restauration|restaurant|repas/i.test(cleaned)) return "Restauration";
+  if (/transport|trajet|déplacement/i.test(cleaned)) return "Transports";
+  if (/activité|activite|extra|divers|achat|shopping|souvenir/i.test(cleaned)) {
+    return "Activités & extras";
+  }
+  return cleaned || "Autres";
+}
+
+function parseForecastBreakdown(
+  notes: string | null | undefined,
+  day: string,
+  dayIndex: number,
+  total: number,
+): ForecastBreakdown {
+  const safeTotal = Math.max(0, Number(total || 0));
+  const raw = String(notes ?? "").replace(/\r/g, "");
+  const latestBlock = raw.split(/\n\n---\n## ✨ IA\+\s*·\s*/).at(-1) ?? raw;
+  const [, month = "", date = ""] = day.split("-");
+  const ddmm = `${date}/${month}`;
+  const dayTokens = [day, ddmm, `jour ${dayIndex}`].map((token) => token.toLowerCase());
+
+  const explicitItems: ForecastBreakdownItem[] = [];
+  for (const line of latestBlock.split("\n")) {
+    if (!line.includes("|") || !line.includes("€")) continue;
+    const plain = line.replace(/\*\*/g, "").replace(/`/g, "").trim();
+    const lower = plain.toLowerCase();
+    if (!dayTokens.some((token) => lower.includes(token))) continue;
+    if (/\btotal\b/i.test(plain)) continue;
+    if (!/(restauration|restaurant|repas|transport|activité|activite|extra|divers|achat|shopping|souvenir)/i.test(plain)) continue;
+
+    const cells = plain.split("|").map((cell) => cell.trim()).filter(Boolean);
+    const categoryCell = cells.find((cell) =>
+      /(restauration|restaurant|repas|transport|activité|activite|extra|divers|achat|shopping|souvenir)/i.test(cell),
+    );
+    const amountCell = cells.find((cell) => /[0-9]+(?:[.,][0-9]{1,2})?\s*€/.test(cell));
+    const amountMatch = amountCell?.match(/([0-9]+(?:[.,][0-9]{1,2})?)\s*€/);
+    if (!categoryCell || !amountMatch) continue;
+    const amount = Number(amountMatch[1].replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    explicitItems.push({ label: normalizeBudgetCategory(categoryCell), amount });
+  }
+
+  const explicitSum = explicitItems.reduce((sum, item) => sum + item.amount, 0);
+  if (explicitItems.length > 0 && Math.abs(explicitSum - safeTotal) < 0.011) {
+    return {
+      items: explicitItems,
+      note: "Ventilation détaillée fournie directement par IA+ pour cette journée.",
+    };
+  }
+
+  const allocationLine = raw
+    .split("\n")
+    .filter(
+      (line) =>
+        /allocation\s+prévisionnelle|allocation\s+previsionnelle/i.test(line) &&
+        line.includes("€") &&
+        line.includes("/"),
+    )
+    .at(-1);
+
+  if (allocationLine) {
+    const weights: Array<{ label: string; weight: number }> = [];
+    const cleanLine = allocationLine.replace(/\*\*/g, "").replace(/`/g, "");
+    const pattern = /([0-9]+(?:[.,][0-9]{1,2})?)\s*€\s*([^/|\n]+)/g;
+    for (const match of cleanLine.matchAll(pattern)) {
+      const weight = Number(match[1].replace(",", "."));
+      const label = normalizeBudgetCategory(match[2]);
+      if (!Number.isFinite(weight) || weight <= 0 || /total|budget/i.test(label)) continue;
+      weights.push({ label, weight });
+    }
+
+    const totalWeight = weights.reduce((sum, item) => sum + item.weight, 0);
+    if (weights.length >= 2 && totalWeight > 0 && safeTotal > 0) {
+      const totalCents = Math.round(safeTotal * 100);
+      let remainingCents = totalCents;
+      const items = weights.map((item, itemIndex) => {
+        const cents =
+          itemIndex === weights.length - 1
+            ? remainingCents
+            : Math.min(
+                remainingCents,
+                Math.max(0, Math.round((totalCents * item.weight) / totalWeight)),
+              );
+        remainingCents -= cents;
+        return { label: item.label, amount: cents / 100 };
+      });
+      return {
+        items,
+        note: "Répartition estimée à partir de l’allocation IA+ enregistrée pour ce voyage.",
+      };
+    }
+  }
+
+  return {
+    items: [{ label: "Budget non ventilé", amount: safeTotal }],
+    note: "IA+ n’a pas encore détaillé ce total par poste de dépense.",
+  };
 }
 
 export function TripDaySectionPremium({ index, day, tripId, userId, meta, entries, expenses }: Props) {
@@ -442,7 +555,8 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                   key={expense.id}
                   expense={expense}
                   day={day}
-                  program={program}
+                  dayIndex={index}
+                  tripId={tripId}
                 />
               );
             }
@@ -484,11 +598,13 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
 function ForecastExpenseRow({
   expense,
   day,
-  program,
+  dayIndex,
+  tripId,
 }: {
   expense: any;
   day: string;
-  program: ProgramSection[];
+  dayIndex: number;
+  tripId: string;
 }) {
   const Icon = expenseIcon(String(expense.label ?? ""));
   const title = forecastTitle(String(expense.label ?? ""));
@@ -498,6 +614,25 @@ function ForecastExpenseRow({
     month: "long",
     year: "numeric",
   });
+  const { data: tripNotes = "", isLoading: breakdownLoading } = useQuery({
+    queryKey: ["trip-ai-plus-budget-notes", tripId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("notes")
+        .eq("id", tripId)
+        .maybeSingle();
+      if (error) throw error;
+      return String(data?.notes ?? "");
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const breakdown = parseForecastBreakdown(
+    tripNotes,
+    day,
+    dayIndex,
+    Number(expense.amount || 0),
+  );
 
   return (
     <li>
@@ -506,14 +641,14 @@ function ForecastExpenseRow({
           <button
             type="button"
             className="flex min-h-16 w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:px-3"
-            aria-label={`Voir le détail de la prévision IA+ de ${Number(expense.amount).toFixed(2)} euros`}
+            aria-label={`Voir le détail des dépenses prévues IA+ de ${Number(expense.amount).toFixed(2)} euros`}
           >
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
               <Icon className="h-4.5 w-4.5" />
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium sm:text-base">{title}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Prévision IA+ · Appuie pour le détail</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Prévision IA+ · Voir les dépenses</p>
             </div>
             <span className="tabular-nums text-base font-bold text-primary">
               {Number(expense.amount).toFixed(2)} €
@@ -523,49 +658,70 @@ function ForecastExpenseRow({
         </DialogTrigger>
         <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Détail de la prévision IA+</DialogTitle>
+            <DialogTitle>Détail des dépenses prévues IA+</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-primary/20 bg-primary/[0.06] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Budget prévu</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Total prévu</p>
               <div className="mt-1 flex items-end justify-between gap-3">
-                <div>
-                  <p className="font-display text-xl font-bold">{title}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground/90">{title}</p>
                   <p className="mt-1 text-xs capitalize text-muted-foreground">{dateLabel}</p>
                 </div>
-                <p className="tabular-nums text-2xl font-bold text-primary">
+                <p className="shrink-0 tabular-nums text-3xl font-bold text-primary">
                   {Number(expense.amount).toFixed(2)} €
                 </p>
               </div>
             </div>
 
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Cette somme est une <strong className="text-foreground">prévision proposée par IA+</strong>. Elle n’est pas comptée comme une dépense réellement effectuée. Une dépense réelle apparaît seulement lorsque tu l’ajoutes toi-même au carnet.
-            </p>
-
-            {program.length > 0 && (
-              <div className="rounded-2xl border border-border/70 p-4">
-                <div className="mb-3 flex items-center gap-2 font-semibold">
-                  <CalendarDays className="h-4 w-4 text-primary" /> Programme associé à cette journée
-                </div>
-                <div className="space-y-3">
-                  {program.map((section, sectionIndex) => (
-                    <div key={`${section.title}-forecast-${sectionIndex}`}>
-                      <p className="text-sm font-semibold text-primary">{section.title}</p>
-                      <ul className="mt-1.5 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
-                        {section.items.map((item, itemIndex) => (
-                          <li key={`${section.title}-forecast-item-${itemIndex}`} className="flex gap-2">
-                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
+            <div className="overflow-hidden rounded-2xl border border-border/70">
+              <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3 font-semibold">
+                <Wallet className="h-4 w-4 text-primary" /> Répartition des dépenses
               </div>
+
+              {breakdownLoading ? (
+                <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Calcul du détail…
+                </div>
+              ) : (
+                <div className="divide-y divide-border/60">
+                  {breakdown.items.map((item, itemIndex) => {
+                    const DetailIcon = expenseIcon(item.label);
+                    return (
+                      <div
+                        key={`${item.label}-${itemIndex}`}
+                        className="flex items-center gap-3 px-4 py-3.5"
+                      >
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                          <DetailIcon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 text-sm font-medium sm:text-base">
+                          {item.label}
+                        </span>
+                        <span className="tabular-nums text-sm font-bold sm:text-base">
+                          {item.amount.toFixed(2)} €
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between border-t border-border/80 bg-background/40 px-4 py-3.5">
+                <span className="font-semibold">Total</span>
+                <span className="tabular-nums text-lg font-bold text-primary">
+                  {Number(expense.amount).toFixed(2)} €
+                </span>
+              </div>
+            </div>
+
+            {!breakdownLoading && (
+              <p className="text-xs leading-relaxed text-muted-foreground">{breakdown.note}</p>
             )}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Ces montants sont des prévisions IA+ et ne sont pas comptés comme des dépenses réelles tant que tu ne les ajoutes pas toi-même au carnet.
+            </p>
           </div>
         </DialogContent>
       </Dialog>
