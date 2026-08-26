@@ -18,7 +18,7 @@ export function BottomNav() {
   const hiddenOn = ["/auth", "/forgot-password", "/reset-password", "/verify-email"];
 
   const { data: profile } = useQuery({
-    queryKey: ["profile", user?.id],
+    queryKey: ["bottom-nav-profile", user?.id],
     enabled: !!user,
     staleTime: 5 * 60_000,
     queryFn: async () => {
