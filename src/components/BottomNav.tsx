@@ -1,15 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Heart, Home, Map, Notebook, Sparkles, User as UserIcon } from "lucide-react";
+import { Home, Map, Notebook, User as UserIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { QuickCreate } from "@/components/QuickCreate";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 
 export function BottomNav() {
@@ -33,9 +26,6 @@ export function BottomNav() {
 
   if (hiddenOn.some((path) => pathname.startsWith(path))) return null;
 
-  const travelActive = ["/trips", "/intelligence", "/ai-trip", "/ai-pro", "/match"].some(
-    (path) => pathname.startsWith(path),
-  );
   const profilePath = user
     ? profile?.username
       ? `/profile/${profile.username}`
@@ -55,56 +45,14 @@ export function BottomNav() {
           <QuickCreate compact />
         </div>
 
-        {user ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Ouvrir le menu Voyage"
-                className={`relative flex min-h-[52px] w-full flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
-                  travelActive ? "text-primary" : "text-muted-foreground"
-                }`}
-              >
-                <Notebook className={`h-[21px] w-[21px] transition ${travelActive ? "stroke-[2.4]" : ""}`} />
-                <span className="max-w-full truncate">Voyage</span>
-                <span
-                  className={`absolute bottom-0.5 h-1 w-1 rounded-full bg-primary transition ${
-                    travelActive ? "scale-100" : "scale-0"
-                  }`}
-                />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side="top"
-              align="center"
-              sideOffset={10}
-              className="w-60 rounded-2xl border-border/70 bg-card/95 p-2 shadow-elevated backdrop-blur-2xl"
-            >
-              <DropdownMenuLabel className="px-3 pb-2 pt-1 text-xs text-muted-foreground">
-                Ton espace voyage
-              </DropdownMenuLabel>
-              <DropdownMenuItem asChild>
-                <Link to="/trips" preload="intent" className="rounded-xl">
-                  <Notebook className="mr-2 h-4 w-4 text-primary" /> Mes voyages
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/intelligence" preload="intent" className="rounded-xl">
-                  <Sparkles className="mr-2 h-4 w-4 text-violet-500" /> GlobeLink IA
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/match" preload="intent" className="rounded-xl">
-                  <Heart className="mr-2 h-4 w-4 text-rose-500" /> Travel Match
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : (
-          <NavItem to="/auth" label="Voyage" Icon={Notebook} />
-        )}
+        <NavItem
+          to={user ? "/trips" : "/auth"}
+          label="Voyage"
+          Icon={Notebook}
+          activePrefixes={["/trips", "/intelligence", "/ai-trip", "/ai-pro", "/match"]}
+        />
 
-        <NavItem to={profilePath} label="Profil" Icon={UserIcon} activePrefix="/profile" />
+        <NavItem to={profilePath} label="Profil" Icon={UserIcon} activePrefixes={["/profile"]} />
       </div>
     </nav>
   );
@@ -115,16 +63,16 @@ function NavItem({
   label,
   Icon,
   exact,
-  activePrefix,
+  activePrefixes,
 }: {
   to: string;
   label: string;
   Icon: typeof Home;
   exact?: boolean;
-  activePrefix?: string;
+  activePrefixes?: string[];
 }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const forcedActive = activePrefix ? pathname.startsWith(activePrefix) : false;
+  const forcedActive = activePrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? false;
 
   return (
     <Link
