@@ -92,7 +92,7 @@ replaceRegex(
 
 replaceRegex(
   /\n        \{photos\.length > 0 && \([\s\S]*?\n      <\/main>/,
-  `\n          </section>\n        )}\n      </main>`,
+  `\n        )}\n      </main>`,
   "remove secondary social galleries and close lazy catalog",
 );
 
