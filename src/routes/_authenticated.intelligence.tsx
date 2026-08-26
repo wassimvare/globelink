@@ -72,9 +72,12 @@ function IntelligencePage() {
               <Sparkles className="h-4 w-4" /> GlobeLink IA
             </div>
             <h1 className="mt-4 font-display text-3xl font-bold tracking-tight sm:text-5xl">
-              Choisis ton assistant voyage
+              Ton assistant voyage
             </h1>
-            <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+            <p className="mx-auto mt-2 text-sm font-semibold text-foreground/80 sm:text-base">
+              Choisis la version qui correspond à ton besoin.
+            </p>
+            <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               Une version gratuite pour t’inspirer, et IA+ pour rechercher de vraies options, comparer et organiser ton voyage avec beaucoup plus de contexte.
             </p>
           </div>
