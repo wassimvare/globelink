@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import ReactMarkdown from "react-markdown";
@@ -100,10 +100,15 @@ export const Route = createFileRoute("/ai-pro")({
 });
 
 function friendlyAiError(error: Error) {
-  if (error.message.includes("AI_PRO_SUBSCRIPTION_REQUIRED"))
+  const message = error.message || "";
+  if (message.includes("AI_PRO_SUBSCRIPTION_REQUIRED"))
     return "Un abonnement IA+ actif est nécessaire.";
-  if (error.message.includes("AI_DAILY_LIMIT")) return "Ta limite IA+ du jour est atteinte.";
-  return error.message || "IA+ n'a pas pu répondre.";
+  if (message.includes("AI_DAILY_LIMIT")) return "Ta limite IA+ du jour est atteinte.";
+  if (/429|resource_exhausted|rate.?limit/i.test(message))
+    return "IA+ est temporairement très sollicitée. Une nouvelle tentative a déjà été faite automatiquement ; réessaie dans quelques instants.";
+  if (/gemini api|délai|timeout|abort|fetch failed|network/i.test(message))
+    return "L’analyse prend plus de temps que prévu. IA+ a déjà réessayé automatiquement ; réessaie dans un instant.";
+  return message || "IA+ n'a pas pu répondre.";
 }
 
 function AiPlusPage() {
@@ -157,7 +162,7 @@ function AiPlusPage() {
         data: {
           query: request.query,
           mode: request.mode,
-          history: turns.slice(-8).map(({ role, content }) => ({ role, content })),
+          history: turns.slice(-6).map(({ role, content }) => ({ role, content })),
         },
       });
     },
@@ -435,6 +440,16 @@ function PremiumWorkspace({
 }) {
   const days = tripDuration(trip?.starts_on, trip?.ends_on);
   const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
+  const queryInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const fillPrompt = (value: string) => {
+    setQuery(value);
+    requestAnimationFrame(() => {
+      if (!queryInputRef.current) return;
+      queryInputRef.current.scrollTop = 0;
+      queryInputRef.current.focus();
+    });
+  };
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -498,10 +513,10 @@ function PremiumWorkspace({
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <ActionCard icon={Database} title="Auditer mon voyage" text="Analyse le carnet et trouve les points faibles." onClick={() => { setMode("research"); setQuery("Analyse tout mon voyage enregistré et donne-moi les 5 améliorations les plus importantes, avec leur impact concret."); }} />
-              <ActionCard icon={Hotel} title="Comparer avec sources" text="Hôtels, quartiers ou options selon mes critères." onClick={() => { setMode("compare"); setQuery("Compare les meilleures options d’hébergement pour mon voyage avec des sources récentes, puis recommande celle qui correspond le mieux à mon budget et à mon itinéraire."); }} />
-              <ActionCard icon={Wand2} title="Réorganiser le séjour" text="Réduit les trajets et améliore le rythme." onClick={() => { setMode("plan"); setQuery("Réorganise mon voyage enregistré pour réduire les trajets inutiles, garder un bon rythme et respecter mon budget. Explique précisément ce que tu changerais dans le carnet."); }} />
-              <ActionCard icon={ShieldCheck} title="Vérifier avant départ" text="Risques, horaires, conditions et plans B." onClick={() => { setMode("safety"); setQuery("Vérifie les points importants de mon voyage avant le départ : risques, horaires ou conditions à confirmer, réservations sensibles et plans B."); }} />
+              <ActionCard icon={Database} title="Auditer mon voyage" text="Analyse le carnet et trouve les points faibles." onClick={() => { setMode("research"); fillPrompt("Analyse tout mon voyage enregistré et donne-moi les 5 améliorations les plus importantes, avec leur impact concret."); }} />
+              <ActionCard icon={Hotel} title="Comparer avec sources" text="Hôtels, quartiers ou options selon mes critères." onClick={() => { setMode("compare"); fillPrompt("Compare les meilleures options d’hébergement pour mon voyage avec des sources récentes, puis recommande celle qui correspond le mieux à mon budget et à mon itinéraire."); }} />
+              <ActionCard icon={Wand2} title="Réorganiser le séjour" text="Réduit les trajets et améliore le rythme." onClick={() => { setMode("plan"); fillPrompt("Réorganise mon voyage enregistré pour réduire les trajets inutiles, garder un bon rythme et respecter mon budget. Explique précisément ce que tu changerais dans le carnet."); }} />
+              <ActionCard icon={ShieldCheck} title="Vérifier avant départ" text="Risques, horaires, conditions et plans B." onClick={() => { setMode("safety"); fillPrompt("Vérifie les points importants de mon voyage avant le départ : risques, horaires ou conditions à confirmer, réservations sensibles et plans B."); }} />
             </div>
           </div>
 
@@ -578,7 +593,7 @@ function PremiumWorkspace({
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-          <div className="rounded-[1.75rem] border border-violet-400/25 bg-gradient-to-br from-violet-500/[0.10] to-card p-4 shadow-soft sm:p-5">
+          <div className="rounded-[1.75rem] border border-violet-400/25 bg-gradient-to-br from-violet-500/[0.10] to-card p-4 shadow-soft sm:p-5" aria-busy={pending}>
             <div className="flex items-center gap-2 font-semibold text-violet-400">
               <Sparkles className="h-4 w-4" /> Demande à IA+
             </div>
@@ -587,17 +602,20 @@ function PremiumWorkspace({
                 const Icon = item.icon;
                 const active = mode === item.id;
                 return (
-                  <button key={item.id} type="button" onClick={() => setMode(item.id)} className={`rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition ${active ? "border-violet-400/50 bg-violet-500/15 text-violet-300" : "border-border/70 bg-background/50 text-muted-foreground"}`}>
+                  <button key={item.id} type="button" disabled={pending} onClick={() => setMode(item.id)} className={`rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${active ? "border-violet-400/50 bg-violet-500/15 text-violet-300" : "border-border/70 bg-background/50 text-muted-foreground"}`}>
                     <Icon className="mb-1.5 h-4 w-4" /> {item.label}
                   </button>
                 );
               })}
             </div>
             <Textarea
+              ref={queryInputRef}
+              rows={4}
               value={query}
+              disabled={pending}
               onChange={(event) => setQuery(event.target.value.slice(0, 3_000))}
               placeholder="Ex. Réorganise mon voyage en gardant 300 € de marge…"
-              className="mt-3 min-h-32 resize-y rounded-2xl bg-background/65"
+              className="mt-3 min-h-[96px] max-h-[144px] resize-none overflow-y-auto rounded-2xl bg-background/65 leading-relaxed"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -608,9 +626,15 @@ function PremiumWorkspace({
             <Button type="button" onClick={send} disabled={query.trim().length < 4 || pending} className="mt-3 w-full rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-white">
               {pending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> IA+ analyse le voyage…</> : <><Send className="mr-2 h-4 w-4" /> Lancer l’analyse IA+</>}
             </Button>
+            {pending && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-violet-400/20 bg-violet-500/[0.08] px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-violet-400" />
+                <span>Analyse en cours. IA+ réessaie automatiquement si le moteur tarde à répondre.</span>
+              </div>
+            )}
             <div className="mt-3 space-y-2">
               {QUICK_PROMPTS.map((prompt) => (
-                <button key={prompt} type="button" onClick={() => setQuery(prompt)} className="w-full rounded-xl border border-border/60 bg-background/45 px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground transition hover:border-primary/25 hover:text-foreground">
+                <button key={prompt} type="button" disabled={pending} onClick={() => fillPrompt(prompt)} className="w-full rounded-xl border border-border/60 bg-background/45 px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground transition hover:border-primary/25 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60">
                   {prompt}
                 </button>
               ))}
