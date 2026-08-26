@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import {
   Bell,
   ChevronDown,
+  Compass,
+  Flame,
   Heart,
   Home,
   LayoutDashboard,
@@ -39,12 +41,19 @@ import { loadNotificationPreferences, notificationAllowed } from "@/lib/user-pre
 
 const navClass =
   "group inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold text-muted-foreground transition hover:bg-secondary/80 hover:text-foreground";
+const navActiveClass = "!bg-primary !text-primary-foreground shadow-soft";
 
 export function AppHeader() {
   const { user } = useAuth();
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isHome = pathname === "/";
+  const explorerActive = ["/map", "/destinations", "/activities", "/deals", "/marketplace"].some(
+    (path) => pathname.startsWith(path),
+  );
+  const travelActive = ["/trips", "/intelligence", "/ai-trip", "/ai-pro", "/match"].some(
+    (path) => pathname.startsWith(path),
+  );
   const [scrolled, setScrolled] = useState(false);
   const qc = useQueryClient();
 
@@ -174,103 +183,88 @@ export function AppHeader() {
             to="/"
             preload="intent"
             className={navClass}
-            activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
+            activeProps={{ className: navActiveClass }}
             activeOptions={{ exact: true }}
           >
-            <Home className="h-4 w-4" /> Fil
+            <Home className="h-4 w-4" /> Accueil
           </Link>
-          <Link
-            to="/map"
-            preload="intent"
-            className={navClass}
-            activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
-          >
-            <Map className="h-4 w-4" /> Explorer
-          </Link>
-          <Link
-            to="/destinations"
-            preload="intent"
-            className={navClass}
-            activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
-          >
-            <Map className="h-4 w-4" /> Destinations
-          </Link>
-          <Link
-            to="/activities"
-            preload="intent"
-            className={navClass}
-            activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
-          >
-            <Sparkles className="h-4 w-4" /> Activités
-          </Link>
-          {user && (
-            <Link
-              to="/intelligence"
-              preload="intent"
-              className={navClass}
-              activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
-            >
-              <Sparkles className="h-4 w-4" /> GlobeLink IA
-            </Link>
-          )}
-          {user && (
-            <Link
-              to="/match"
-              preload="intent"
-              className={navClass}
-              activeProps={{ className: "!bg-primary !text-primary-foreground shadow-soft" }}
-            >
-              <Heart className="h-4 w-4" /> Match
-            </Link>
-          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger
-              className={`${navClass} outline-none data-[state=open]:bg-secondary data-[state=open]:text-foreground`}
+              className={`${navClass} ${explorerActive ? navActiveClass : ""} outline-none data-[state=open]:bg-secondary data-[state=open]:text-foreground`}
             >
-              Plus <ChevronDown className="h-3.5 w-3.5 transition group-data-[state=open]:rotate-180" />
+              <Compass className="h-4 w-4" /> Explorer
+              <ChevronDown className="h-3.5 w-3.5 transition group-data-[state=open]:rotate-180" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
-              className="w-56 rounded-2xl border-border/70 bg-card/95 p-2 shadow-elevated backdrop-blur-2xl"
+              className="w-64 rounded-2xl border-border/70 bg-card/95 p-2 shadow-elevated backdrop-blur-2xl"
             >
+              <DropdownMenuLabel className="px-3 pb-2 pt-1 text-xs text-muted-foreground">
+                Découvrir le monde
+              </DropdownMenuLabel>
+              <DropdownMenuItem asChild>
+                <Link to="/map" preload="intent" className="rounded-xl">
+                  <Map className="mr-2 h-4 w-4 text-primary" /> Carte · hôtels, restaurants et lieux
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/destinations" preload="intent" className="rounded-xl">
-                  <Map className="mr-2 h-4 w-4 text-primary" /> Destinations
+                  <Compass className="mr-2 h-4 w-4" /> Destinations
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/activities" preload="intent" className="rounded-xl">
-                  <Sparkles className="mr-2 h-4 w-4 text-primary" /> Activités du monde
+                  <Sparkles className="mr-2 h-4 w-4" /> Activités
                 </Link>
               </DropdownMenuItem>
-              {user && (
-                <DropdownMenuItem asChild>
-                  <Link to="/intelligence" preload="intent" className="rounded-xl">
-                    <Sparkles className="mr-2 h-4 w-4 text-primary" /> GlobeLink IA
-                  </Link>
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem asChild>
+                <Link to="/deals" preload="intent" className="rounded-xl">
+                  <Flame className="mr-2 h-4 w-4 text-orange-500" /> Offres du moment
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link to="/marketplace" preload="intent" className="rounded-xl">
-                  <ShoppingBag className="mr-2 h-4 w-4" /> Marketplace
+                  <ShoppingBag className="mr-2 h-4 w-4" /> Marketplace voyage
                 </Link>
               </DropdownMenuItem>
-              {user && (
-                <DropdownMenuItem asChild>
-                  <Link to="/dashboard" preload="intent" className="rounded-xl">
-                    <LayoutDashboard className="mr-2 h-4 w-4" /> Tableau de bord
-                  </Link>
-                </DropdownMenuItem>
-              )}
-              {user && (
-                <DropdownMenuItem asChild>
-                  <Link to="/trips" preload="intent" className="rounded-xl">
-                    <Notebook className="mr-2 h-4 w-4" /> Carnet de voyage
-                  </Link>
-                </DropdownMenuItem>
-              )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={`${navClass} ${travelActive ? navActiveClass : ""} outline-none data-[state=open]:bg-secondary data-[state=open]:text-foreground`}
+              >
+                <Notebook className="h-4 w-4" /> Voyage
+                <ChevronDown className="h-3.5 w-3.5 transition group-data-[state=open]:rotate-180" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-64 rounded-2xl border-border/70 bg-card/95 p-2 shadow-elevated backdrop-blur-2xl"
+              >
+                <DropdownMenuLabel className="px-3 pb-2 pt-1 text-xs text-muted-foreground">
+                  Préparer et vivre ton voyage
+                </DropdownMenuLabel>
+                <DropdownMenuItem asChild>
+                  <Link to="/trips" preload="intent" className="rounded-xl">
+                    <Notebook className="mr-2 h-4 w-4 text-primary" /> Mes voyages
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/intelligence" preload="intent" className="rounded-xl">
+                    <Sparkles className="mr-2 h-4 w-4 text-violet-500" /> GlobeLink IA
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/match" preload="intent" className="rounded-xl">
+                    <Heart className="mr-2 h-4 w-4 text-rose-500" /> Travel Match
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5">
@@ -291,7 +285,7 @@ export function AppHeader() {
                 to="/messages"
                 preload="intent"
                 aria-label="Messages"
-                className="relative hidden h-10 w-10 place-items-center rounded-full border border-border/70 bg-card/80 text-foreground transition hover:border-primary/25 hover:shadow-soft sm:grid"
+                className="relative grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-card/80 text-foreground transition hover:border-primary/25 hover:shadow-soft"
               >
                 <MessageSquare className="h-4 w-4" />
               </Link>
@@ -308,7 +302,9 @@ export function AppHeader() {
                   </span>
                 )}
               </Link>
-              <div className="hidden sm:block"><QuickCreate /></div>
+              <div className="hidden sm:block">
+                <QuickCreate />
+              </div>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -332,15 +328,12 @@ export function AppHeader() {
                       {profile?.display_name || profile?.username || "Mon compte"}
                     </div>
                     {profile?.username && (
-                      <div className="truncate text-xs font-normal text-muted-foreground">@{profile.username}</div>
+                      <div className="truncate text-xs font-normal text-muted-foreground">
+                        @{profile.username}
+                      </div>
                     )}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link to="/intelligence" preload="intent" className="rounded-xl">
-                      <Sparkles className="mr-2 h-4 w-4 text-primary" /> GlobeLink IA
-                    </Link>
-                  </DropdownMenuItem>
                   {profile?.username && (
                     <DropdownMenuItem asChild>
                       <Link
@@ -381,15 +374,24 @@ export function AppHeader() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={signOut} className="rounded-xl text-destructive focus:text-destructive">
+                  <DropdownMenuItem
+                    onClick={signOut}
+                    className="rounded-xl text-destructive focus:text-destructive"
+                  >
                     <LogOut className="mr-2 h-4 w-4" /> Déconnexion
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </>
           ) : (
-            <Button asChild size="sm" className="h-10 rounded-xl bg-primary px-4 text-primary-foreground shadow-soft transition hover:-translate-y-0.5 hover:shadow-glow">
-              <Link to="/auth" preload="intent">Connexion</Link>
+            <Button
+              asChild
+              size="sm"
+              className="h-10 rounded-xl bg-primary px-4 text-primary-foreground shadow-soft transition hover:-translate-y-0.5 hover:shadow-glow"
+            >
+              <Link to="/auth" preload="intent">
+                Connexion
+              </Link>
             </Button>
           )}
         </div>
