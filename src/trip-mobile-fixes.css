@@ -1,6 +1,6 @@
 /* Mobile containment for the travel journal.
    Safari can let a flex/grid item's min-content width push long IA+ labels past the viewport.
-   Keep every compact journal entry inside its day card and truncate long titles cleanly. */
+   Keep every compact journal entry inside its day card and let the main title wrap so it stays fully readable. */
 @media (max-width: 639px) {
   .app-page > div[class~="mx-auto"][class~="max-w-5xl"] {
     width: 100%;
@@ -42,6 +42,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* The first line is the IA+ / journal entry title: keep it fully readable.
+     It can grow vertically, but never horizontally beyond the card. */
+  .app-page article > div[class~="grid"][class~="gap-2"] > div[class~="flex"][class~="items-start"] > div[class~="flex-1"] > p:first-child {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
   }
 
   .app-page article > div[class~="grid"][class~="gap-2"] > div[class~="flex"][class~="items-start"] > button {
