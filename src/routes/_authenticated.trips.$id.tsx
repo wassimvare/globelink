@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { finalizeTrip } from "@/lib/trip-finalize.functions";
+import { resolvedDestinationCover } from "@/lib/destination-cover";
 
 export const Route = createFileRoute("/_authenticated/trips/$id")({
   component: TripDetail,
@@ -142,7 +143,11 @@ function TripDetail() {
         <header className="mt-4 overflow-hidden rounded-3xl border border-border bg-card shadow-elevated">
           <div className="relative aspect-[16/6] bg-muted">
             {trip.cover_url ? (
-              <img src={trip.cover_url} alt="" className="h-full w-full object-cover" />
+              <img
+                src={resolvedDestinationCover(trip.cover_url, trip.country, trip.city)}
+                alt=""
+                className="h-full w-full object-cover"
+              />
             ) : (
               <div className="grid h-full place-items-center gradient-hero text-6xl text-white">🌍</div>
             )}
