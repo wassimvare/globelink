@@ -12,7 +12,6 @@ import {
   MapPin,
   PenLine,
   Play,
-  Plus,
   Trash2,
   UtensilsCrossed,
   Video,
@@ -43,17 +42,9 @@ const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
 const MAX_VIDEO_SECONDS = 120;
 
 type MemoryKind = "memory" | "activity" | "restaurant" | "hotel" | "transport" | "stop";
+type DaySlot = { day: string; element: HTMLElement };
 
-type DaySlot = {
-  day: string;
-  element: HTMLElement;
-};
-
-const MEMORY_KINDS: Array<{
-  value: MemoryKind;
-  label: string;
-  icon: typeof Camera;
-}> = [
+const MEMORY_KINDS: Array<{ value: MemoryKind; label: string; icon: typeof Camera }> = [
   { value: "memory", label: "Souvenir", icon: Camera },
   { value: "activity", label: "Activité", icon: Activity },
   { value: "restaurant", label: "Restaurant", icon: UtensilsCrossed },
@@ -93,9 +84,7 @@ function MemoryMedia({ path }: { path: string }) {
 
   useEffect(() => {
     let active = true;
-    void getSignedMediaUrl(path).then((next) => {
-      if (active) setUrl(next);
-    });
+    void getSignedMediaUrl(path).then((next) => active && setUrl(next));
     return () => {
       active = false;
     };
@@ -112,13 +101,7 @@ function MemoryMedia({ path }: { path: string }) {
   if (isVideoPath(path)) {
     return (
       <div className="relative overflow-hidden rounded-xl bg-black">
-        <video
-          src={url}
-          controls
-          playsInline
-          preload="metadata"
-          className="aspect-square h-full w-full object-cover"
-        />
+        <video src={url} controls playsInline preload="metadata" className="aspect-square h-full w-full object-cover" />
         <span className="pointer-events-none absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white">
           <Play className="h-3.5 w-3.5 fill-current" />
         </span>
@@ -129,15 +112,7 @@ function MemoryMedia({ path }: { path: string }) {
   return <img src={url} alt="Souvenir de voyage" className="aspect-square h-full w-full rounded-xl object-cover" />;
 }
 
-function MemoryGallery({
-  day,
-  tripId,
-  entries,
-}: {
-  day: string;
-  tripId: string;
-  entries: any[];
-}) {
+function MemoryGallery({ day, tripId, entries }: { day: string; tripId: string; entries: any[] }) {
   const qc = useQueryClient();
   const memories = entries.filter(
     (entry) =>
@@ -164,7 +139,7 @@ function MemoryGallery({
         {memories.map((entry) => {
           const paths = mediaPaths(entry);
           return (
-            <article key={entry.id} className="overflow-hidden rounded-2xl border border-border/70 bg-card/70 p-3 shadow-soft">
+            <div key={entry.id} className="overflow-hidden rounded-2xl border border-border/70 bg-card/70 p-3 shadow-soft">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-sm font-semibold sm:text-base">{entry.title}</p>
@@ -181,9 +156,7 @@ function MemoryGallery({
                   onClick={async () => {
                     if (!window.confirm("Supprimer ce souvenir et ses médias ?")) return;
                     try {
-                      if (paths.length) {
-                        await supabase.storage.from("media").remove(paths);
-                      }
+                      if (paths.length) await supabase.storage.from("media").remove(paths);
                       const { error } = await supabase
                         .from("trip_entries")
                         .delete()
@@ -202,19 +175,15 @@ function MemoryGallery({
               </div>
 
               {entry.notes && (
-                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">
-                  {entry.notes}
-                </p>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">{entry.notes}</p>
               )}
 
               {paths.length > 0 && (
                 <div className={`mt-3 grid gap-2 ${paths.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
-                  {paths.map((path) => (
-                    <MemoryMedia key={path} path={path} />
-                  ))}
+                  {paths.map((path) => <MemoryMedia key={path} path={path} />)}
                 </div>
               )}
-            </article>
+            </div>
           );
         })}
       </div>
@@ -271,17 +240,13 @@ function MemoryComposer({
     for (const file of nextFiles) {
       if (files.length + accepted.length >= MAX_FILES) break;
       try {
-        validateMediaFile(file, {
-          maxBytes: file.type.startsWith("video/") ? MAX_VIDEO_BYTES : undefined,
-        });
+        validateMediaFile(file, { maxBytes: file.type.startsWith("video/") ? MAX_VIDEO_BYTES : undefined });
         accepted.push(file);
       } catch (error: any) {
         toast.error(error?.message ?? `${file.name} n’est pas compatible.`);
       }
     }
-    if (nextFiles.length + files.length > MAX_FILES) {
-      toast.info(`Tu peux ajouter jusqu’à ${MAX_FILES} photos ou vidéos par souvenir.`);
-    }
+    if (nextFiles.length + files.length > MAX_FILES) toast.info(`Tu peux ajouter jusqu’à ${MAX_FILES} photos ou vidéos par souvenir.`);
     setFiles((current) => [...current, ...accepted]);
   };
 
@@ -298,22 +263,15 @@ function MemoryComposer({
         const path = await uploadMedia(userId, "trips", file, {
           maxBytes: video ? MAX_VIDEO_BYTES : undefined,
           maxVideoDurationSeconds: MAX_VIDEO_SECONDS,
-          verifiedVideoMetadata: metadata,
-          onProgress: (value) => {
-            const percent = Math.max(1, Math.round(value * 100));
-            setProgress(`Envoi ${index + 1}/${files.length} · ${percent}%`);
-          },
+          ...(metadata ? { verifiedVideoMetadata: metadata } : {}),
+          onProgress: (value) => setProgress(`Envoi ${index + 1}/${files.length} · ${Math.max(1, Math.round(value * 100))}%`),
         });
         uploaded.push(path);
       }
 
       const firstVideo = uploaded.find((path) => isVideoPath(path)) ?? null;
-      const derivedTitle =
-        title.trim() ||
-        story.trim().split("\n")[0]?.slice(0, 80) ||
-        `Souvenir · ${dayLabel(day)}`;
+      const derivedTitle = title.trim() || story.trim().split("\n")[0]?.slice(0, 80) || `Souvenir · ${dayLabel(day)}`;
       const dbKind = kind === "memory" ? "photo" : kind;
-
       const { error } = await supabase.from("trip_entries").insert({
         trip_id: tripId,
         user_id: userId,
@@ -326,7 +284,7 @@ function MemoryComposer({
         image_url: null,
         video_url: firstVideo,
         visited_on: day,
-        position: Date.now() % 2_000_000_000,
+        position: Math.floor(Date.now() % 2_000_000_000),
       });
       if (error) throw error;
 
@@ -335,9 +293,7 @@ function MemoryComposer({
       reset();
       onOpenChange(false);
     } catch (error: any) {
-      if (uploaded.length) {
-        await supabase.storage.from("media").remove(uploaded).catch(() => undefined);
-      }
+      if (uploaded.length) await supabase.storage.from("media").remove(uploaded).catch(() => undefined);
       toast.error(error?.message ?? "Impossible d’enregistrer ce souvenir.");
     } finally {
       setPending(false);
@@ -349,10 +305,9 @@ function MemoryComposer({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!pending) {
-          onOpenChange(next);
-          if (!next) reset();
-        }
+        if (pending) return;
+        onOpenChange(next);
+        if (!next) reset();
       }}
     >
       <DialogContent className="max-h-[88dvh] w-[calc(100vw-1.5rem)] max-w-xl overflow-y-auto sm:w-full">
@@ -373,11 +328,7 @@ function MemoryComposer({
                   key={item.value}
                   type="button"
                   onClick={() => setKind(item.value)}
-                  className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-center text-[11px] font-medium transition ${
-                    active
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/40"
-                  }`}
+                  className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-center text-[11px] font-medium transition ${active ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:border-primary/40"}`}
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}
@@ -386,12 +337,7 @@ function MemoryComposer({
             })}
           </div>
 
-          <Input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Titre du souvenir (facultatif)"
-          />
-
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Titre du souvenir (facultatif)" />
           <Textarea
             value={story}
             onChange={(event) => setStory(event.target.value)}
@@ -399,7 +345,6 @@ function MemoryComposer({
             placeholder="Raconte ce que tu as fait, ce que tu as aimé, une anecdote, ton ressenti…"
             className="resize-none text-base leading-6"
           />
-
           <div className="grid grid-cols-2 gap-2">
             <Input value={city} onChange={(event) => setCity(event.target.value)} placeholder="Ville / lieu" />
             <Input value={country} onChange={(event) => setCountry(event.target.value)} placeholder="Pays" />
@@ -411,7 +356,10 @@ function MemoryComposer({
             accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
             multiple
             className="hidden"
-            onChange={(event) => addFiles(Array.from(event.target.files ?? []))}
+            onChange={(event) => {
+              addFiles(Array.from(event.target.files ?? []));
+              event.target.value = "";
+            }}
           />
 
           <div className="grid grid-cols-2 gap-2">
@@ -430,15 +378,12 @@ function MemoryComposer({
               <Video className="h-5 w-5 text-primary" /> Vidéos
             </button>
           </div>
-
-          <p className="text-xs text-muted-foreground">
-            Jusqu’à {MAX_FILES} médias. Vidéos : 2 min et 45 Mo maximum chacune.
-          </p>
+          <p className="text-xs text-muted-foreground">Jusqu’à {MAX_FILES} médias. Vidéos : 2 min et 45 Mo maximum chacune.</p>
 
           {previews.length > 0 && (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {previews.map(({ file, url }, index) => (
-                <div key={`${file.name}-${file.lastModified}-${index}`} className="group relative overflow-hidden rounded-xl border border-border bg-muted">
+                <div key={`${file.name}-${file.lastModified}-${index}`} className="relative overflow-hidden rounded-xl border border-border bg-muted">
                   {file.type.startsWith("video/") ? (
                     <video src={url} muted playsInline className="aspect-square h-full w-full object-cover" />
                   ) : (
@@ -490,11 +435,7 @@ export function TravelJournalEnhancer() {
     queryKey: ["trip-days", tripId],
     enabled: !!tripId && !!user,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("trip_days")
-        .select("*")
-        .eq("trip_id", tripId!)
-        .order("day_date");
+      const { data, error } = await supabase.from("trip_days").select("*").eq("trip_id", tripId!).order("day_date");
       if (error) throw error;
       return data ?? [];
     },
@@ -545,7 +486,8 @@ export function TravelJournalEnhancer() {
         card.setAttribute("aria-label", "Raconter une journée et ajouter des photos ou vidéos");
         card.style.cursor = "pointer";
         const subtitle = paragraph.parentElement?.querySelector("p.text-xs");
-        if (subtitle) subtitle.textContent = "Texte, photos, vidéos, lieux et dépenses.";
+        const desired = "Texte, photos, vidéos, lieux et dépenses.";
+        if (subtitle && subtitle.textContent !== desired) subtitle.textContent = desired;
       }
     };
 
@@ -564,9 +506,9 @@ export function TravelJournalEnhancer() {
 
       const button = target.closest<HTMLButtonElement>("button");
       if (!button || !/Ajouter (?:au journal|un souvenir)/i.test(button.textContent ?? "")) return false;
-      const article = button.closest("article");
-      const articles = Array.from(document.querySelectorAll<HTMLElement>(".app-page article"));
-      const articleIndex = article ? articles.indexOf(article as HTMLElement) : -1;
+      const article = button.closest<HTMLElement>("article.animate-rise");
+      const articles = Array.from(document.querySelectorAll<HTMLElement>(".app-page article.animate-rise"));
+      const articleIndex = article ? articles.indexOf(article) : -1;
       const day = articleIndex >= 0 ? orderedDays[articleIndex] : orderedDays[0];
       if (!day) {
         toast.info("Ajoute d’abord une journée.");
@@ -611,7 +553,7 @@ export function TravelJournalEnhancer() {
       return;
     }
     const timer = window.setTimeout(() => {
-      const articles = Array.from(document.querySelectorAll<HTMLElement>(".app-page article"));
+      const articles = Array.from(document.querySelectorAll<HTMLElement>(".app-page article.animate-rise"));
       const next: DaySlot[] = [];
       orderedDays.forEach((day, index) => {
         const article = articles[index];
@@ -626,7 +568,6 @@ export function TravelJournalEnhancer() {
       });
       setSlots(next);
     }, 50);
-
     return () => window.clearTimeout(timer);
   }, [tripId, orderedDays, entries.length]);
 
