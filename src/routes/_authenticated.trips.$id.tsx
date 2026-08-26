@@ -257,21 +257,75 @@ function TripDetail() {
 
         {/* Day list */}
         <section className="mt-8">
-          <div className="mb-4 flex items-end justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="font-display text-2xl">Journal jour par jour</h2>
-              <p className="text-sm text-muted-foreground">
-                {dayList.length} jour{dayList.length > 1 ? "s" : ""} · météo, photos, dépenses &
+              <h2 className="font-display text-2xl">Ton journal de voyage</h2>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Ajoute une journée, puis complète-la avec tes photos, tes dépenses, la météo et tes
                 souvenirs.
               </p>
             </div>
-            <AddDayButton tripId={id} userId={user!.id} existing={dayList} />
+            {dayList.length > 0 && (
+              <AddDayButton
+                tripId={id}
+                userId={user!.id}
+                existing={dayList}
+                startsOn={trip.starts_on}
+                endsOn={trip.ends_on}
+              />
+            )}
+          </div>
+
+          <div className="mb-5 grid gap-2 sm:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                1
+              </span>
+              <div>
+                <p className="text-sm font-medium">Ajoute une journée</p>
+                <p className="text-xs text-muted-foreground">Choisis simplement la date.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                2
+              </span>
+              <div>
+                <p className="text-sm font-medium">Raconte ta journée</p>
+                <p className="text-xs text-muted-foreground">Photos, lieux, notes et dépenses.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                3
+              </span>
+              <div>
+                <p className="text-sm font-medium">Génère ton souvenir</p>
+                <p className="text-xs text-muted-foreground">Finalise seulement quand tout est prêt.</p>
+              </div>
+            </div>
           </div>
 
           {dayList.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-border p-10 text-center text-muted-foreground">
-              <Camera className="mx-auto mb-2 h-6 w-6" />
-              Commence ton carnet : ajoute une première journée.
+            <div className="rounded-3xl border border-dashed border-border bg-card/40 p-6 text-center sm:p-10">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <Camera className="h-6 w-6" />
+              </div>
+              <h3 className="mt-4 font-display text-xl">Commence par ta première journée</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                Choisis la date. Une fois créée, tu pourras ajouter tes activités, photos, notes et
+                dépenses dans la même fiche.
+              </p>
+              <div className="mt-5 flex justify-center">
+                <AddDayButton
+                  tripId={id}
+                  userId={user!.id}
+                  existing={dayList}
+                  startsOn={trip.starts_on}
+                  endsOn={trip.ends_on}
+                  prominent
+                />
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
@@ -312,12 +366,13 @@ function TripDetail() {
               <div className="text-4xl">✨</div>
               <h3 className="font-display text-2xl">Finaliser le voyage</h3>
               <p className="max-w-md text-sm text-muted-foreground">
-                On génère automatiquement le résumé, les statistiques, la carte animée et la vidéo
-                souvenir.
+                {dayList.length === 0
+                  ? "Ajoute au moins une journée avant de finaliser ton voyage."
+                  : "Quand ton journal est prêt, on génère automatiquement le résumé, les statistiques, la carte animée et la vidéo souvenir."}
               </p>
               <Button
                 className="rounded-full gradient-hero text-primary-foreground shadow-elevated"
-                disabled={doFinalize.isPending}
+                disabled={doFinalize.isPending || dayList.length === 0}
                 onClick={() => doFinalize.mutate()}
               >
                 {doFinalize.isPending ? (
@@ -672,13 +727,13 @@ function AddEntryButton({ tripId, userId, day }: { tripId: string; userId: strin
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm" className="rounded-full gradient-hero text-primary-foreground">
-          <Plus className="mr-1 h-4 w-4" /> Ajouter
+          <Plus className="mr-1 h-4 w-4" /> Ajouter au journal
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Nouvelle étape ·{" "}
+            Ajouter à cette journée ·{" "}
             {new Date(day).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
           </DialogTitle>
         </DialogHeader>
@@ -830,7 +885,7 @@ function AddExpenseButton({
             onChange={(e) => setF({ ...f, amount: e.target.value })}
           />
           <Input
-            placeholder="Catégorie (transport, food…)"
+            placeholder="Catégorie (transport, repas…)"
             value={f.category}
             onChange={(e) => setF({ ...f, category: e.target.value })}
           />
@@ -854,46 +909,150 @@ function AddDayButton({
   tripId,
   userId,
   existing,
+  startsOn,
+  endsOn,
+  prominent = false,
 }: {
   tripId: string;
   userId: string;
   existing: string[];
+  startsOn?: string | null;
+  endsOn?: string | null;
+  prominent?: boolean;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const suggestedDate = useMemo(() => {
+    const used = new Set(existing);
+    const addDay = (value: string) => {
+      const [year, month, day] = value.split("-").map(Number);
+      const next = new Date(Date.UTC(year, month - 1, day + 1));
+      return next.toISOString().slice(0, 10);
+    };
+
+    if (startsOn) {
+      let candidate = startsOn;
+      while (used.has(candidate) && (!endsOn || candidate < endsOn)) candidate = addDay(candidate);
+      if (!used.has(candidate) && (!endsOn || candidate <= endsOn)) return candidate;
+    }
+
+    if (existing.length > 0) return addDay([...existing].sort().at(-1)!);
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, [existing, startsOn, endsOn]);
+
+  const [date, setDate] = useState(suggestedDate);
+
+  const create = useMutation({
+    mutationFn: async () => {
+      if (!date) throw new Error("Choisis une date pour cette journée.");
+      if (existing.includes(date)) {
+        const duplicate = new Error("Cette journée est déjà dans ton carnet.") as Error & {
+          code?: string;
+        };
+        duplicate.code = "DUPLICATE_DAY";
+        throw duplicate;
+      }
+
+      const { error } = await supabase.from("trip_days").insert({
+        trip_id: tripId,
+        user_id: userId,
+        day_date: date,
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["trip-days", tripId] });
+      toast.success("Journée ajoutée au carnet");
+      setOpen(false);
+    },
+    onError: (e: any) => {
+      if (e?.code === "23505" || e?.code === "DUPLICATE_DAY") {
+        toast.error("Cette journée est déjà dans ton carnet.");
+        return;
+      }
+      toast.error(e?.message ?? "Impossible d’ajouter cette journée. Réessaie.");
+    },
+  });
+
+  const formatDate = (value: string) =>
+    new Date(`${value}T12:00:00`).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setDate(suggestedDate);
+      }}
+    >
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="rounded-full">
-          <Plus className="mr-1 h-4 w-4" /> Ajouter une journée
+        <Button
+          size={prominent ? "default" : "sm"}
+          variant={prominent ? "default" : "outline"}
+          className={
+            prominent
+              ? "rounded-full gradient-hero px-6 text-primary-foreground shadow-soft"
+              : "rounded-full"
+          }
+        >
+          <Plus className="mr-1.5 h-4 w-4" />
+          {prominent ? "Ajouter ma première journée" : "Ajouter une journée"}
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nouvelle journée</DialogTitle>
+          <DialogTitle>Ajouter une journée au carnet</DialogTitle>
         </DialogHeader>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <DialogFooter>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Choisis la date de ta journée. Tu pourras ensuite y ajouter tes photos, activités, notes
+            et dépenses.
+          </p>
+          <label className="block text-sm font-medium" htmlFor={`trip-day-${tripId}`}>
+            Date de la journée
+          </label>
+          <Input
+            id={`trip-day-${tripId}`}
+            type="date"
+            value={date}
+            min={startsOn ?? undefined}
+            max={endsOn ?? undefined}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          {startsOn && endsOn && (
+            <p className="text-xs text-muted-foreground">
+              Dates du voyage : {formatDate(startsOn)} → {formatDate(endsOn)}
+            </p>
+          )}
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={create.isPending}>
+            Annuler
+          </Button>
           <Button
             className="rounded-full gradient-hero text-primary-foreground"
-            onClick={async () => {
-              if (existing.includes(date)) {
-                toast.info("Journée déjà présente");
-                setOpen(false);
-                return;
-              }
-              await supabase
-                .from("trip_days")
-                .upsert(
-                  { trip_id: tripId, user_id: userId, day_date: date },
-                  { onConflict: "trip_id,day_date" },
-                );
-              qc.invalidateQueries({ queryKey: ["trip-days", tripId] });
-              setOpen(false);
-            }}
+            disabled={!date || create.isPending || existing.includes(date)}
+            onClick={() => create.mutate()}
           >
-            Créer
+            {create.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Ajout…
+              </>
+            ) : (
+              <>
+                <Plus className="mr-2 h-4 w-4" /> Ajouter la journée
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
