@@ -178,10 +178,26 @@ function expenseIcon(label: string) {
   return Ticket;
 }
 
+function forecastTitle(label: string) {
+  return label
+    .replace(/^IA\+\s*·\s*/i, "")
+    .replace(/^Budget prévu\s*·\s*/i, "")
+    .trim() || "Prévision IA+";
+}
+
 export function TripDaySectionPremium({ index, day, tripId, userId, meta, entries, expenses }: Props) {
   const qc = useQueryClient();
   const [weatherLoading, setWeatherLoading] = useState(false);
-  const daySpent = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const actualExpenses = useMemo(
+    () => expenses.filter((expense) => expense.category !== "Prévision IA+"),
+    [expenses],
+  );
+  const forecastExpenses = useMemo(
+    () => expenses.filter((expense) => expense.category === "Prévision IA+"),
+    [expenses],
+  );
+  const daySpent = actualExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const dayForecast = forecastExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
   const aiNote = useMemo(
     () =>
@@ -394,14 +410,19 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
 
       <div className="mx-4 mb-4 rounded-2xl border border-border/70 bg-background/35 sm:mx-6 sm:mb-6">
         <div className="flex flex-wrap items-center gap-3 p-4">
-          <span className="mr-auto flex items-center gap-2">
+          <span className="mr-auto flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-primary">
               <Wallet className="h-4 w-4" />
             </span>
             <span className="tabular-nums text-lg font-bold">{daySpent.toFixed(2)} €</span>
             <span className="text-sm text-muted-foreground">
-              · {expenses.length} dépense{expenses.length > 1 ? "s" : ""}
+              dépensé · {actualExpenses.length} dépense{actualExpenses.length > 1 ? "s" : ""}
             </span>
+            {dayForecast > 0 && (
+              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                {dayForecast.toFixed(2)} € prévu IA+
+              </span>
+            )}
           </span>
           <AddExpenseButton tripId={tripId} userId={userId} day={day} />
         </div>
@@ -414,8 +435,19 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
       {expenses.length > 0 && (
         <ul className="divide-y divide-border/60 border-t border-border/70 bg-background/20 px-2 sm:px-4">
           {expenses.map((expense) => {
-            const Icon = expenseIcon(String(expense.label ?? ""));
             const forecast = expense.category === "Prévision IA+";
+            if (forecast) {
+              return (
+                <ForecastExpenseRow
+                  key={expense.id}
+                  expense={expense}
+                  day={day}
+                  program={program}
+                />
+              );
+            }
+
+            const Icon = expenseIcon(String(expense.label ?? ""));
             return (
               <li key={expense.id} className="flex min-h-16 items-center gap-3 px-2 py-3 sm:px-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
@@ -423,33 +455,121 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium sm:text-base">{expense.label}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{forecast ? "Prévision IA+" : expense.category || "Dépense"}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{expense.category || "Dépense"}</p>
                 </div>
-                <span className={`tabular-nums text-base font-bold ${forecast ? "text-primary" : "text-foreground"}`}>
+                <span className="tabular-nums text-base font-bold text-foreground">
                   {Number(expense.amount).toFixed(2)} €
                 </span>
-                {forecast ? (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                ) : (
-                  <button
-                    type="button"
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
-                    onClick={async () => {
-                      const { error } = await supabase.from("trip_expenses").delete().eq("id", expense.id);
-                      if (error) toast.error(error.message);
-                      else qc.invalidateQueries({ queryKey: ["trip-expenses", tripId] });
-                    }}
-                    aria-label="Supprimer la dépense"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                  onClick={async () => {
+                    const { error } = await supabase.from("trip_expenses").delete().eq("id", expense.id);
+                    if (error) toast.error(error.message);
+                    else qc.invalidateQueries({ queryKey: ["trip-expenses", tripId] });
+                  }}
+                  aria-label="Supprimer la dépense"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </li>
             );
           })}
         </ul>
       )}
     </article>
+  );
+}
+
+function ForecastExpenseRow({
+  expense,
+  day,
+  program,
+}: {
+  expense: any;
+  day: string;
+  program: ProgramSection[];
+}) {
+  const Icon = expenseIcon(String(expense.label ?? ""));
+  const title = forecastTitle(String(expense.label ?? ""));
+  const dateLabel = new Date(`${day}T12:00:00`).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <li>
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="flex min-h-16 w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-primary/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:px-3"
+            aria-label={`Voir le détail de la prévision IA+ de ${Number(expense.amount).toFixed(2)} euros`}
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+              <Icon className="h-4.5 w-4.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium sm:text-base">{title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Prévision IA+ · Appuie pour le détail</p>
+            </div>
+            <span className="tabular-nums text-base font-bold text-primary">
+              {Number(expense.amount).toFixed(2)} €
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Détail de la prévision IA+</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-primary/20 bg-primary/[0.06] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Budget prévu</p>
+              <div className="mt-1 flex items-end justify-between gap-3">
+                <div>
+                  <p className="font-display text-xl font-bold">{title}</p>
+                  <p className="mt-1 text-xs capitalize text-muted-foreground">{dateLabel}</p>
+                </div>
+                <p className="tabular-nums text-2xl font-bold text-primary">
+                  {Number(expense.amount).toFixed(2)} €
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Cette somme est une <strong className="text-foreground">prévision proposée par IA+</strong>. Elle n’est pas comptée comme une dépense réellement effectuée. Une dépense réelle apparaît seulement lorsque tu l’ajoutes toi-même au carnet.
+            </p>
+
+            {program.length > 0 && (
+              <div className="rounded-2xl border border-border/70 p-4">
+                <div className="mb-3 flex items-center gap-2 font-semibold">
+                  <CalendarDays className="h-4 w-4 text-primary" /> Programme associé à cette journée
+                </div>
+                <div className="space-y-3">
+                  {program.map((section, sectionIndex) => (
+                    <div key={`${section.title}-forecast-${sectionIndex}`}>
+                      <p className="text-sm font-semibold text-primary">{section.title}</p>
+                      <ul className="mt-1.5 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
+                        {section.items.map((item, itemIndex) => (
+                          <li key={`${section.title}-forecast-item-${itemIndex}`} className="flex gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </li>
   );
 }
 
