@@ -24,6 +24,7 @@ import { MobileBootstrap } from "@/components/MobileBootstrap";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { CallProvider } from "@/components/CallProvider";
 import { OnboardingGate } from "@/components/OnboardingGate";
+import { TravelJournalEnhancer } from "@/components/TravelJournalEnhancer";
 
 function NotFoundComponent() {
   return (
@@ -189,6 +190,7 @@ function RootComponent() {
             <PwaBootstrap />
             <MobileBootstrap />
             <NavigationProgress />
+            <TravelJournalEnhancer />
             <OnboardingGate>
               <div className="mobile-app-content">
                 <PageTransition>
