@@ -1,0 +1,50 @@
+/* Mobile containment for the travel journal.
+   Safari can let a flex/grid item's min-content width push long IA+ labels past the viewport.
+   Keep every compact journal entry inside its day card and truncate long titles cleanly. */
+@media (max-width: 639px) {
+  .app-page > div[class~="mx-auto"][class~="max-w-5xl"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  .app-page article {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-page article > div[class~="grid"][class~="gap-2"] {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .app-page article > div[class~="grid"][class~="gap-2"] > div[class~="flex"][class~="items-start"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .app-page article > div[class~="grid"][class~="gap-2"] > div[class~="flex"][class~="items-start"] > div[class~="flex-1"] {
+    width: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .app-page article > div[class~="grid"][class~="gap-2"] > div[class~="flex"][class~="items-start"] p[class~="truncate"] {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-page article > div[class~="grid"][class~="gap-2"] > div[class~="flex"][class~="items-start"] > button {
+    flex: 0 0 auto;
+  }
+}
