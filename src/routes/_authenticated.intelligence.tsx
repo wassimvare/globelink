@@ -1,51 +1,35 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import ReactMarkdown from "react-markdown";
 import {
+  ArrowRight,
   Check,
-  Compass,
   Crown,
   Database,
   Globe2,
   Hotel,
-  Loader2,
-  LockKeyhole,
-  MapPin,
-  Plane,
-  Send,
   Sparkles,
   Wand2,
   Zap,
 } from "lucide-react";
-import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
-import { askGlobeLinkFree } from "@/lib/ai-free.functions";
 import { getAiProEntitlement } from "@/lib/ai-pro.functions";
 
 export const Route = createFileRoute("/_authenticated/intelligence")({
   head: () => ({
     meta: [
-      { title: "GlobeLink IA — Ton assistant voyage" },
+      { title: "GlobeLink IA — Choisir ton assistant" },
       {
         name: "description",
         content:
-          "GlobeLink IA aide gratuitement à trouver des idées, tandis que IA+ recherche, compare et organise le vrai voyage avec le carnet GlobeLink.",
+          "Choisis entre GlobeLink IA gratuit pour trouver des idées et IA+ pour rechercher, comparer et organiser ton voyage avec ton carnet.",
       },
     ],
   }),
   component: IntelligencePage,
 });
-
-type ChatTurn = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
 
 const FREE_FEATURES = [
   "Questions et conseils rapides",
@@ -64,42 +48,9 @@ const PRO_FEATURES = [
   "Ajustements du voyage pendant la préparation",
 ];
 
-const SUGGESTIONS = [
-  {
-    label: "Imaginer un voyage",
-    sublabel: "Obtenir des idées pour commencer",
-    icon: Plane,
-    prompt:
-      "Aide-moi à imaginer un voyage : propose-moi quelques pistes de destinations et les grandes lignes selon mes envies.",
-  },
-  {
-    label: "Trouver une destination",
-    sublabel: "Selon ton budget et tes envies",
-    icon: MapPin,
-    prompt: "Aide-moi à trouver une destination selon mon budget, mes envies et la période de voyage.",
-  },
-  {
-    label: "Que faire sur place ?",
-    sublabel: "Quelques idées pour commencer",
-    icon: Compass,
-    prompt: "Donne-moi des idées générales de choses à faire sur ma prochaine destination.",
-  },
-  {
-    label: "Comparer de vraies options",
-    sublabel: "Recherche et comparaison avec IA+",
-    icon: Hotel,
-    href: "/ai-pro",
-    premium: true,
-  },
-] as const;
-
 function IntelligencePage() {
   const { user } = useAuth();
   const entitlementFn = useServerFn(getAiProEntitlement);
-  const askFreeFn = useServerFn(askGlobeLinkFree);
-  const [query, setQuery] = useState("");
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [remaining, setRemaining] = useState<number | null>(null);
 
   const entitlement = useQuery({
     queryKey: ["ai-pro-entitlement", user?.id],
@@ -109,40 +60,6 @@ function IntelligencePage() {
     queryFn: () => entitlementFn(),
   });
   const hasPlus = !!entitlement.data?.entitled;
-
-  const assistant = useMutation({
-    mutationFn: async (message: string) =>
-      askFreeFn({
-        data: {
-          query: message,
-          history: turns.slice(-6).map(({ role, content }) => ({ role, content })),
-        },
-      }),
-    onSuccess: (data, message) => {
-      const stamp = Date.now();
-      setTurns((current) =>
-        [
-          ...current,
-          { id: `u-${stamp}`, role: "user", content: message } satisfies ChatTurn,
-          { id: `a-${stamp}`, role: "assistant", content: data.answer } satisfies ChatTurn,
-        ].slice(-10),
-      );
-      setRemaining(data.remaining);
-      setQuery("");
-    },
-    onError: (error: Error) => toast.error(error.message || "GlobeLink IA n'a pas pu répondre."),
-  });
-
-  const send = () => {
-    const message = query.trim();
-    if (message.length < 3 || assistant.isPending) return;
-    assistant.mutate(message);
-  };
-
-  const openFreeAssistant = () => {
-    document.getElementById("assistant-gratuit")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => document.getElementById("globelink-free-input")?.focus(), 450);
-  };
 
   return (
     <div className="app-page min-h-screen">
@@ -155,10 +72,10 @@ function IntelligencePage() {
               <Sparkles className="h-4 w-4" /> GlobeLink IA
             </div>
             <h1 className="mt-4 font-display text-3xl font-bold tracking-tight sm:text-5xl">
-              Ton assistant voyage
+              Choisis ton assistant voyage
             </h1>
             <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Gratuit pour trouver des idées et préparer les grandes lignes. Passe à IA+ quand tu veux que GlobeLink recherche de vraies options, compare et organise ton voyage avec plus de contexte.
+              Une version gratuite pour t’inspirer, et IA+ pour rechercher de vraies options, comparer et organiser ton voyage avec beaucoup plus de contexte.
             </p>
           </div>
 
@@ -170,9 +87,12 @@ function IntelligencePage() {
                 </div>
                 <div>
                   <div className="text-xl font-bold text-cyan-500">Gratuit</div>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Pour t’inspirer et préparer les grandes lignes.</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Pour t’inspirer et préparer les grandes lignes.
+                  </p>
                 </div>
               </div>
+
               <div className="mt-5 space-y-2.5">
                 {FREE_FEATURES.map((feature) => (
                   <div key={feature} className="flex items-start gap-2 text-sm">
@@ -181,11 +101,16 @@ function IntelligencePage() {
                   </div>
                 ))}
               </div>
+
               <div className="mt-5 rounded-2xl border border-border/60 bg-background/55 p-3 text-xs leading-relaxed text-muted-foreground">
                 <strong className="text-foreground">Ce que le gratuit ne fait pas :</strong> il ne consulte pas ton carnet et ne recherche pas les prix, disponibilités ou établissements en temps réel.
               </div>
-              <Button type="button" variant="outline" className="mt-5 w-full rounded-2xl border-cyan-400/30" onClick={openFreeAssistant}>
-                <Wand2 className="mr-2 h-4 w-4" /> Demander une idée à l’IA
+
+              <Button asChild variant="outline" className="mt-5 w-full rounded-2xl border-cyan-400/30">
+                <Link to="/ai-trip">
+                  <Wand2 className="mr-2 h-4 w-4" /> Utiliser l’IA gratuite
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
               </Button>
             </section>
 
@@ -200,9 +125,13 @@ function IntelligencePage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-2xl font-bold text-violet-400">IA+</div>
                       {hasPlus ? (
-                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-500">Actif</span>
+                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-500">
+                          Actif
+                        </span>
                       ) : (
-                        <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-300">Premium</span>
+                        <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-300">
+                          Premium
+                        </span>
                       )}
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
@@ -228,105 +157,16 @@ function IntelligencePage() {
                   </div>
                 ))}
               </div>
+
               <Button asChild className="relative mt-6 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-500 text-white shadow-lg shadow-violet-500/20 hover:opacity-95">
                 <Link to="/ai-pro">
                   <Crown className="mr-2 h-4 w-4" /> {hasPlus ? "Ouvrir IA+" : "Découvrir IA+ — 7 jours gratuits"}
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             </section>
           </div>
         </header>
-
-        <section id="assistant-gratuit" className="mx-auto mt-5 max-w-5xl scroll-mt-24 rounded-[2rem] border border-border/70 bg-card p-4 shadow-soft sm:p-6">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="eyebrow">
-                <Sparkles className="h-3.5 w-3.5" /> Assistant gratuit
-              </div>
-              <h2 className="mt-1 font-display text-2xl font-bold">Besoin d’une idée ?</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Le mode gratuit t’aide à t’inspirer et préparer les grandes lignes, sans recherche en temps réel.</p>
-            </div>
-            {remaining !== null && (
-              <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground">
-                {remaining} demande{remaining > 1 ? "s" : ""} restante{remaining > 1 ? "s" : ""} aujourd’hui
-              </span>
-            )}
-          </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {SUGGESTIONS.map((item) => {
-              const Icon = item.icon;
-              if ("href" in item) {
-                return (
-                  <Link key={item.label} to={item.href} className={`group flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm transition ${"premium" in item && item.premium ? "border-violet-400/25 bg-violet-500/[0.07] hover:border-violet-400/45" : "border-border/70 bg-background/65 hover:border-primary/30 hover:bg-secondary/50"}`}>
-                    <Icon className={`h-4 w-4 ${"premium" in item && item.premium ? "text-violet-400" : "text-primary"}`} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-semibold">{item.label}</span>
-                      <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">{item.sublabel}</span>
-                    </span>
-                    {"premium" in item && item.premium ? <LockKeyhole className="h-4 w-4 text-violet-400" /> : <span className="text-muted-foreground transition group-hover:translate-x-0.5">→</span>}
-                  </Link>
-                );
-              }
-              return (
-                <button key={item.label} type="button" onClick={() => setQuery(item.prompt)} className="group flex items-center gap-3 rounded-2xl border border-border/70 bg-background/65 px-4 py-3 text-left text-sm transition hover:border-primary/30 hover:bg-secondary/50">
-                  <Icon className="h-4 w-4 text-primary" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold">{item.label}</span>
-                    <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">{item.sublabel}</span>
-                  </span>
-                  <span className="text-muted-foreground transition group-hover:translate-x-0.5">→</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {turns.length > 0 && (
-            <div className="mt-5 space-y-3 rounded-[1.5rem] border border-border/60 bg-background/55 p-3 sm:p-4">
-              {turns.map((turn) =>
-                turn.role === "user" ? (
-                  <div key={turn.id} className="ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground sm:max-w-[72%]">
-                    {turn.content}
-                  </div>
-                ) : (
-                  <article key={turn.id} className="max-w-[96%] rounded-2xl rounded-bl-md border border-primary/15 bg-card p-4 text-sm leading-relaxed sm:max-w-[84%]">
-                    <div className="mb-3 flex items-center gap-2 text-xs font-bold text-primary">
-                      <Sparkles className="h-3.5 w-3.5" /> GlobeLink IA · Gratuit
-                    </div>
-                    <div className="md-body"><ReactMarkdown>{turn.content}</ReactMarkdown></div>
-                    {!hasPlus && (
-                      <div className="mt-4 rounded-xl border border-violet-400/20 bg-violet-500/[0.06] p-3 text-xs leading-relaxed text-muted-foreground">
-                        Besoin de rechercher de vrais établissements, comparer des options ou construire un itinéraire complet ? <Link to="/ai-pro" className="font-semibold text-violet-400 hover:underline">IA+ est conçu pour ça.</Link>
-                      </div>
-                    )}
-                  </article>
-                ),
-              )}
-            </div>
-          )}
-
-          <div className="mt-5 flex items-center gap-2 rounded-2xl border border-border/80 bg-background/75 p-2 focus-within:border-primary/35 focus-within:ring-2 focus-within:ring-primary/10">
-            <Input
-              id="globelink-free-input"
-              value={query}
-              onChange={(event) => setQuery(event.target.value.slice(0, 1_200))}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  send();
-                }
-              }}
-              placeholder="Demande une idée à GlobeLink IA…"
-              className="h-11 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
-            />
-            <Button type="button" size="icon" onClick={send} disabled={query.trim().length < 3 || assistant.isPending} className="h-11 w-11 shrink-0 rounded-xl" aria-label="Envoyer à GlobeLink IA">
-              {assistant.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-          </div>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Le mode gratuit ne vérifie pas les prix ni les disponibilités en temps réel. Vérifie les informations importantes avant de réserver.
-          </p>
-        </section>
       </main>
     </div>
   );
