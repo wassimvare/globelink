@@ -133,10 +133,68 @@ function applyInstagramStyleSettingsNavigation() {
   }
 }
 
+function applyAiPlusBudgetContext() {
+  const aiProPath = path.resolve("src/lib/ai-pro.functions.ts");
+  if (!fs.existsSync(aiProPath)) return;
+
+  const source = fs.readFileSync(aiProPath, "utf8");
+  let next = source;
+
+  const oldSpendBlock = `  const entries = entriesResult.data ?? [];
+  const expenses = expensesResult.data ?? [];
+  const days = daysResult.data ?? [];
+  const spent = expenses.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);`;
+  const newSpendBlock = `  const entries = entriesResult.data ?? [];
+  const expenses = expensesResult.data ?? [];
+  const days = daysResult.data ?? [];
+  const actualExpenses = expenses.filter((item: any) => item.category !== "Prévision IA+");
+  const forecastExpenses = expenses.filter((item: any) => item.category === "Prévision IA+");
+  const spent = actualExpenses.reduce(
+    (sum: number, item: any) => sum + Number(item.amount || 0),
+    0,
+  );`;
+  if (!next.includes("const actualExpenses = expenses.filter")) {
+    if (next.includes(oldSpendBlock)) next = next.replace(oldSpendBlock, newSpendBlock);
+    else console.warn("[GlobeLink] IA+ actual-spending marker not found.");
+  }
+
+  const oldDaySpendBlock = `    const sameDayExpenses = expenses
+      .filter((expense: any) => expense.spent_on === day.day_date)
+      .reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+    return \`- \${day.day_date}\${day.headline ? \` — \${cleanText(day.headline, 120)}\` : ""}\${sameDayEntries ? \` | \${sameDayEntries}\` : ""}\${sameDayExpenses ? \` | dépenses: \${sameDayExpenses.toFixed(0)} €\` : ""}\${day.notes ? \` | notes: \${cleanText(day.notes, 180)}\` : ""}\`;`;
+  const newDaySpendBlock = `    const sameDayExpenses = actualExpenses
+      .filter((expense: any) => expense.spent_on === day.day_date)
+      .reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+    const sameDayForecast = forecastExpenses
+      .filter((expense: any) => expense.spent_on === day.day_date)
+      .reduce((sum: number, expense: any) => sum + Number(expense.amount || 0), 0);
+    return \`- \${day.day_date}\${day.headline ? \` — \${cleanText(day.headline, 120)}\` : ""}\${sameDayEntries ? \` | \${sameDayEntries}\` : ""}\${sameDayExpenses ? \` | dépenses réelles: \${sameDayExpenses.toFixed(0)} €\` : ""}\${sameDayForecast ? \` | prévision IA+: \${sameDayForecast.toFixed(0)} €\` : ""}\${day.notes ? \` | notes: \${cleanText(day.notes, 180)}\` : ""}\`;`;
+  if (!next.includes("const sameDayForecast = forecastExpenses")) {
+    if (next.includes(oldDaySpendBlock)) next = next.replace(oldDaySpendBlock, newDaySpendBlock);
+    else console.warn("[GlobeLink] IA+ daily forecast marker not found.");
+  }
+
+  const oldPromptInstruction = `Si le carnet contient un budget ou des journées, explique concrètement l'impact de ta recommandation dessus.`;
+  const newPromptInstruction = `Si le carnet contient un budget ou des journées, explique concrètement l'impact de ta recommandation dessus. Si tu proposes ou modifies un budget pour un voyage daté, détaille obligatoirement chaque journée par catégorie dans la section "## Budget" avec un tableau Markdown ayant exactement les colonnes "Date | Catégorie | Montant prévu | Détail". Utilise les dates ISO YYYY-MM-DD. Les montants des catégories d'une journée doivent sommer exactement au budget prévu de cette journée. Sépare la marge de sécurité des dépenses prévues et ne présente jamais une prévision comme une dépense déjà effectuée.`;
+  if (!next.includes('Date | Catégorie | Montant prévu | Détail')) {
+    if (next.includes(oldPromptInstruction)) {
+      next = next.replace(oldPromptInstruction, newPromptInstruction);
+    } else {
+      console.warn("[GlobeLink] IA+ structured-budget prompt marker not found.");
+    }
+  }
+
+  if (next !== source) {
+    fs.writeFileSync(aiProPath, next);
+    console.log("[GlobeLink] IA+ expense context and structured daily budget patch applied.");
+  }
+}
+
 applyCallRealtimeHotfix();
 applyActivitySettingsEntry();
 applyAccountDataSettingsEntry();
 applyInstagramStyleSettingsNavigation();
+applyAiPlusBudgetContext();
 
 const payloadDir = path.resolve(".v11-api-payload");
 if (!fs.existsSync(payloadDir)) {
