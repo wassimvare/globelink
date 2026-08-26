@@ -102,7 +102,18 @@ function TripDetail() {
     return Array.from(set).sort();
   }, [days, entries, expenses, trip?.starts_on, trip?.ends_on]);
 
-  const totalSpent = (expenses ?? []).reduce((sum, expense) => sum + Number(expense.amount), 0);
+  const actualExpenses = useMemo(
+    () => (expenses ?? []).filter((expense) => expense.category !== "Prévision IA+"),
+    [expenses],
+  );
+  const forecastTotal = useMemo(
+    () =>
+      (expenses ?? [])
+        .filter((expense) => expense.category === "Prévision IA+")
+        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+    [expenses],
+  );
+  const totalSpent = actualExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const budget = trip?.budget ? Number(trip.budget) : 0;
   const spentPct = budget ? Math.min(100, (totalSpent / budget) * 100) : 0;
 
@@ -192,7 +203,7 @@ function TripDetail() {
             <div className="p-4">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <Wallet className="h-3.5 w-3.5" /> Budget
+                  <Wallet className="h-3.5 w-3.5" /> Budget réellement dépensé
                 </span>
                 <span className="tabular-nums">
                   {totalSpent.toFixed(2)} € / {budget.toFixed(0)} €
@@ -204,6 +215,14 @@ function TripDetail() {
                   style={{ width: `${Math.min(100, spentPct)}%` }}
                 />
               </div>
+              {forecastTotal > 0 && (
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-muted-foreground">Prévision IA+ du voyage</span>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 font-semibold tabular-nums text-primary">
+                    {forecastTotal.toFixed(2)} € prévu
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </header>
@@ -592,6 +611,13 @@ function RecapDialog({
   days: any[];
 }) {
   const stats = (trip?.stats as any) ?? {};
+  const actualExpenseTotal = useMemo(
+    () =>
+      expenses
+        .filter((expense) => expense.category !== "Prévision IA+")
+        .reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+    [expenses],
+  );
   const photos = useMemo(() => {
     const all: string[] = [];
     entries.forEach((entry) => {
@@ -642,7 +668,7 @@ function RecapDialog({
           <RecapStat label="Photos" value={String(stats.photos_count ?? photos.length)} icon="📸" />
           <RecapStat
             label="Dépensé"
-            value={`${(stats.expenses_total ?? expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)).toFixed?.(0) ?? 0} €`}
+            value={`${actualExpenseTotal.toFixed(0)} €`}
             icon="💶"
           />
           <RecapStat label="Activités" value={String(stats.activities_count ?? 0)} icon="⚡" />
