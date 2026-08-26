@@ -28,7 +28,7 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { destinationCover } from "@/lib/destination-cover";
+import { destinationCover, resolvedDestinationCover } from "@/lib/destination-cover";
 
 export const Route = createFileRoute("/_authenticated/trips/")({
   head: () => ({
@@ -252,7 +252,7 @@ function TripsPage() {
             <div className="grid lg:grid-cols-[1.1fr_.9fr]">
               <div className="relative min-h-[270px] overflow-hidden bg-muted sm:min-h-[330px]">
                 <img
-                  src={focusTrip.cover_url || destinationCover(focusTrip.country, focusTrip.city)}
+                  src={resolvedDestinationCover(focusTrip.cover_url, focusTrip.country, focusTrip.city)}
                   alt={`Voyage ${focusTrip.title}`}
                   className="absolute inset-0 h-full w-full object-cover"
                 />
@@ -390,7 +390,7 @@ function TripsPage() {
                   >
                     <div className="relative aspect-[4/3] bg-muted">
                       <img
-                        src={trip.cover_url || destinationCover(trip.country, trip.city)}
+                        src={resolvedDestinationCover(trip.cover_url, trip.country, trip.city)}
                         alt={`Couverture ${[trip.city, trip.country].filter(Boolean).join(", ") || trip.title}`}
                         loading="lazy"
                         className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
