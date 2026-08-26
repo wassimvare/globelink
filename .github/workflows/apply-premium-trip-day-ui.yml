@@ -1,0 +1,91 @@
+name: Apply premium trip day UI
+
+on:
+  push:
+    paths:
+      - .github/workflows/apply-premium-trip-day-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch trip route
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/routes/_authenticated.trips.$id.tsx')
+          text = path.read_text()
+
+          if 'TripDaySectionPremium' not in text:
+              text = text.replace(
+                  'import ReactMarkdown from "react-markdown";\n',
+                  'import ReactMarkdown from "react-markdown";\nimport { TripDaySectionPremium } from "@/components/TripDaySectionPremium";\n',
+              )
+
+          text = text.replace('<DaySection\n', '<TripDaySectionPremium\n')
+
+          start = text.find('/* -------- Day section -------- */')
+          end = text.find('/* -------- Add day -------- */')
+          if start != -1 and end != -1 and end > start:
+              text = text[:start] + text[end:]
+
+          kinds_start = text.find('const KINDS = [')
+          route_start = text.find('function TripDetail()')
+          if kinds_start != -1 and route_start != -1 and route_start > kinds_start:
+              text = text[:kinds_start] + text[route_start:]
+
+          text = text.replace('import { Textarea } from "@/components/ui/textarea";\n', '')
+          select_start = text.find('import {\n  Select,\n')
+          if select_start != -1:
+              select_end = text.find('} from "@/components/ui/select";\n', select_start)
+              if select_end != -1:
+                  select_end += len('} from "@/components/ui/select";\n')
+                  text = text[:select_start] + text[select_end:]
+
+          for token in [
+              '  Trash2,\n',
+              '  UtensilsCrossed,\n',
+              '  Bed,\n',
+              '  Activity,\n',
+              '  Bus,\n',
+              '  StickyNote,\n',
+              '  CloudSun,\n',
+              '  Star,\n',
+              '  Image as ImageIcon,\n',
+          ]:
+              text = text.replace(token, '')
+
+          path.write_text(text)
+
+          component = Path('src/components/TripDaySectionPremium.tsx')
+          premium = component.read_text()
+          premium = premium.replace('  CloudSun,\n', '')
+          mood_start = premium.find('function moodLabel(')
+          if mood_start != -1:
+              mood_end = premium.find('\nfunction expenseIcon(', mood_start)
+              if mood_end != -1:
+                  premium = premium[:mood_start] + premium[mood_end + 1:]
+          premium = premium.replace('className="h-4.5 w-4.5"', 'className="h-[18px] w-[18px]"')
+          component.write_text(premium)
+          PY
+
+      - name: Remove temporary workflow
+        run: git rm .github/workflows/apply-premium-trip-day-ui.yml
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "GlobeLink Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/routes/_authenticated.trips.'$id'.tsx src/components/TripDaySectionPremium.tsx
+          git commit -m "feat(trips): match premium day journal mockup" || exit 0
+          git push
