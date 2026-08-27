@@ -13,32 +13,19 @@ function replaceRequired(before, after, label) {
   source = source.replace(before, after);
 }
 
-// Invalidate every old "no image" answer. v9 adds a named OpenStreetMap/Nominatim
-// lookup so commercial places with no Wikidata photo can still resolve their real
-// official website and its own og:image without inventing a generic image.
-source = source
-  .replace(/verified-place-media-v7-strict-official/g, "verified-place-media-v9-osm-name-official")
-  .replace(/verified-place-media-v8-public-verified/g, "verified-place-media-v9-osm-name-official");
+// Invalidate cached "no image" answers from the previous strict Booking-only phase.
+source = source.replace(
+  /verified-place-media-v7-strict-official/g,
+  "verified-place-media-v8-public-verified",
+);
 
-// Reverse geocoding may land on the surrounding building/road. Still reuse any
-// official media metadata when the exact reverse result carries it.
+// Nominatim can expose the establishment's official website even when the original
+// catalog row did not contain it. Reuse the existing guarded official-site scraper.
 replaceRequired(
   `  const wikipedia = cleanText(extra.wikipedia, 300);\n  if (wikipedia) {\n    const result = await wikipediaImage(wikipedia);\n    if (result) return result;\n  }\n  return null;\n}`,
   `  const wikipedia = cleanText(extra.wikipedia, 300);\n  if (wikipedia) {\n    const result = await wikipediaImage(wikipedia);\n    if (result) return result;\n  }\n\n  if (!input.skipOfficialSite) {\n    const website = safeWebsite(\n      extra.website || extra["contact:website"] || extra.url || extra["contact:url"],\n    );\n    if (website) {\n      const official = await resolveOfficialWebsiteImage(input, website);\n      if (official) return official;\n    }\n  }\n  return null;\n}`,
-  "site officiel depuis Nominatim reverse",
+  "site officiel depuis Nominatim",
 );
-
-// Search Nominatim by the establishment name as well as coordinates. This fixes
-// cases such as chain hotels where the map point is real but the reverse lookup
-// returns only the containing building and therefore misses website/image tags.
-if (!source.includes("async function resolveFromNominatimNamedSearch(")) {
-  const marker = `async function resolveWikidataSearch(input: PlaceMediaInput): Promise<ResolvedPlaceMedia | null> {`;
-  if (!source.includes(marker)) {
-    throw new Error("[Public place photo] insertion Nominatim nommée impossible");
-  }
-  const helper = `async function resolveFromNominatimNamedSearch(\n  input: PlaceMediaInput,\n): Promise<ResolvedPlaceMedia | null> {\n  const query = [input.title, input.city, input.country].filter(Boolean).join(\", \" ).trim();\n  if (!query) return null;\n\n  const url = new URL(\"https://nominatim.openstreetmap.org/search\");\n  url.searchParams.set(\"format\", \"jsonv2\");\n  url.searchParams.set(\"q\", query.slice(0, 280));\n  url.searchParams.set(\"limit\", \"8\");\n  url.searchParams.set(\"addressdetails\", \"1\");\n  url.searchParams.set(\"extratags\", \"1\");\n  url.searchParams.set(\"namedetails\", \"1\");\n  if (input.latitude != null && input.longitude != null) {\n    const lat = input.latitude;\n    const lng = input.longitude;\n    url.searchParams.set(\"viewbox\", \`\${(lng - 0.035).toFixed(6)},\${(lat + 0.025).toFixed(6)},\${(lng + 0.035).toFixed(6)},\${(lat - 0.025).toFixed(6)}\`);\n    url.searchParams.set(\"bounded\", \"0\");\n  }\n\n  const json = await fetchJson(\n    url.toString(),\n    { headers: { \"Accept-Language\": \"fr,en;q=0.8\" } },\n    6_000,\n  );\n  const results = Array.isArray(json) ? (json as unknown as AnyRecord[]) : [];\n  let best: { row: AnyRecord; score: number; name: string } | null = null;\n\n  for (const row of results) {\n    const namedetails =\n      row.namedetails && typeof row.namedetails === \"object\"\n        ? (row.namedetails as AnyRecord)\n        : {};\n    const displayName = cleanText(row.display_name, 500);\n    const candidateName =\n      cleanText(row.name, 240) ||\n      cleanText(namedetails.name, 240) ||\n      cleanText(namedetails[\"name:fr\"], 240) ||\n      displayName.split(\",\")[0]?.trim() ||\n      \"\";\n    const similarity = Math.max(\n      nameSimilarity(input.title, candidateName),\n      nameSimilarity(input.title, displayName),\n    );\n    if (similarity < 0.58) continue;\n\n    const lat = Number(row.lat);\n    const lng = Number(row.lon);\n    let distance = 0;\n    if (\n      input.latitude != null &&\n      input.longitude != null &&\n      Number.isFinite(lat) &&\n      Number.isFinite(lng)\n    ) {\n      distance = haversineKm(input.latitude, input.longitude, lat, lng);\n      if (distance > 4) continue;\n    }\n    const score = similarity * 100 - distance * 10;\n    if (!best || score > best.score) best = { row, score, name: candidateName };\n  }\n\n  if (!best) return null;\n  const extra =\n    best.row.extratags && typeof best.row.extratags === \"object\"\n      ? (best.row.extratags as AnyRecord)\n      : {};\n\n  const direct = safeHttps(extra.image) ?? commonsFileUrl(extra.wikimedia_commons);\n  if (direct) {\n    return {\n      url: direct,\n      source: \"wikimedia\",\n      matchedName: best.name || input.title,\n      attributions: [{ label: \"OpenStreetMap / Wikimedia\", url: \"https://www.openstreetmap.org\" }],\n    };\n  }\n\n  const wikidata = cleanText(extra.wikidata, 40);\n  if (wikidata) {\n    const media = await wikidataImage(wikidata);\n    if (media) return { ...media, matchedName: best.name || media.matchedName };\n  }\n\n  const wikipedia = cleanText(extra.wikipedia, 300);\n  if (wikipedia) {\n    const media = await wikipediaImage(wikipedia);\n    if (media) return { ...media, matchedName: best.name || media.matchedName };\n  }\n\n  if (!input.skipOfficialSite) {\n    const website = safeWebsite(\n      extra.website || extra[\"contact:website\"] || extra.url || extra[\"contact:url\"],\n    );\n    if (website) {\n      const official = await resolveOfficialWebsiteImage(\n        { ...input, website, address: input.address || cleanText(best.row.display_name, 420) },\n        website,\n      );\n      if (official) return { ...official, matchedName: best.name || input.title };\n    }\n  }\n\n  return null;\n}\n\n`;
-  source = source.replace(marker, `${helper}${marker}`);
-}
 
 if (!source.includes("async function resolveWikimediaNameSearch(")) {
   const marker = `async function resolveWikidataSearch(input: PlaceMediaInput): Promise<ResolvedPlaceMedia | null> {`;
@@ -49,23 +36,13 @@ if (!source.includes("async function resolveWikimediaNameSearch(")) {
   source = source.replace(marker, `${helper}${marker}`);
 }
 
-// Named OSM lookup now runs before the lower-confidence Wikidata/Openverse searches.
 replaceRequired(
-  `    const wikidataSearch = await resolveWikidataSearch(data);\n    if (wikidataSearch) return wikidataSearch;\n\n    const wikimediaNameSearch = await resolveWikimediaNameSearch(data);`,
-  `    const nominatimNamed = await resolveFromNominatimNamedSearch(data);\n    if (nominatimNamed) return nominatimNamed;\n\n    const wikidataSearch = await resolveWikidataSearch(data);\n    if (wikidataSearch) return wikidataSearch;\n\n    const wikimediaNameSearch = await resolveWikimediaNameSearch(data);`,
-  "Nominatim nommée avant Wikidata",
+  `    const wikidataSearch = await resolveWikidataSearch(data);\n    if (wikidataSearch) return wikidataSearch;\n\n    const openverse = await resolveOpenverse(data);`,
+  `    const wikidataSearch = await resolveWikidataSearch(data);\n    if (wikidataSearch) return wikidataSearch;\n\n    const wikimediaNameSearch = await resolveWikimediaNameSearch(data);\n    if (wikimediaNameSearch) return wikimediaNameSearch;\n\n    const openverse = await resolveOpenverse(data);`,
+  "fallback Wikimedia par nom",
 );
-
-// First-time build from the unpatched source has no Wikimedia-name call yet.
-if (!source.includes("const wikimediaNameSearch = await resolveWikimediaNameSearch(data);")) {
-  replaceRequired(
-    `    const wikidataSearch = await resolveWikidataSearch(data);\n    if (wikidataSearch) return wikidataSearch;\n\n    const openverse = await resolveOpenverse(data);`,
-    `    const nominatimNamed = await resolveFromNominatimNamedSearch(data);\n    if (nominatimNamed) return nominatimNamed;\n\n    const wikidataSearch = await resolveWikidataSearch(data);\n    if (wikidataSearch) return wikidataSearch;\n\n    const wikimediaNameSearch = await resolveWikimediaNameSearch(data);\n    if (wikimediaNameSearch) return wikimediaNameSearch;\n\n    const openverse = await resolveOpenverse(data);`,
-    "fallbacks nommés publics",
-  );
-}
 
 if (source !== original) writeFileSync(filePath, source, "utf8");
 console.log(
-  `[Public place photo] place-media.functions.ts: ${source === original ? "déjà conforme" : "mis à jour"} (Nominatim nommée + site officiel + Wikimedia)`,
+  `[Public place photo] place-media.functions.ts: ${source === original ? "déjà conforme" : "mis à jour"}`,
 );
