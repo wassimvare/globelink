@@ -1,5 +1,6 @@
 import "./apply-hotel-logo-fallback.mjs";
 import "./apply-hotel-identity-fallback.mjs";
+import "./apply-place-media-instant-no-street.mjs";
 import fs from "node:fs";
 
 const checks = [
