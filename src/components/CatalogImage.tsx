@@ -7,6 +7,10 @@ import {
   verifiedPlaceMediaQueryKey,
   type PlaceMediaInput,
 } from "@/lib/place-media.functions";
+import {
+  publicPlaceMediaQueryKey,
+  resolvePublicPlaceMedia,
+} from "@/lib/public-place-media.functions";
 
 type CatalogImageLookup = {
   latitude?: number | null;
@@ -117,6 +121,7 @@ export function CatalogImage({
 }: CatalogImageProps) {
   const exactDirect = useMemo(() => directImage(item), [item]);
   const resolveMedia = useServerFn(resolveVerifiedPlaceMedia);
+  const resolvePublicMedia = useServerFn(resolvePublicPlaceMedia);
   const primaryInput = useMemo(
     () => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false }),
     [item, lookup],
@@ -124,6 +129,17 @@ export function CatalogImage({
   const fallbackInput = useMemo(
     () => catalogPlaceMediaInput(item, lookup, { skipGoogle: true, skipOfficialSite: true }),
     [item, lookup],
+  );
+  const publicInput = useMemo(
+    () => ({
+      title: item.title,
+      kind: item.kind,
+      latitude: primaryInput.latitude,
+      longitude: primaryInput.longitude,
+      city: primaryInput.city ?? null,
+      country: primaryInput.country ?? null,
+    }),
+    [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude],
   );
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   useEffect(() => setFailedUrls(new Set()), [item.id]);
@@ -152,10 +168,25 @@ export function CatalogImage({
 
   const primaryUrl = safeExactHttps(resolvedMedia?.url);
   const primaryFailed = !!primaryUrl && failedUrls.has(primaryUrl);
+  const primaryExhausted = canResolveSource && !isFetching && (!primaryUrl || primaryFailed);
+  const { data: publicMedia, isFetching: isFetchingPublic } = useQuery({
+    queryKey: publicPlaceMediaQueryKey(publicInput),
+    queryFn: async () => resolvePublicMedia({ data: publicInput }),
+    // The selected place sheet passes priority=true. Run the stronger keyless
+    // Nominatim -> official-site lookup there, rather than hammering Nominatim for
+    // every small card that happens to be visible on the map.
+    enabled: primaryExhausted && priority,
+    staleTime: 12 * 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
+    retry: 1,
+  });
+
+  const publicUrl = safeExactHttps(publicMedia?.url);
+  const publicFailed = !!publicUrl && failedUrls.has(publicUrl);
   const { data: fallbackMedia, isFetching: isFetchingFallback } = useQuery({
     queryKey: verifiedPlaceMediaQueryKey(item.id, fallbackInput, "fallback"),
     queryFn: async () => resolveMedia({ data: fallbackInput }),
-    enabled: canResolveSource && primaryFailed,
+    enabled: canResolveSource && (primaryFailed || publicFailed),
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
     retry: 1,
@@ -163,17 +194,21 @@ export function CatalogImage({
 
   const directAvailable = exactDirect && !failedUrls.has(exactDirect) ? exactDirect : null;
   const resolvedCandidate = safeExactHttps(resolvedMedia?.url);
+  const publicCandidate = safeExactHttps(publicMedia?.url);
   const fallbackCandidate = safeExactHttps(fallbackMedia?.url);
   const resolvedUrl =
     directAvailable ??
     (resolvedCandidate && !failedUrls.has(resolvedCandidate) ? resolvedCandidate : null) ??
+    (publicCandidate && !failedUrls.has(publicCandidate) ? publicCandidate : null) ??
     (fallbackCandidate && !failedUrls.has(fallbackCandidate) ? fallbackCandidate : null);
   const activeMedia =
     resolvedUrl && fallbackCandidate === resolvedUrl
       ? fallbackMedia
-      : resolvedUrl && resolvedCandidate === resolvedUrl
-        ? resolvedMedia
-        : null;
+      : resolvedUrl && publicCandidate === resolvedUrl
+        ? publicMedia
+        : resolvedUrl && resolvedCandidate === resolvedUrl
+          ? resolvedMedia
+          : null;
 
   if (resolvedUrl) {
     const image = (
@@ -225,6 +260,7 @@ export function CatalogImage({
   }
 
   const placeholder = PLACEHOLDER_META[item.kind] ?? PLACEHOLDER_META.activity;
+  const lookingForPhoto = isFetching || isFetchingPublic || isFetchingFallback;
   return (
     <div
       className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-secondary via-background to-secondary text-center text-muted-foreground`}
@@ -235,13 +271,11 @@ export function CatalogImage({
         {placeholder.emoji}
       </span>
       <span className="px-4 text-xs font-semibold text-foreground/75">
-        {isFetching || isFetchingFallback
-          ? "Recherche de la photo officielle du lieu…"
-          : "Aucune photo officielle vérifiée"}
+        {lookingForPhoto ? "Recherche de la photo officielle du lieu…" : "Aucune photo officielle vérifiée"}
       </span>
       <span className="px-4 text-[10px]">
-        {isFetching || isFetchingFallback
-          ? "Google Places · source officielle"
+        {lookingForPhoto
+          ? "Google Places · OpenStreetMap · site officiel"
           : `${placeholder.label} · aucune image générique utilisée`}
       </span>
     </div>
