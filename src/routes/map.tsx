@@ -20,6 +20,7 @@ import {
   MapPin,
   Users,
   Sparkles,
+  Crown,
   X,
   LocateFixed,
   Loader2,
@@ -1612,6 +1613,15 @@ function PlaceSheet({
                     <Navigation className="h-4 w-4" />
                     <span className="text-xs">Itinéraire</span>
                   </a>
+                </Button>
+                <Button
+                  asChild
+                  className="h-auto min-w-[82px] shrink-0 flex-col gap-1 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-500 py-2.5 text-white shadow-soft hover:text-white hover:opacity-95"
+                >
+                  <Link to="/ai-pro">
+                    <Crown className="h-4 w-4" />
+                    <span className="text-xs">IA+</span>
+                  </Link>
                 </Button>
                 <Button
                   variant={saved ? "default" : "outline"}
