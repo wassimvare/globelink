@@ -3,9 +3,13 @@
 import { execFileSync } from "node:child_process";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// Keep the hotel catalogue strict at dev/build time: a hotel is only visible
-// when Booking.com is the verified provider and its photo is Booking-hosted.
+// Keep real hotels visible while preferring verified Booking.com photos.
 execFileSync(process.execPath, ["scripts/apply-booking-hotel-policy.mjs"], {
+  stdio: "inherit",
+});
+
+// Apply keyless/free public data integrations before TanStack/Vite compiles the app.
+execFileSync(process.execPath, ["scripts/apply-public-open-data.mjs"], {
   stdio: "inherit",
 });
 
