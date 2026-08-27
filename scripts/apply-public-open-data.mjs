@@ -25,7 +25,7 @@ patchFile("src/lib/public-travel-catalog.functions.ts", [
   {
     name: "remove dead Overpass NCHC endpoint",
     before: `  "https://overpass.openstreetmap.fr/api/interpreter",\n  "https://overpass.nchc.org.tw/api/interpreter",`,
-    after: `  "https://overpass.openstreetmap.fr/api/interpreter",`,
+    after: `  "https://overpass.openstreetmap.fr/api/interpreter",\n  // NCHC retiré : ce miroir ne résout plus de façon fiable en production Vercel.`,
   },
 ]);
 
