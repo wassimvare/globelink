@@ -1,4 +1,5 @@
 import "./apply-hotel-logo-fallback.mjs";
+import "./apply-hotel-domain-logo-fallback.mjs";
 import fs from "node:fs";
 
 const checks = [
