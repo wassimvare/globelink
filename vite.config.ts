@@ -1,6 +1,13 @@
 // @lovable.dev/vite-tanstack-config already includes the core TanStack,
 // React, Tailwind, Nitro and path-alias plugins.
+import { execFileSync } from "node:child_process";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+
+// Keep the hotel catalogue strict at dev/build time: a hotel is only visible
+// when Booking.com is the verified provider and its photo is Booking-hosted.
+execFileSync(process.execPath, ["scripts/apply-booking-hotel-policy.mjs"], {
+  stdio: "inherit",
+});
 
 export default defineConfig({
   tanstackStart: {
