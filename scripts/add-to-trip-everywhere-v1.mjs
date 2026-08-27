@@ -212,3 +212,5 @@ for (const target of targets) {
   }
 }
 console.log(`[GlobeLink] Add-to-trip everywhere: ${changed} surface(s) updated.`);
+
+await import("./ai-context-layer-v1.mjs");
