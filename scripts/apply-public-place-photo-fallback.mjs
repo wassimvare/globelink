@@ -46,3 +46,48 @@ if (source !== original) writeFileSync(filePath, source, "utf8");
 console.log(
   `[Public place photo] place-media.functions.ts: ${source === original ? "déjà conforme" : "mis à jour"}`,
 );
+
+// Final fallback for selected place sheets: when no exact official/Wikimedia photo
+// exists, use open KartaView street-level imagery captured very close to the POI.
+// The image is explicitly attributed as a nearby real-world view, never as an
+// official hotel/restaurant photo. Public imagery endpoints do not require a key.
+const publicResolverPath = resolve(process.cwd(), "src/lib/public-place-media.functions.ts");
+let publicSource = readFileSync(publicResolverPath, "utf8");
+const publicOriginal = publicSource;
+
+publicSource = publicSource.replace(
+  `source: "official-site" | "osm-wikimedia" | "wikidata" | "wikipedia" | null;`,
+  `source: "official-site" | "osm-wikimedia" | "wikidata" | "wikipedia" | "kartaview" | null;`,
+);
+
+if (!publicSource.includes("async function resolveKartaView(")) {
+  const marker = `function validateInput(raw: PublicPlaceMediaInput): PublicPlaceMediaInput {`;
+  const helper = `function bearingDegrees(lat1: number, lng1: number, lat2: number, lng2: number) {\n  const toRad = (value: number) => (value * Math.PI) / 180;\n  const toDeg = (value: number) => (value * 180) / Math.PI;\n  const phi1 = toRad(lat1);\n  const phi2 = toRad(lat2);\n  const lambda = toRad(lng2 - lng1);\n  const y = Math.sin(lambda) * Math.cos(phi2);\n  const x =\n    Math.cos(phi1) * Math.sin(phi2) -\n    Math.sin(phi1) * Math.cos(phi2) * Math.cos(lambda);\n  return (toDeg(Math.atan2(y, x)) + 360) % 360;\n}\n\nfunction headingDelta(left: number, right: number) {\n  const diff = Math.abs(((left - right + 540) % 360) - 180);\n  return Number.isFinite(diff) ? diff : 180;\n}\n\nfunction kartaViewImageUrl(value: unknown) {\n  const raw = clean(value, 2500).replace(\"[[sizeprefix]]\", \"proc\");\n  const direct = safeHttps(raw);\n  if (!direct) return null;\n  try {\n    const host = new URL(direct).hostname.toLowerCase();\n    if (host === \"cdn.kartaview.org\") return direct;\n    if (/(^|\\.)openstreetcam\\.org$/i.test(host)) {\n      return (\n        \"https://cdn.kartaview.org/pr:sharp/\" +\n        Buffer.from(direct, \"utf8\").toString(\"base64url\")\n      );\n    }\n  } catch {\n    return null;\n  }\n  return direct;\n}\n\nasync function resolveKartaView(\n  input: PublicPlaceMediaInput,\n): Promise<PublicPlaceMediaResult | null> {\n  if (input.latitude == null || input.longitude == null) return null;\n  const url = new URL(\"https://api.openstreetcam.org/2.0/photo/\");\n  url.searchParams.set(\"lat\", String(input.latitude));\n  url.searchParams.set(\"lng\", String(input.longitude));\n  url.searchParams.set(\"radius\", \"220\");\n  url.searchParams.set(\"zoomLevel\", \"18\");\n  url.searchParams.set(\"join\", \"sequence\");\n  url.searchParams.set(\"orderBy\", \"id\");\n  url.searchParams.set(\"orderDirection\", \"desc\");\n\n  const json = await fetchJson(url.toString(), 6_000);\n  const root = json && typeof json === \"object\" ? (json as AnyRecord) : null;\n  const result = root?.result && typeof root.result === \"object\" ? (root.result as AnyRecord) : null;\n  const rows = Array.isArray(result?.data) ? (result.data as AnyRecord[]) : [];\n  let best: { row: AnyRecord; image: string; score: number } | null = null;\n\n  for (const row of rows.slice(0, 80)) {\n    const visibility = clean(row.visibility, 40).toLowerCase();\n    if (visibility && visibility !== \"public\") continue;\n    const status = clean(row.status, 40).toLowerCase();\n    if (status && status !== \"active\") continue;\n\n    const lat = Number(row.lat ?? row.matchLat);\n    const lng = Number(row.lng ?? row.matchLng);\n    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;\n    const distance = haversineKm(input.latitude, input.longitude, lat, lng);\n    if (distance > 0.28) continue;\n\n    const image =\n      kartaViewImageUrl(row.imageProcUrl) ??\n      kartaViewImageUrl(row.fileurlProc) ??\n      kartaViewImageUrl(row.fileUrlProc) ??\n      kartaViewImageUrl(row.fileurl) ??\n      kartaViewImageUrl(row.fileUrl) ??\n      kartaViewImageUrl(row.fileurlTh);\n    if (!image) continue;\n\n    const projection = clean(row.projection, 40).toUpperCase();\n    const fieldOfView = Number(row.fieldOfView);\n    const heading = Number(row.heading);\n    let directionPenalty = 0;\n    if (Number.isFinite(heading) && projection !== \"SPHERE\" && fieldOfView < 180) {\n      const targetBearing = bearingDegrees(lat, lng, input.latitude, input.longitude);\n      const delta = headingDelta(heading, targetBearing);\n      const allowed = Math.max(75, Number.isFinite(fieldOfView) ? fieldOfView / 2 + 30 : 80);\n      if (delta > allowed) continue;\n      directionPenalty = delta * 0.35;\n    }\n\n    const score = distance * 1000 + directionPenalty;\n    if (!best || score < best.score) best = { row, image, score };\n  }\n\n  if (!best) return null;\n  const sequence =\n    best.row.sequence && typeof best.row.sequence === \"object\"\n      ? (best.row.sequence as AnyRecord)\n      : {};\n  const sequenceId = clean(best.row.sequenceId ?? sequence.id, 80);\n  const sequenceIndex = clean(best.row.sequenceIndex, 40) || \"0\";\n  const sourceUrl = sequenceId\n    ? \"https://kartaview.org/details/\" + sequenceId + \"/\" + sequenceIndex + \"/track-info\"\n    : \"https://kartaview.org/\";\n  return {\n    url: best.image,\n    source: \"kartaview\",\n    matchedName: input.title,\n    attributions: [\n      { label: \"Vue réelle à proximité · KartaView\", url: sourceUrl },\n    ],\n  };\n}\n\n`;
+  if (publicSource.includes(marker)) {
+    publicSource = publicSource.replace(marker, `${helper}${marker}`);
+  } else {
+    console.warn("[Public place photo] insertion KartaView impossible: validateInput introuvable");
+  }
+}
+
+publicSource = publicSource.replace(
+  /"public-place-media-v1"/g,
+  '"public-place-media-v2-kartaview"',
+);
+
+const oldResolverChain = `    const value =\n      (await resolveFromNominatim(data)) ??\n      ({ url: null, source: null, matchedName: null, attributions: [] } satisfies PublicPlaceMediaResult);`;
+const newResolverChain = `    const value =\n      (await resolveFromNominatim(data)) ??\n      (await resolveKartaView(data)) ??\n      ({ url: null, source: null, matchedName: null, attributions: [] } satisfies PublicPlaceMediaResult);`;
+if (!publicSource.includes(newResolverChain)) {
+  if (publicSource.includes(oldResolverChain)) {
+    publicSource = publicSource.replace(oldResolverChain, newResolverChain);
+  } else {
+    console.warn("[Public place photo] chaîne de fallback KartaView introuvable");
+  }
+}
+
+if (publicSource !== publicOriginal) writeFileSync(publicResolverPath, publicSource, "utf8");
+console.log(
+  `[Public place photo] public-place-media.functions.ts: ${
+    publicSource === publicOriginal ? "déjà conforme" : "KartaView ajouté"
+  }`,
+);
