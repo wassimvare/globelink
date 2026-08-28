@@ -22,6 +22,7 @@ import { NetworkStatus } from "@/components/NetworkStatus";
 import { PwaBootstrap } from "@/components/PwaBootstrap";
 import { MobileBootstrap } from "@/components/MobileBootstrap";
 import { NavigationProgress } from "@/components/NavigationProgress";
+import { ProductAnalyticsTracker } from "@/components/ProductAnalyticsTracker";
 import { CallProvider } from "@/components/CallProvider";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { TravelJournalEnhancer } from "@/components/TravelJournalEnhancer";
@@ -187,6 +188,7 @@ function RootComponent() {
         <AuthProvider>
           <CallProvider>
             <AuthSync />
+            <ProductAnalyticsTracker />
             <PwaBootstrap />
             <MobileBootstrap />
             <NavigationProgress />
