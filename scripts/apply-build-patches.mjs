@@ -12,6 +12,7 @@ runNodeSequence("GlobeLink patches", [
   "scripts/fix-explorer-add-to-trip-mobile-v1.mjs",
   "scripts/add-to-trip-everywhere-v1.mjs",
   "scripts/ai-readable-response-v1.mjs",
+  "scripts/fix-trip-journal-days-v2.mjs",
   "scripts/apply-travel-match-v3.mjs",
   "scripts/journey-continuity-v1.mjs",
   "scripts/simplify-home-v1.mjs",
