@@ -3,7 +3,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { Bug, Lightbulb, Loader2, MessageCircleQuestion, Send, TestTube2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
-import { createSupportTicket } from "@/lib/support";
+import { createSupportTicket, SUPPORT_TICKET_MESSAGE_MIN_LENGTH } from "@/lib/support";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -18,6 +18,8 @@ import {
 
 type FeedbackKind = "bug" | "confusing" | "idea";
 type FeedbackImpact = "blocking" | "annoying" | "minor";
+
+const BETA_FEEDBACK_MAX_LENGTH = 1500;
 
 const feedbackKinds: Array<{
   value: FeedbackKind;
@@ -49,12 +51,20 @@ export function BetaFeedbackWidget() {
 
   const hidden = !user || hiddenPrefixes.some((prefix) => pathname.startsWith(prefix));
   const selected = useMemo(() => feedbackKinds.find((item) => item.value === kind) ?? feedbackKinds[0], [kind]);
+  const trimmedMessageLength = message.trim().length;
+  const remainingMinimum = Math.max(0, SUPPORT_TICKET_MESSAGE_MIN_LENGTH - trimmedMessageLength);
+  const messageTooShort = trimmedMessageLength > 0 && trimmedMessageLength < SUPPORT_TICKET_MESSAGE_MIN_LENGTH;
 
   if (hidden) return null;
 
   async function submit() {
     const body = message.trim();
-    if (!user || !body || pending) return;
+    if (!user || pending) return;
+    if (body.length < SUPPORT_TICKET_MESSAGE_MIN_LENGTH) {
+      toast.error(`Ton retour doit contenir au moins ${SUPPORT_TICKET_MESSAGE_MIN_LENGTH} caractères.`);
+      return;
+    }
+
     setPending(true);
     try {
       const width = typeof window === "undefined" ? 0 : window.innerWidth;
@@ -154,9 +164,10 @@ export function BetaFeedbackWidget() {
 
         <Textarea
           value={message}
-          onChange={(event) => setMessage(event.target.value.slice(0, 1500))}
+          onChange={(event) => setMessage(event.target.value.slice(0, BETA_FEEDBACK_MAX_LENGTH))}
           rows={5}
           autoFocus
+          aria-invalid={messageTooShort}
           placeholder={
             kind === "bug"
               ? "Ex. J’appuie sur Ajouter à mon voyage et rien ne se passe…"
@@ -164,15 +175,25 @@ export function BetaFeedbackWidget() {
                 ? "Ex. Je ne savais pas quoi faire après avoir créé mon voyage…"
                 : "Ex. J’aimerais pouvoir…"
           }
-          className="resize-none rounded-2xl text-base leading-6"
+          className={`resize-none rounded-2xl text-base leading-6 ${messageTooShort ? "border-destructive/70 focus-visible:ring-destructive/30" : ""}`}
         />
         <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-          <span className="truncate">Page : {pathname || "/"}</span>
-          <span className="shrink-0 tabular-nums">{message.length}/1500</span>
+          <span className={messageTooShort ? "font-semibold text-destructive" : "truncate"}>
+            {messageTooShort
+              ? `Encore ${remainingMinimum} caractère${remainingMinimum > 1 ? "s" : ""} minimum`
+              : `Page : ${pathname || "/"}`}
+          </span>
+          <span className="shrink-0 tabular-nums">
+            min. {SUPPORT_TICKET_MESSAGE_MIN_LENGTH} · {message.length}/{BETA_FEEDBACK_MAX_LENGTH}
+          </span>
         </div>
 
         <DialogFooter>
-          <Button disabled={pending || !message.trim()} onClick={submit} className="h-11 rounded-2xl">
+          <Button
+            disabled={pending || trimmedMessageLength < SUPPORT_TICKET_MESSAGE_MIN_LENGTH}
+            onClick={submit}
+            className="h-11 rounded-2xl"
+          >
             {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
             Envoyer le retour
           </Button>
