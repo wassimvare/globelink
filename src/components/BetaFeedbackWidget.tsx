@@ -64,9 +64,32 @@ export function BetaFeedbackWidget() {
     }
 
     let host: HTMLElement | null = null;
-    const frame = window.requestAnimationFrame(() => {
-      const tabList = document.querySelector<HTMLElement>('[role="tablist"]');
+    let frame = 0;
+    let retryTimer = 0;
+
+    const findAdminTabList = () => {
+      const lists = Array.from(document.querySelectorAll<HTMLElement>('[role="tablist"]'));
+      return (
+        lists.find((list) =>
+          Array.from(list.querySelectorAll<HTMLElement>('[role="tab"]')).some((item) =>
+            item.textContent?.trim().includes("Signalements"),
+          ),
+        ) ?? null
+      );
+    };
+
+    const ensureAdminBetaTab = () => {
+      if (host?.isConnected) return;
+
+      const tabList = findAdminTabList();
       if (!tabList) return;
+
+      const existing = tabList.querySelector<HTMLElement>('[data-beta-admin-tab-host="true"]');
+      if (existing) {
+        host = existing;
+        setAdminBetaTabHost(existing);
+        return;
+      }
 
       const reportTab = Array.from(tabList.querySelectorAll<HTMLElement>('[role="tab"]')).find((item) =>
         item.textContent?.trim().includes("Signalements"),
@@ -80,10 +103,18 @@ export function BetaFeedbackWidget() {
       else tabList.appendChild(host);
 
       setAdminBetaTabHost(host);
-    });
+    };
+
+    frame = window.requestAnimationFrame(ensureAdminBetaTab);
+    retryTimer = window.setInterval(ensureAdminBetaTab, 400);
+
+    const observer = new MutationObserver(ensureAdminBetaTab);
+    observer.observe(document.body, { childList: true, subtree: true });
 
     return () => {
       window.cancelAnimationFrame(frame);
+      window.clearInterval(retryTimer);
+      observer.disconnect();
       host?.remove();
       setAdminBetaTabHost(null);
     };
