@@ -48,7 +48,7 @@ function VerifyEmailPage() {
   useEffect(() => {
     if (!loading && user?.email_confirmed_at) {
       sessionStorage.removeItem(PENDING_EMAIL_KEY);
-      router.navigate({ to: "/", replace: true });
+      router.navigate({ to: "/onboarding", replace: true });
     }
   }, [loading, user?.email_confirmed_at, router]);
 
@@ -74,7 +74,7 @@ function VerifyEmailPage() {
     }
     sessionStorage.removeItem(PENDING_EMAIL_KEY);
     toast.success("Adresse vérifiée. Bienvenue sur GlobeLink !");
-    router.navigate({ to: "/", replace: true });
+    router.navigate({ to: "/onboarding", replace: true });
   }
 
   async function resend() {
