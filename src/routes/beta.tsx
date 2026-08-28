@@ -1,8 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { ArrowRight, CheckCircle2, MessageCircle, TestTube2 } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import { markBetaRound, trackProductEvent } from "@/lib/product-analytics";
+
+const BETA_ROUND = "private-1";
 
 export const Route = createFileRoute("/beta")({
   ssr: false,
@@ -21,6 +25,18 @@ export const Route = createFileRoute("/beta")({
 
 function BetaEntryPage() {
   const { user } = useAuth();
+  const joinedTracked = useRef(false);
+
+  useEffect(() => {
+    markBetaRound(BETA_ROUND);
+    if (joinedTracked.current) return;
+    joinedTracked.current = true;
+    void trackProductEvent("beta_joined", {
+      beta_round: BETA_ROUND,
+      authenticated: Boolean(user),
+      surface: "beta_entry",
+    });
+  }, [user]);
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-background px-4 pb-10 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-6">
@@ -59,7 +75,7 @@ function BetaEntryPage() {
           </Button>
 
           <p className="mt-5 text-xs leading-5 text-muted-foreground">
-            Les retours bêta enregistrent uniquement le texte envoyé, le type de problème, la page et la taille d’écran afin de reproduire le problème. Aucun mot de passe ni contenu privé n’est joint automatiquement.
+            Les retours bêta enregistrent uniquement le texte envoyé, le type de problème, la page et la taille d’écran afin de reproduire le problème. Le tableau de bord bêta mesure aussi des événements d’usage agrégés (pages et fonctions utilisées) sans enregistrer d’e-mail, d’IP, de mot de passe ni de contenu privé.
           </p>
         </section>
       </main>
