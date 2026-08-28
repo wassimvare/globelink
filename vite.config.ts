@@ -1,24 +1,9 @@
 // @lovable.dev/vite-tanstack-config already includes the core TanStack,
 // React, Tailwind, Nitro and path-alias plugins.
-import { execFileSync } from "node:child_process";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// Route sign-in, e-mail verification and Google OAuth through the lightweight
-// onboarding screen before the member enters the private GlobeLink experience.
-execFileSync(process.execPath, ["scripts/simple-onboarding-v1.mjs"], {
-  stdio: "inherit",
-});
-
-// Keep real hotels visible while preferring verified Booking.com photos.
-execFileSync(process.execPath, ["scripts/apply-booking-hotel-policy.mjs"], {
-  stdio: "inherit",
-});
-
-// Apply keyless/free public data integrations before TanStack/Vite compiles the app.
-execFileSync(process.execPath, ["scripts/apply-public-open-data.mjs"], {
-  stdio: "inherit",
-});
-
+// Keep this configuration declarative. Source transformations are executed
+// explicitly by scripts/apply-build-patches.mjs and apply-late-source-patches.mjs.
 export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
