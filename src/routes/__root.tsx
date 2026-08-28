@@ -26,6 +26,7 @@ import { ProductAnalyticsTracker } from "@/components/ProductAnalyticsTracker";
 import { CallProvider } from "@/components/CallProvider";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { TravelJournalEnhancer } from "@/components/TravelJournalEnhancer";
+import { BetaFeedbackWidget } from "@/components/BetaFeedbackWidget";
 
 function NotFoundComponent() {
   return (
@@ -200,6 +201,7 @@ function RootComponent() {
                 </PageTransition>
               </div>
             </OnboardingGate>
+            <BetaFeedbackWidget />
             <BottomNav />
             <NetworkStatus />
             <Toaster position="top-center" richColors closeButton />
