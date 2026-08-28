@@ -3,6 +3,12 @@
 import { execFileSync } from "node:child_process";
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// Route sign-in, e-mail verification and Google OAuth through the lightweight
+// onboarding screen before the member enters the private GlobeLink experience.
+execFileSync(process.execPath, ["scripts/simple-onboarding-v1.mjs"], {
+  stdio: "inherit",
+});
+
 // Keep real hotels visible while preferring verified Booking.com photos.
 execFileSync(process.execPath, ["scripts/apply-booking-hotel-policy.mjs"], {
   stdio: "inherit",
