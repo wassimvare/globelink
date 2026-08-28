@@ -56,31 +56,6 @@ patchFile(
 );
 
 patchFile(
-  "src/components/CatalogImage.tsx",
-  (input) => {
-    let source = input;
-    if (!source.includes('from "@/lib/catalog-reliability"')) {
-      const marker = 'import type { LiveCatalogItem } from "@/lib/live-catalog";';
-      if (!source.includes(marker)) throw new Error("[Explorer reliability] import CatalogImage introuvable");
-      source = source.replace(
-        marker,
-        `${marker}\nimport { trustedDirectCatalogImage } from "@/lib/catalog-reliability";`,
-      );
-    }
-
-    const oldDirect = `function directImage(item: Pick<LiveCatalogItem, "image_url" | "tags">): string | null {\n  const tags = asRecord(item.tags);\n  return (\n    safeExactHttps(item.image_url) ??\n    safeExactHttps(tags.official_image_url) ??\n    safeExactHttps(tags.provider_image_url)\n  );\n}`;
-    const newDirect = `function directImage(\n  item: Pick<LiveCatalogItem, "kind" | "title" | "image_url" | "tags"> &\n    Partial<Pick<LiveCatalogItem, "provider" | "source_url">>,\n): string | null {\n  const tags = asRecord(item.tags);\n  return (\n    trustedDirectCatalogImage(item, item.image_url) ??\n    trustedDirectCatalogImage(item, tags.official_image_url) ??\n    trustedDirectCatalogImage(item, tags.provider_image_url)\n  );\n}`;
-    if (!source.includes(newDirect)) {
-      if (!source.includes(oldDirect)) throw new Error("[Explorer reliability] directImage introuvable");
-      source = source.replace(oldDirect, newDirect);
-    }
-
-    return source;
-  },
-  "photos exactes uniquement",
-);
-
-patchFile(
   "src/lib/public-place-media.functions.ts",
   (input) => {
     let source = input;
