@@ -9,12 +9,14 @@ export type ProductEventName =
   | "post_creation_opened"
   | "place_creation_opened"
   | "trip_created"
-  | "trip_item_added";
+  | "trip_item_added"
+  | "beta_joined";
 
 type AnalyticsMetadataValue = string | number | boolean | null | undefined;
 export type AnalyticsMetadata = Record<string, AnalyticsMetadataValue>;
 
 const SESSION_KEY = "globelink:analytics-session";
+const BETA_ROUND_KEY = "globelink:beta-round";
 const ALLOWED_METADATA_KEYS = new Set([
   "area",
   "surface",
@@ -26,6 +28,7 @@ const ALLOWED_METADATA_KEYS = new Set([
   "has_budget",
   "authenticated",
   "device",
+  "beta_round",
 ]);
 
 function isBrowser() {
@@ -56,6 +59,27 @@ function getSessionId() {
     return created;
   } catch {
     return newSessionId();
+  }
+}
+
+export function markBetaRound(round = "private-1") {
+  if (!isBrowser()) return;
+  const normalized = round.trim().slice(0, 40);
+  if (!normalized) return;
+  try {
+    window.localStorage.setItem(BETA_ROUND_KEY, normalized);
+  } catch {
+    // Analytics must never block the product if local storage is unavailable.
+  }
+}
+
+export function getBetaRound() {
+  if (!isBrowser()) return null;
+  try {
+    const value = window.localStorage.getItem(BETA_ROUND_KEY)?.trim();
+    return value ? value.slice(0, 40) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -96,13 +120,16 @@ export async function trackProductEvent(
   const sessionId = getSessionId();
   if (!sessionId) return;
 
+  const betaRound = getBetaRound();
+  const contextualMetadata = betaRound ? { ...metadata, beta_round: betaRound } : metadata;
+
   try {
     const { error } = await (supabase.rpc as any)("record_product_event", {
       p_event_name: eventName,
       p_session_id: sessionId,
       p_route: window.location.pathname,
       p_source: detectSource(),
-      p_metadata: cleanMetadata(metadata),
+      p_metadata: cleanMetadata(contextualMetadata),
     });
 
     if (error && import.meta.env.DEV) {
