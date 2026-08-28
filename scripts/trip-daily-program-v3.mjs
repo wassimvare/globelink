@@ -115,7 +115,7 @@ function programSignature(program: ProgramSection[]) {
   );
 
   const oldUnstructured = `    if (!current) {\n      current = { key: "other", title: "Programme", items: [] };\n      sections.push(current);\n    }\n    current.items.push(line);`;
-  const newUnstructured = `    if (!current) {\n      const timed = line.match(/^(\\d{1,2}(?::|h)\\d{0,2})\\s*[·:–—-]\\s*(.+)$/i);\n      if (!timed || isProgramNoise(line)) continue;\n      current = { key: "other", title: "À faire", items: [] };\n      sections.push(current);\n      current.items.push(\`${timed[1]} · ${timed[2]}\`);\n      continue;\n    }\n    if (!isProgramNoise(line)) current.items.push(line);`;
+  const newUnstructured = `    if (!current) {\n      const timed = line.match(/^(\\d{1,2}(?::|h)\\d{0,2})\\s*[·:–—-]\\s*(.+)$/i);\n      if (!timed || isProgramNoise(line)) continue;\n      current = { key: "other", title: "À faire", items: [] };\n      sections.push(current);\n      current.items.push(\`\${timed[1]} · \${timed[2]}\`);\n      continue;\n    }\n    if (!isProgramNoise(line)) current.items.push(line);`;
   source = mustReplace(source, oldUnstructured, newUnstructured, "ignore generic AI prose");
 
   source = mustReplace(
