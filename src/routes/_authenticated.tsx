@@ -21,25 +21,34 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect({ to: "/verify-email" });
     }
 
-    // Account status does not need another request for every tap. A short cache
-    // keeps settings/navigation responsive while still rechecking frequently.
+    // Account status + onboarding state do not need another request for every tap.
+    // A short cache keeps navigation responsive while still rechecking frequently.
     const profile = await context.queryClient.ensureQueryData({
       queryKey: ["auth-profile-status", user.id],
       staleTime: 20_000,
       gcTime: 5 * 60_000,
       queryFn: async () => {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from("profiles")
-          .select("status")
+          .select("status,onboarding_completed_at")
           .eq("id", user.id)
           .maybeSingle();
         if (error) throw error;
-        return data;
+        return data as { status: string | null; onboarding_completed_at: string | null } | null;
       },
     });
 
     if (profile?.status === "deactivated") {
       throw redirect({ to: "/account-deactivated" });
+    }
+
+    // New members get one short welcome screen before entering the rest of the app.
+    // The onboarding route itself must remain reachable to avoid a redirect loop.
+    if (!profile?.onboarding_completed_at && location.pathname !== "/onboarding") {
+      throw redirect({
+        to: "/onboarding",
+        search: { next: location.href },
+      });
     }
 
     return { user };
