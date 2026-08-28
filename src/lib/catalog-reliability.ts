@@ -170,6 +170,14 @@ export function catalogCoordinatesAreReliable(
   return validCoordinatePair(item.latitude, item.longitude);
 }
 
+function coordinateState(item: Pick<CatalogReliabilityItem, "latitude" | "longitude">) {
+  const latMissing = item.latitude == null;
+  const lngMissing = item.longitude == null;
+  if (latMissing && lngMissing) return "missing" as const;
+  if (latMissing !== lngMissing) return "invalid" as const;
+  return validCoordinatePair(item.latitude, item.longitude) ? ("valid" as const) : ("invalid" as const);
+}
+
 function trustedOsmSource(value: unknown) {
   const url = safeHttps(value);
   if (!url || !/(^|\.)openstreetmap\.org$/i.test(url.hostname)) return false;
@@ -217,15 +225,17 @@ function curatedProof(item: CatalogReliabilityItem) {
   );
 }
 
+function hasLocationLabel(item: CatalogReliabilityItem) {
+  return !!clean(item.city, 100) || !!clean(item.country, 100);
+}
+
 export function catalogReliabilityReason(item: CatalogReliabilityItem): CatalogReliabilityReason {
   const title = clean(item.title, 180);
   if (!title) return "title_missing";
   if (PLACEHOLDER_TITLES.has(normalize(title))) return "title_placeholder";
 
-  if (item.kind !== "deal") {
-    if (item.latitude == null || item.longitude == null) return "coordinates_missing";
-    if (!validCoordinatePair(item.latitude, item.longitude)) return "coordinates_invalid";
-  }
+  const coordinates = coordinateState(item);
+  if (coordinates === "invalid") return "coordinates_invalid";
 
   const provider = normalizeProvider(item.provider);
   if (item.kind === "deal") {
@@ -233,11 +243,13 @@ export function catalogReliabilityReason(item: CatalogReliabilityItem): CatalogR
   }
 
   if (isOsmProvider(provider)) {
+    if (coordinates !== "valid") return "coordinates_missing";
     return trustedOsmSource(item.source_url) ? "ok" : "source_untrusted";
   }
 
   if (provider === "globelink-curated") {
     if (!curatedProof(item)) return "provider_unverified";
+    if (coordinates === "missing" && !hasLocationLabel(item)) return "coordinates_missing";
     if (
       trustedKnowledgeUrl(item.source_url) ||
       trustedOsmSource(item.source_url) ||
@@ -249,11 +261,13 @@ export function catalogReliabilityReason(item: CatalogReliabilityItem): CatalogR
   }
 
   if (provider === "google-places" || provider === "google-maps") {
+    if (coordinates === "missing" && !hasLocationLabel(item)) return "coordinates_missing";
     if (trustedProviderUrl(provider, item.source_url) || googlePlaceProof(item)) return "ok";
     return "provider_unverified";
   }
 
   if (isOfficialProvider(provider)) {
+    if (coordinates === "missing" && !hasLocationLabel(item)) return "coordinates_missing";
     if (
       trustedProviderUrl(provider, item.source_url) ||
       trustedProviderUrl(provider, item.booking_url)
@@ -266,6 +280,7 @@ export function catalogReliabilityReason(item: CatalogReliabilityItem): CatalogR
   // Unknown/search-derived providers must carry explicit server-side verification
   // and a concrete HTTPS source. Coordinates alone are no longer sufficient proof.
   if (!sourceVerifiedByTags(item)) return "provider_unverified";
+  if (coordinates === "missing" && !hasLocationLabel(item)) return "coordinates_missing";
   if (!safeHttps(item.source_url) && !safeHttps(item.booking_url)) return "source_missing";
   return "ok";
 }
@@ -276,6 +291,14 @@ export function isReliableCatalogItem(item: CatalogReliabilityItem) {
 
 export function filterReliableCatalogItems<T extends CatalogReliabilityItem>(items: T[]) {
   return items.filter((item) => isReliableCatalogItem(item));
+}
+
+export function isReliableMapCatalogItem(item: CatalogReliabilityItem) {
+  return isReliableCatalogItem(item) && catalogCoordinatesAreReliable(item);
+}
+
+export function filterReliableMapCatalogItems<T extends CatalogReliabilityItem>(items: T[]) {
+  return items.filter((item) => isReliableMapCatalogItem(item));
 }
 
 function sameHostFamily(left: URL, right: URL) {
