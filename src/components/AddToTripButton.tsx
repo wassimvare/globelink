@@ -77,9 +77,15 @@ export function AddToTripButton({
     },
   });
 
+  const openTrip = (tripId: string) =>
+    navigate({ to: "/trips/$id", params: { id: tripId } });
+
   const openPicker = () => {
     if (!user) {
-      const redirect = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/trips";
+      const redirect =
+        typeof window !== "undefined"
+          ? window.location.pathname + window.location.search
+          : "/trips";
       toast.info("Connecte-toi pour ajouter ce lieu à un voyage.");
       navigate({ to: "/auth", search: { redirect } });
       return;
@@ -102,7 +108,10 @@ export function AddToTripButton({
       if (existing) {
         setAddedTripId(trip.id);
         setOpen(false);
-        toast.message("Déjà ajouté à ce voyage");
+        toast.message("Déjà ajouté à ce voyage", {
+          description: "Tu peux ouvrir le carnet pour continuer l’organisation.",
+          action: { label: "Ouvrir le voyage", onClick: () => openTrip(trip.id) },
+        });
         return;
       }
 
@@ -141,7 +150,10 @@ export function AddToTripButton({
       ]);
       setAddedTripId(trip.id);
       setOpen(false);
-      toast.success(`Ajouté à ${trip.title}`);
+      toast.success(`Ajouté à ${trip.title}`, {
+        description: "Le lieu est maintenant dans ton carnet.",
+        action: { label: "Ouvrir le voyage", onClick: () => openTrip(trip.id) },
+      });
     } catch (error: any) {
       toast.error(error?.message ?? "Impossible d’ajouter cet élément au voyage.");
     } finally {
@@ -198,7 +210,9 @@ export function AddToTripButton({
                     <span className="block truncate text-sm font-semibold">{trip.title}</span>
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {[trip.city, trip.country].filter(Boolean).join(", ") || "Voyage GlobeLink"}
-                      {trip.starts_on ? ` · ${new Date(`${trip.starts_on}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}` : ""}
+                      {trip.starts_on
+                        ? ` · ${new Date(`${trip.starts_on}T12:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`
+                        : ""}
                     </span>
                   </span>
                   {addingTripId === trip.id ? (
