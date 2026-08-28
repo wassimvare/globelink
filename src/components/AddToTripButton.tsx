@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { trackProductEvent } from "@/lib/product-analytics";
 
 export type AddToTripItem = {
   title: string;
@@ -113,10 +114,11 @@ export function AddToTripButton({
         .filter(Boolean)
         .join("\n");
 
+      const normalizedKind = normalizeKind(item.kind);
       const { error } = await supabase.from("trip_entries").insert({
         trip_id: trip.id,
         user_id: user.id,
-        kind: normalizeKind(item.kind),
+        kind: normalizedKind,
         title: item.title,
         city: item.city || null,
         country: item.country || null,
@@ -132,6 +134,7 @@ export function AddToTripButton({
       });
       if (error) throw error;
 
+      void trackProductEvent("trip_item_added", { kind: normalizedKind });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["trip-entries", trip.id] }),
         queryClient.invalidateQueries({ queryKey: ["trips", user.id] }),
