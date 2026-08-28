@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 export function BottomNav() {
   const { user } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const hiddenOn = ["/auth", "/forgot-password", "/reset-password", "/verify-email", "/onboarding"];
+  const hiddenOn = ["/auth", "/forgot-password", "/reset-password", "/verify-email", "/onboarding", "/beta"];
 
   const { data: profile } = useQuery({
     queryKey: ["bottom-nav-profile", user?.id],
