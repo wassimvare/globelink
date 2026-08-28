@@ -2,6 +2,11 @@ import { supabase } from "@/integrations/supabase/client";
 
 const db = supabase as any;
 
+export const SUPPORT_TICKET_SUBJECT_MIN_LENGTH = 3;
+export const SUPPORT_TICKET_SUBJECT_MAX_LENGTH = 160;
+export const SUPPORT_TICKET_MESSAGE_MIN_LENGTH = 10;
+export const SUPPORT_TICKET_MESSAGE_MAX_LENGTH = 5000;
+
 export type SupportCategory = "bug" | "technical" | "account" | "safety" | "feedback" | "other";
 export type SupportStatus = "open" | "in_progress" | "waiting_user" | "resolved" | "closed";
 export type SupportPriority = "low" | "normal" | "high" | "urgent";
@@ -53,6 +58,19 @@ export type ReportProfile = {
   avatar_url: string | null;
 };
 
+function supportTicketErrorMessage(error: unknown) {
+  const raw = String((error as { message?: unknown })?.message ?? error ?? "");
+
+  if (raw.includes("support_tickets_message_length")) {
+    return `Ton message doit contenir entre ${SUPPORT_TICKET_MESSAGE_MIN_LENGTH} et ${SUPPORT_TICKET_MESSAGE_MAX_LENGTH.toLocaleString("fr-FR")} caractères.`;
+  }
+  if (raw.includes("support_tickets_subject_length")) {
+    return `L’objet doit contenir entre ${SUPPORT_TICKET_SUBJECT_MIN_LENGTH} et ${SUPPORT_TICKET_SUBJECT_MAX_LENGTH} caractères.`;
+  }
+
+  return "Impossible d’envoyer la demande pour le moment. Réessaie dans un instant.";
+}
+
 export async function createSupportTicket(input: {
   userId: string;
   category: SupportCategory;
@@ -61,19 +79,35 @@ export async function createSupportTicket(input: {
   priority?: SupportPriority;
   context?: Record<string, unknown>;
 }) {
+  const subject = input.subject.trim();
+  const message = input.message.trim();
+
+  if (subject.length < SUPPORT_TICKET_SUBJECT_MIN_LENGTH) {
+    throw new Error(`L’objet doit contenir au moins ${SUPPORT_TICKET_SUBJECT_MIN_LENGTH} caractères.`);
+  }
+  if (subject.length > SUPPORT_TICKET_SUBJECT_MAX_LENGTH) {
+    throw new Error(`L’objet est limité à ${SUPPORT_TICKET_SUBJECT_MAX_LENGTH} caractères.`);
+  }
+  if (message.length < SUPPORT_TICKET_MESSAGE_MIN_LENGTH) {
+    throw new Error(`Ton message doit contenir au moins ${SUPPORT_TICKET_MESSAGE_MIN_LENGTH} caractères.`);
+  }
+  if (message.length > SUPPORT_TICKET_MESSAGE_MAX_LENGTH) {
+    throw new Error(`Ton message est limité à ${SUPPORT_TICKET_MESSAGE_MAX_LENGTH.toLocaleString("fr-FR")} caractères.`);
+  }
+
   const { data, error } = await db
     .from("support_tickets")
     .insert({
       user_id: input.userId,
       category: input.category,
-      subject: input.subject.trim(),
-      message: input.message.trim(),
+      subject,
+      message,
       priority: input.priority ?? "normal",
       context: input.context ?? {},
     })
     .select("*")
     .single();
-  if (error) throw error;
+  if (error) throw new Error(supportTicketErrorMessage(error));
   return data as SupportTicket;
 }
 
