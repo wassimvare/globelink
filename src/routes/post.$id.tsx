@@ -408,6 +408,12 @@ function PostDetail() {
                   navigate({ to: "/" });
                 }}
               />
+              <div className="hidden" aria-hidden="true">
+                <Link to="/profile/$username" params={{ username }} tabIndex={-1}>
+                  <span />
+            </Link>
+            {post.caption && <p className="mt-4 text-sm">{post.caption}</p>}
+              </div>
             </div>
             {post.caption && <p className="mt-4 text-sm">{post.caption}</p>}
             <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
