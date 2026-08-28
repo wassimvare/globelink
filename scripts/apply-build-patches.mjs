@@ -9,6 +9,7 @@ runNodeSequence("GlobeLink patches", [
   "scripts/apply-recap-media-map-fix.mjs",
   "scripts/apply-recap-geocoder-v2.mjs",
   "scripts/apply-explorer-travel-map-v1.mjs",
+  "scripts/fix-explorer-add-to-trip-mobile-v1.mjs",
   "scripts/add-to-trip-everywhere-v1.mjs",
   "scripts/apply-travel-match-v3.mjs",
   "scripts/journey-continuity-v1.mjs",
