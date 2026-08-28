@@ -52,13 +52,14 @@ export function BetaFeedbackWidget() {
   const [adminBetaTabHost, setAdminBetaTabHost] = useState<HTMLElement | null>(null);
 
   const hidden = !user || hiddenPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isAdminPage = pathname === "/admin";
   const selected = useMemo(() => feedbackKinds.find((item) => item.value === kind) ?? feedbackKinds[0], [kind]);
   const trimmedMessageLength = message.trim().length;
   const remainingMinimum = Math.max(0, SUPPORT_TICKET_MESSAGE_MIN_LENGTH - trimmedMessageLength);
   const messageTooShort = trimmedMessageLength > 0 && trimmedMessageLength < SUPPORT_TICKET_MESSAGE_MIN_LENGTH;
 
   useEffect(() => {
-    if (pathname !== "/admin" || typeof document === "undefined") {
+    if (!isAdminPage || typeof document === "undefined") {
       setAdminBetaTabHost(null);
       return;
     }
@@ -118,7 +119,7 @@ export function BetaFeedbackWidget() {
       host?.remove();
       setAdminBetaTabHost(null);
     };
-  }, [pathname]);
+  }, [isAdminPage]);
 
   if (hidden) return null;
 
@@ -182,104 +183,117 @@ export function BetaFeedbackWidget() {
           adminBetaTabHost,
         )}
 
-      <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
-        <DialogTrigger asChild>
-          <button
-            type="button"
-            className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-3 z-40 inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/25 bg-card/95 px-3 text-xs font-bold text-primary shadow-elevated backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/45 sm:bottom-5 sm:right-5"
-            aria-label="Envoyer un retour sur la bêta GlobeLink"
+      {isAdminPage ? (
+        !adminBetaTabHost && (
+          <Link
+            to="/beta-admin"
+            className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-3 z-40 inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/35 bg-card/95 px-3 text-xs font-bold text-primary shadow-elevated backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/55 sm:bottom-5 sm:right-5"
+            aria-label="Ouvrir les retours de la bêta privée"
           >
             <TestTube2 className="h-4 w-4" />
-            Bêta
-          </button>
-        </DialogTrigger>
+            Retours bêta
+          </Link>
+        )
+      ) : (
+        <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-3 z-40 inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/25 bg-card/95 px-3 text-xs font-bold text-primary shadow-elevated backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/45 sm:bottom-5 sm:right-5"
+              aria-label="Envoyer un retour sur la bêta GlobeLink"
+            >
+              <TestTube2 className="h-4 w-4" />
+              Bêta
+            </button>
+          </DialogTrigger>
 
-        <DialogContent className="rounded-[1.75rem] sm:max-w-lg">
-          <DialogHeader>
-            <div className="mb-1 flex items-center gap-2 text-primary">
-              <TestTube2 className="h-5 w-5" />
-              <span className="text-xs font-bold uppercase tracking-[0.14em]">Bêta privée</span>
+          <DialogContent className="rounded-[1.75rem] sm:max-w-lg">
+            <DialogHeader>
+              <div className="mb-1 flex items-center gap-2 text-primary">
+                <TestTube2 className="h-5 w-5" />
+                <span className="text-xs font-bold uppercase tracking-[0.14em]">Bêta privée</span>
+              </div>
+              <DialogTitle>Qu’est-ce qui t’a marqué ici ?</DialogTitle>
+              <DialogDescription>
+                Signale seulement ce que tu as réellement rencontré. La page actuelle est jointe automatiquement au retour.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid grid-cols-3 gap-2">
+              {feedbackKinds.map((item) => {
+                const Icon = item.icon;
+                const active = kind === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setKind(item.value)}
+                    className={`min-h-24 rounded-2xl border p-3 text-left transition ${
+                      active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-primary/30"
+                    }`}
+                  >
+                    <Icon className={`h-5 w-5 ${active ? "text-primary" : ""}`} />
+                    <div className="mt-2 text-sm font-bold">{item.label}</div>
+                    <div className="mt-1 hidden text-[10px] leading-4 sm:block">{item.helper}</div>
+                  </button>
+                );
+              })}
             </div>
-            <DialogTitle>Qu’est-ce qui t’a marqué ici ?</DialogTitle>
-            <DialogDescription>
-              Signale seulement ce que tu as réellement rencontré. La page actuelle est jointe automatiquement au retour.
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="grid grid-cols-3 gap-2">
-            {feedbackKinds.map((item) => {
-              const Icon = item.icon;
-              const active = kind === item.value;
-              return (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {impacts.map((item) => (
                 <button
                   key={item.value}
                   type="button"
-                  onClick={() => setKind(item.value)}
-                  className={`min-h-24 rounded-2xl border p-3 text-left transition ${
-                    active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:border-primary/30"
+                  onClick={() => setImpact(item.value)}
+                  className={`whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                    impact === item.value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground"
                   }`}
                 >
-                  <Icon className={`h-5 w-5 ${active ? "text-primary" : ""}`} />
-                  <div className="mt-2 text-sm font-bold">{item.label}</div>
-                  <div className="mt-1 hidden text-[10px] leading-4 sm:block">{item.helper}</div>
+                  {item.label}
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {impacts.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setImpact(item.value)}
-                className={`whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                  impact === item.value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground"
-                }`}
+            <Textarea
+              value={message}
+              onChange={(event) => setMessage(event.target.value.slice(0, BETA_FEEDBACK_MAX_LENGTH))}
+              rows={5}
+              autoFocus
+              aria-invalid={messageTooShort}
+              placeholder={
+                kind === "bug"
+                  ? "Ex. J’appuie sur Ajouter à mon voyage et rien ne se passe…"
+                  : kind === "confusing"
+                    ? "Ex. Je ne savais pas quoi faire après avoir créé mon voyage…"
+                    : "Ex. J’aimerais pouvoir…"
+              }
+              className={`resize-none rounded-2xl text-base leading-6 ${messageTooShort ? "border-destructive/70 focus-visible:ring-destructive/30" : ""}`}
+            />
+            <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+              <span className={messageTooShort ? "font-semibold text-destructive" : "truncate"}>
+                {messageTooShort
+                  ? `Encore ${remainingMinimum} caractère${remainingMinimum > 1 ? "s" : ""} minimum`
+                  : `Page : ${pathname || "/"}`}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                min. {SUPPORT_TICKET_MESSAGE_MIN_LENGTH} · {message.length}/{BETA_FEEDBACK_MAX_LENGTH}
+              </span>
+            </div>
+
+            <DialogFooter>
+              <Button
+                disabled={pending || trimmedMessageLength < SUPPORT_TICKET_MESSAGE_MIN_LENGTH}
+                onClick={submit}
+                className="h-11 rounded-2xl"
               >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          <Textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value.slice(0, BETA_FEEDBACK_MAX_LENGTH))}
-            rows={5}
-            autoFocus
-            aria-invalid={messageTooShort}
-            placeholder={
-              kind === "bug"
-                ? "Ex. J’appuie sur Ajouter à mon voyage et rien ne se passe…"
-                : kind === "confusing"
-                  ? "Ex. Je ne savais pas quoi faire après avoir créé mon voyage…"
-                  : "Ex. J’aimerais pouvoir…"
-            }
-            className={`resize-none rounded-2xl text-base leading-6 ${messageTooShort ? "border-destructive/70 focus-visible:ring-destructive/30" : ""}`}
-          />
-          <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-            <span className={messageTooShort ? "font-semibold text-destructive" : "truncate"}>
-              {messageTooShort
-                ? `Encore ${remainingMinimum} caractère${remainingMinimum > 1 ? "s" : ""} minimum`
-                : `Page : ${pathname || "/"}`}
-            </span>
-            <span className="shrink-0 tabular-nums">
-              min. {SUPPORT_TICKET_MESSAGE_MIN_LENGTH} · {message.length}/{BETA_FEEDBACK_MAX_LENGTH}
-            </span>
-          </div>
-
-          <DialogFooter>
-            <Button
-              disabled={pending || trimmedMessageLength < SUPPORT_TICKET_MESSAGE_MIN_LENGTH}
-              onClick={submit}
-              className="h-11 rounded-2xl"
-            >
-              {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Envoyer le retour
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Envoyer le retour
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }
