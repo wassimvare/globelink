@@ -83,6 +83,27 @@ export function getBetaRound() {
   }
 }
 
+function sanitizeRoute(pathname: string) {
+  const route = pathname.split("?")[0]?.slice(0, 300) || "/";
+  const privateDetailRoutes = [
+    ["/profile/", "/profile/:username"],
+    ["/trips/", "/trips/:id"],
+    ["/post/", "/post/:id"],
+    ["/messages/", "/messages/:id"],
+    ["/marketplace/", "/marketplace/:id"],
+    ["/place-status/", "/place-status/:id"],
+    ["/destinations/", "/destinations/:slug"],
+    ["/activities/", "/activities/:slug"],
+    ["/deals/", "/deals/:slug"],
+    ["/questions/", "/questions/:slug"],
+  ] as const;
+
+  for (const [prefix, replacement] of privateDetailRoutes) {
+    if (route.startsWith(prefix) && route.length > prefix.length) return replacement;
+  }
+  return route;
+}
+
 function detectSource(): "web" | "mobile-web" | "pwa" {
   if (!isBrowser()) return "web";
   const standalone =
@@ -127,7 +148,7 @@ export async function trackProductEvent(
     const { error } = await (supabase.rpc as any)("record_product_event", {
       p_event_name: eventName,
       p_session_id: sessionId,
-      p_route: window.location.pathname,
+      p_route: sanitizeRoute(window.location.pathname),
       p_source: detectSource(),
       p_metadata: cleanMetadata(contextualMetadata),
     });
