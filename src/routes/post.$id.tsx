@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { getMediaManifestUrl, getSignedMediaUrl } from "@/lib/storage";
 import { AppHeader } from "@/components/AppHeader";
+import { PostDetailActions } from "@/components/PostDetailActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { REACTIONS, setReaction, type ReactionKey } from "@/lib/social";
@@ -370,20 +371,44 @@ function PostDetail() {
 
         <div className="flex flex-col gap-4">
           <div className="rounded-3xl border border-border bg-card p-5 shadow-soft">
-            <Link to="/profile/$username" params={{ username }} className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-secondary text-sm font-medium">
-                {username[0]?.toUpperCase()}
-              </div>
-              <div>
-                <div className="font-semibold">{post.profiles?.display_name ?? username}</div>
-                {(post.city || post.country) && (
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <MapPin className="h-3 w-3" />{" "}
-                    {[post.city, post.country].filter(Boolean).join(", ")}
+            <div className="flex items-start gap-3">
+              <Link
+                to="/profile/$username"
+                params={{ username }}
+                className="flex min-w-0 flex-1 items-center gap-3"
+              >
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-secondary text-sm font-medium">
+                  {username[0]?.toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate font-semibold">
+                    {post.profiles?.display_name ?? username}
                   </div>
-                )}
-              </div>
-            </Link>
+                  {(post.city || post.country) && (
+                    <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                      <MapPin className="h-3 w-3 shrink-0" />{" "}
+                      <span className="truncate">
+                        {[post.city, post.country].filter(Boolean).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </Link>
+              <PostDetailActions
+                postId={post.id}
+                ownerId={post.user_id}
+                currentUserId={user?.id}
+                caption={post.caption}
+                onUpdated={() => qc.invalidateQueries({ queryKey: ["post", id] })}
+                onDeleted={async () => {
+                  await Promise.all([
+                    qc.invalidateQueries({ queryKey: ["feed"] }),
+                    qc.invalidateQueries({ queryKey: ["profile-posts"] }),
+                  ]);
+                  navigate({ to: "/" });
+                }}
+              />
+            </div>
             {post.caption && <p className="mt-4 text-sm">{post.caption}</p>}
             <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
               <button onClick={() => toggleLike.mutate()} className="flex items-center gap-1.5">
