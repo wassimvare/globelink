@@ -23,6 +23,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  applyProgramSelections,
+  buildDayProgramForDate,
+  isInternalJournalEntry,
+  journalSelectionsFromEntries,
+  JOURNAL_SELECTION_TITLE_PREFIX,
+  parseProgramOption,
+  type DayProgramSectionKey,
+} from "@/features/travel/day-program";
 import { refreshTripDayWeather } from "@/lib/trip-weather.functions";
 // TRIP_JOURNAL_DAYS_V2
 // TRIP_DAILY_PROGRAM_V3
@@ -448,35 +457,60 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
   const daySpent = actualExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const dayForecast = forecastExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
-  const programSource = useMemo(() => {
-    const exact = entries.find(
-      (entry) => entry.kind === "note" && /^IA\+\s*·\s*Jour/i.test(String(entry.title ?? "")),
-    );
-    if (exact?.notes) return String(exact.notes);
-    const legacy = allEntries.find((entry) => {
-      if (!isAiProgramNote(entry) || !entry?.notes) return false;
-      return !!extractProgramForDay(String(entry.notes), day);
-    });
-    return legacy?.notes ? String(legacy.notes) : "";
-  }, [entries, allEntries, day]);
-  const program = useMemo(() => {
-    const parsed = parseProgram(extractProgramForDay(programSource, day));
-    const signature = programSignature(parsed);
-    if (!signature) return parsed;
-
-    const duplicateEarlierDay = allEntries.some((entry) => {
-      if (!isAiProgramNote(entry) || !entry?.notes || !entry?.visited_on || entry.visited_on >= day) return false;
-      const previous = parseProgram(extractProgramForDay(String(entry.notes), String(entry.visited_on)));
-      return programSignature(previous) === signature;
-    });
-
-    return duplicateEarlierDay ? [] : parsed;
-  }, [programSource, day, allEntries]);
+  const rawProgram = useMemo(
+    () => buildDayProgramForDate({ day, entries, allEntries }),
+    [day, entries, allEntries],
+  );
+  const selections = useMemo(() => journalSelectionsFromEntries(entries), [entries]);
+  const program = useMemo(
+    () => applyProgramSelections(rawProgram, selections),
+    [rawProgram, selections],
+  );
   const otherEntries = useMemo(
-    () => entries.filter((entry) => !isAiProgramNote(entry)),
+    () => entries.filter((entry) => !isInternalJournalEntry(entry)),
     [entries],
   );
-  const noteCount = entries.filter((entry) => entry.kind === "note" && !isAiProgramNote(entry)).length + (meta?.notes ? 1 : 0);
+
+  const saveProgramSelection = async (
+    sectionKey: DayProgramSectionKey,
+    optionLabel: string,
+    text: string,
+  ) => {
+    const title = `${JOURNAL_SELECTION_TITLE_PREFIX}${sectionKey}`;
+    const { error: deleteError } = await supabase
+      .from("trip_entries")
+      .delete()
+      .eq("trip_id", tripId)
+      .eq("visited_on", day)
+      .eq("title", title);
+    if (deleteError) throw deleteError;
+    const { error } = await supabase.from("trip_entries").insert({
+      trip_id: tripId,
+      user_id: userId,
+      kind: "note",
+      title,
+      notes: JSON.stringify({ sectionKey, optionLabel, text }),
+      visited_on: day,
+      position: Math.floor(Date.now() % 2_000_000_000),
+    });
+    if (error) throw error;
+    await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+    toast.success("Choix enregistré dans cette journée");
+  };
+
+  const clearProgramSelection = async (sectionKey: DayProgramSectionKey) => {
+    const title = `${JOURNAL_SELECTION_TITLE_PREFIX}${sectionKey}`;
+    const { error } = await supabase
+      .from("trip_entries")
+      .delete()
+      .eq("trip_id", tripId)
+      .eq("visited_on", day)
+      .eq("title", title);
+    if (error) throw error;
+    await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+  };
+
+  const noteCount = entries.filter((entry) => entry.kind === "note" && !isInternalJournalEntry(entry)).length + (meta?.notes ? 1 : 0);
 
   const upsertDay = async (patch: Record<string, any>) => {
     const { error } = await supabase
@@ -590,7 +624,7 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
       </header>
 
       {program.length > 0 && (
-        <section className="mx-4 mb-4 overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/45 p-5 sm:mx-6 sm:mb-6 sm:p-6">
+        <section data-testid="day-program" data-day={day} className="mx-4 mb-4 overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/45 p-5 sm:mx-6 sm:mb-6 sm:p-6">
           <div className="mb-5 flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/10 text-primary">
               <CalendarDays className="h-5 w-5" />
@@ -603,6 +637,9 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
 
           <div className="grid gap-3">
             {program.map((section, sectionIndex) => {
+              const selectedOption = selections[section.key];
+              const sourceSection = rawProgram.find((candidate) => candidate.key === section.key);
+              const hasOptions = !!sourceSection?.items.some((item) => !!parseProgramOption(item));
               const Icon =
                 section.key === "morning"
                   ? Sunrise
@@ -624,7 +661,24 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                     <Icon className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="text-[15px] font-bold text-primary sm:text-base">{section.title}</h4>
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-[15px] font-bold text-primary sm:text-base">{section.title}</h4>
+                      {selectedOption && hasOptions && (
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                          onClick={async () => {
+                            try {
+                              await clearProgramSelection(section.key);
+                            } catch (error: any) {
+                              toast.error(error?.message ?? "Impossible de modifier ce choix.");
+                            }
+                          }}
+                        >
+                          Changer
+                        </button>
+                      )}
+                    </div>
                     <ul className="mt-2 space-y-2 text-sm leading-6 text-foreground/90">
                       {section.items.map((item, itemIndex) => {
                         const option = item.match(/^(Option\s+[A-C]|Choix\s+\d+)\s*(?:[·:–—-]\s*)?(.*)$/i);
@@ -634,12 +688,35 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                             className="rounded-xl border border-border/40 bg-background/60 px-3 py-2.5"
                           >
                             {option ? (
-                              <div className="flex items-start gap-2.5">
-                                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
-                                  {option[1]}
-                                </span>
-                                <span className="min-w-0">{option[2] || item}</span>
-                              </div>
+                              selectedOption ? (
+                                <div className="flex items-start gap-2.5">
+                                  <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary-foreground">
+                                    Choisi
+                                  </span>
+                                  <span className="min-w-0">{option[2] || item}</span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  data-testid="day-program-option"
+                                  className="flex w-full items-start gap-2.5 text-left"
+                                  onClick={async () => {
+                                    const parsedOption = parseProgramOption(item);
+                                    if (!parsedOption) return;
+                                    try {
+                                      await saveProgramSelection(section.key, parsedOption.label, parsedOption.text);
+                                    } catch (error: any) {
+                                      toast.error(error?.message ?? "Impossible d’enregistrer ce choix.");
+                                    }
+                                  }}
+                                >
+                                  <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
+                                    {option[1]}
+                                  </span>
+                                  <span className="min-w-0 flex-1">{option[2] || item}</span>
+                                  <span className="shrink-0 text-[11px] font-semibold text-primary">Choisir</span>
+                                </button>
+                              )
                             ) : (
                               <span>{item}</span>
                             )}
