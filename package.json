@@ -21,7 +21,8 @@
     "check:phase1": "node scripts/phase1-validate.mjs",
     "check:map": "node scripts/run-map-checks.mjs",
     "check:explorer": "vitest run src/lib/catalog-reliability.test.ts",
-    "check:phase2": "node scripts/phase2-validate.mjs && node scripts/phase2-critical-routes.mjs",
+    "check:phase2": "node scripts/phase2-essential-validate.mjs && node scripts/phase2-critical-routes.mjs",
+    "check:phase2:legacy": "node scripts/phase2-validate.mjs",
     "check:phase3": "node scripts/phase3-validate.mjs"
   },
   "dependencies": {
