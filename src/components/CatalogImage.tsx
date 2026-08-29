@@ -12,6 +12,11 @@ import {
   publicPlaceMediaQueryKey,
   resolvePublicPlaceMedia,
 } from "@/lib/public-place-media.functions";
+import {
+  placeLogoQueryKey,
+  resolvePlaceLogo,
+  type PlaceLogoInput,
+} from "@/lib/place-logo.functions";
 
 type CatalogImageLookup = {
   latitude?: number | null;
@@ -79,6 +84,73 @@ function tagString(tags: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function faviconUrl(value: unknown): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value).trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url.toString())}&sz=256`;
+  } catch {
+    return null;
+  }
+}
+
+function knownPlaceLogo(
+  item: Pick<LiveCatalogItem, "tags">,
+  lookup: CatalogImageLookup | null,
+): { url: string; label: string } | null {
+  const tags = asRecord(item.tags);
+  const direct =
+    safeExactHttps(tags.official_logo_url) ??
+    safeExactHttps(tags.logo_url) ??
+    safeExactHttps(tags.logo);
+  if (direct) return { url: direct, label: "Logo officiel du lieu" };
+
+  const website =
+    tagString(tags, "official_website") ?? lookup?.website ?? tagString(tags, "website") ?? null;
+  const favicon = faviconUrl(website);
+  return favicon ? { url: favicon, label: "Logo du site officiel" } : null;
+}
+
+function providerLogoFallback(item: Pick<LiveCatalogItem, "tags">) {
+  const tags = asRecord(item.tags);
+  const provider = [
+    "official_source_provider",
+    "primary_source_provider",
+    "source_api_provider",
+    "reservation_source_provider",
+  ]
+    .map((key) => tagString(tags, key)?.toLowerCase() ?? "")
+    .find(Boolean);
+  if (!provider) return null;
+
+  const domain = provider.includes("google")
+    ? "https://www.google.com"
+    : provider.includes("openstreetmap") || provider === "osm"
+      ? "https://www.openstreetmap.org"
+      : provider.includes("booking")
+        ? "https://www.booking.com"
+        : provider.includes("tripadvisor")
+          ? "https://www.tripadvisor.com"
+          : provider.includes("getyourguide")
+            ? "https://www.getyourguide.com"
+            : provider.includes("ticketmaster")
+              ? "https://www.ticketmaster.com"
+              : provider.includes("uber")
+                ? "https://www.ubereats.com"
+                : provider.includes("yelp")
+                  ? "https://www.yelp.com"
+                  : provider.includes("thefork")
+                    ? "https://www.thefork.fr"
+                    : provider.includes("opentable")
+                      ? "https://www.opentable.com"
+                      : provider.includes("amadeus")
+                        ? "https://www.amadeus.com"
+                        : null;
+  const url = faviconUrl(domain);
+  return url ? { url, label: "Logo de la source vérifiée" } : null;
+}
+
 export function catalogPlaceMediaInput(
   item: Pick<LiveCatalogItem, "kind" | "title" | "tags">,
   lookup: CatalogImageLookup | null,
@@ -126,6 +198,7 @@ export function CatalogImage({
   const exactDirect = useMemo(() => directImage(item), [item]);
   const resolveMedia = useServerFn(resolveVerifiedPlaceMedia);
   const resolvePublicMedia = useServerFn(resolvePublicPlaceMedia);
+  const resolveLogo = useServerFn(resolvePlaceLogo);
   const primaryInput = useMemo(
     () => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false }),
     [item, lookup],
@@ -145,6 +218,28 @@ export function CatalogImage({
     }),
     [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude],
   );
+  const logoInput = useMemo<PlaceLogoInput>(
+    () => ({
+      title: item.title,
+      kind: item.kind,
+      latitude: primaryInput.latitude,
+      longitude: primaryInput.longitude,
+      city: primaryInput.city ?? null,
+      country: primaryInput.country ?? null,
+      website: primaryInput.website ?? null,
+    }),
+    [
+      item.kind,
+      item.title,
+      primaryInput.city,
+      primaryInput.country,
+      primaryInput.latitude,
+      primaryInput.longitude,
+      primaryInput.website,
+    ],
+  );
+  const knownLogo = useMemo(() => knownPlaceLogo(item, lookup), [item, lookup]);
+  const providerLogo = useMemo(() => providerLogoFallback(item), [item]);
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   useEffect(() => setFailedUrls(new Set()), [item.id]);
 
@@ -193,6 +288,17 @@ export function CatalogImage({
     enabled: canResolveSource && (primaryFailed || publicFailed),
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
+    retry: 1,
+  });
+
+  const { data: resolvedLogo, isFetching: isFetchingLogo } = useQuery({
+    queryKey: placeLogoQueryKey(logoInput),
+    queryFn: async () => resolveLogo({ data: logoInput }),
+    // Only run the extra establishment lookup for the large selected-place sheet.
+    // Photos keep priority; the logo is a verified visual fallback when none exists.
+    enabled: priority && primaryExhausted,
+    staleTime: 12 * 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
     retry: 1,
   });
 
@@ -263,8 +369,43 @@ export function CatalogImage({
     );
   }
 
+  const resolvedLogoUrl = safeExactHttps(resolvedLogo?.url);
+  const logoCandidates = [
+    knownLogo,
+    resolvedLogoUrl ? { url: resolvedLogoUrl, label: resolvedLogo?.label ?? "Logo du site officiel" } : null,
+    providerLogo,
+  ].filter((entry): entry is { url: string; label: string } => !!entry && !failedUrls.has(entry.url));
+  const logo = logoCandidates[0] ?? null;
+
+  if (logo) {
+    return (
+      <div
+        className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-secondary via-background to-secondary px-5 text-center`}
+        role="img"
+        aria-label={`${logo.label} pour ${item.title}`}
+      >
+        <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+          <img
+            src={logo.url}
+            alt={`Logo de ${item.title}`}
+            loading={priority ? "eager" : "lazy"}
+            fetchPriority={priority ? "high" : "auto"}
+            decoding="async"
+            referrerPolicy="no-referrer"
+            className="h-full w-full object-contain"
+            onError={() => setFailedUrls((current) => new Set([...current, logo.url]))}
+          />
+        </div>
+        <span className="text-xs font-semibold text-foreground/80">{logo.label}</span>
+        <span className="text-[10px] text-muted-foreground">
+          Photo officielle indisponible · logo utilisé
+        </span>
+      </div>
+    );
+  }
+
   const placeholder = PLACEHOLDER_META[item.kind] ?? PLACEHOLDER_META.activity;
-  const lookingForPhoto = isFetching || isFetchingPublic || isFetchingFallback;
+  const lookingForPhoto = isFetching || isFetchingPublic || isFetchingFallback || isFetchingLogo;
   return (
     <div
       className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-secondary via-background to-secondary text-center text-muted-foreground`}
@@ -275,11 +416,11 @@ export function CatalogImage({
         {placeholder.emoji}
       </span>
       <span className="px-4 text-xs font-semibold text-foreground/75">
-        {lookingForPhoto ? "Recherche de la photo officielle du lieu…" : "Aucune photo officielle vérifiée"}
+        {lookingForPhoto ? "Recherche d’un visuel officiel du lieu…" : "Visuel officiel indisponible"}
       </span>
       <span className="px-4 text-[10px]">
         {lookingForPhoto
-          ? "Google Places · OpenStreetMap · site officiel"
+          ? "Photo Google Places · site officiel · logo"
           : `${placeholder.label} · aucune image générique utilisée`}
       </span>
     </div>
