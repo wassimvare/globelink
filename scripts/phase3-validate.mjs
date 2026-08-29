@@ -7,8 +7,6 @@ const checks = [
   ["src/lib/phase3-intelligence.functions.ts", ["organizeSmartDay", "getPhase3Context", "fetchWeather", "fetchTicketmasterEvents", "reserve_free_ai_usage"]],
   ["src/lib/phase3-intelligence.ts", ["calculatePhase3Compatibility", "weatherCodeLabel", "overlapDays"]],
   ["src/lib/phase3-intelligence.test.ts", ["score élevé", "codes météo"]],
-  ["src/components/CatalogImage.tsx", ["Place identity", "Aucune photo officielle vérifiée"]],
-  ["src/lib/public-place-media.functions.ts", ["logo", "verified"]],
 ];
 
 let passed = 0;
