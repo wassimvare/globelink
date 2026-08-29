@@ -37,6 +37,9 @@ jobs:
       - name: Validate Phase 3 authenticated journey contract
         run: npm run check:phase3
 
+      - name: Validate Phase 4 architecture boundaries
+        run: npm run check:phase4
+
       - name: Build GlobeLink
         run: npm run build
 
