@@ -10,6 +10,9 @@ const authLayout = read("src/routes/_authenticated.tsx");
 const home = read("src/routes/index.tsx");
 const destination = read("src/routes/destinations.$slug.tsx");
 const map = read("src/routes/map.tsx");
+const mapDomain = fs.existsSync(path.join(root, "src/features/explorer/map-domain.ts"))
+  ? read("src/features/explorer/map-domain.ts")
+  : "";
 const match = read("src/routes/_authenticated.match.tsx");
 const messages = read("src/routes/_authenticated.messages.index.tsx");
 const notifications = read("src/routes/_authenticated.notifications.tsx");
@@ -45,7 +48,10 @@ check(
 );
 check(
   "Carte conserve catalogue et affichage monde",
-  map.includes("fetchLiveCatalog") && map.includes("CatalogImage") && map.includes("WORLD_MAP_HUBS"),
+  (map.includes("fetchLiveCatalog") || mapDomain.includes("fetchLiveCatalog")) &&
+    map.includes("CatalogImage") &&
+    map.includes("WORLD_MAP_HUBS") &&
+    (!mapDomain || map.includes('@/features/explorer/map-domain')),
 );
 check(
   "Travel Match calcule une compatibilité explicable",
