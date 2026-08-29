@@ -46,7 +46,7 @@ export const MAP_PLACE_CATEGORIES = [
 ] as const;
 export const MAP_BASE_KINDS: LiveCatalogKind[] = ["activity", "restaurant", "hotel"];
 export const ALL_PLACE_CATEGORIES = MAP_PLACE_CATEGORIES.map((category) => category.value);
-const PRIMARY_PLACE_CATEGORIES = new Set(["deal", "restaurant", "hotel", "activite"]);
+export const PRIMARY_PLACE_CATEGORIES = new Set(["deal", "restaurant", "hotel", "activite"]);
 export const SECONDARY_PLACE_CATEGORIES = MAP_PLACE_CATEGORIES.filter(
   (category) => !PRIMARY_PLACE_CATEGORIES.has(category.value),
 );
