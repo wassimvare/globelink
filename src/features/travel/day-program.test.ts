@@ -1,0 +1,102 @@
+import { describe, expect, it } from "vitest";
+import {
+  applyProgramSelections,
+  buildDayProgramForDate,
+  extractDayProgramBlock,
+  journalSelectionsFromEntries,
+  parseDayProgram,
+  parseProgramOption,
+} from "./day-program";
+
+const multiDay = `### 2026-09-01
+**Matin**
+09:30 · Vieille ville
+**Déjeuner**
+Option A · Bistro du Lac
+Option B · Café Central
+**Après-midi**
+14:30 · Balade au bord du lac
+**Dîner**
+19:30 · Restaurant du Port
+**Hôtel**
+22:00 · Hôtel Annecy
+
+### 2026-09-02
+**Matin**
+09:00 · Marché local
+**Déjeuner**
+Option A · Chez Léon
+Option B · La Terrasse
+**Après-midi**
+15:00 · Paddle
+**Dîner**
+20:00 · Le Quai
+**Hôtel**
+22:30 · Hôtel du Parc
+
+## Budget
+- total`;
+
+describe("Phase 6 — carnet quotidien", () => {
+  it("isole strictement le programme du jour demandé", () => {
+    const day1 = extractDayProgramBlock(multiDay, "2026-09-01");
+    const day2 = extractDayProgramBlock(multiDay, "2026-09-02");
+    expect(day1).toContain("Vieille ville");
+    expect(day1).not.toContain("Marché local");
+    expect(day2).toContain("Marché local");
+    expect(day2).not.toContain("Vieille ville");
+  });
+
+  it("structure matin, déjeuner, après-midi, dîner et hôtel", () => {
+    const program = parseDayProgram(extractDayProgramBlock(multiDay, "2026-09-01"));
+    expect(program.map((section) => section.key)).toEqual([
+      "morning",
+      "lunch",
+      "afternoon",
+      "dinner",
+      "hotel",
+    ]);
+  });
+
+  it("reconnaît les options de comparaison", () => {
+    expect(parseProgramOption("Option A · Bistro du Lac")).toEqual({
+      label: "Option A",
+      text: "Bistro du Lac",
+    });
+    expect(parseProgramOption("09:30 · Vieille ville")).toBeNull();
+  });
+
+  it("simplifie une section après sélection", () => {
+    const program = parseDayProgram(extractDayProgramBlock(multiDay, "2026-09-01"));
+    const simplified = applyProgramSelections(program, {
+      lunch: { sectionKey: "lunch", optionLabel: "Option B", text: "Café Central" },
+    });
+    const lunch = simplified.find((section) => section.key === "lunch");
+    expect(lunch?.items).toEqual(["Option B · Café Central"]);
+  });
+
+  it("relit les choix persistés dans les entrées du carnet", () => {
+    const selections = journalSelectionsFromEntries([
+      {
+        kind: "note",
+        title: "Carnet · Choix · lunch",
+        notes: JSON.stringify({
+          sectionKey: "lunch",
+          optionLabel: "Option A",
+          text: "Bistro du Lac",
+        }),
+      },
+    ]);
+    expect(selections.lunch?.text).toBe("Bistro du Lac");
+  });
+
+  it("n’affiche pas une copie exacte d’un programme d’un jour précédent", () => {
+    const duplicate = `### 2026-09-01\n**Matin**\n09:00 · Même activité\n### 2026-09-02\n**Matin**\n09:00 · Même activité`;
+    const allEntries = [
+      { kind: "note", title: "IA+ · Programme", notes: duplicate, visited_on: "2026-09-01" },
+      { kind: "note", title: "IA+ · Programme", notes: duplicate, visited_on: "2026-09-02" },
+    ];
+    expect(buildDayProgramForDate({ day: "2026-09-01", entries: [allEntries[0]], allEntries })).toHaveLength(1);
+    expect(buildDayProgramForDate({ day: "2026-09-02", entries: [allEntries[1]], allEntries })).toHaveLength(0);
+  });
+});
