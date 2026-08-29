@@ -32,7 +32,9 @@ for (const [ok, label] of assertions) {
 }
 
 const limits = [
-  ["src/routes/map.tsx", 86_000],
+  // Main a légitimement gagné la résolution de logos vérifiés après la Phase 4.
+  // On conserve une marge très faible au-dessus de ce nouveau baseline au lieu de supprimer le garde-fou.
+  ["src/routes/map.tsx", 88_500],
   ["src/routes/_authenticated.trips.index.tsx", 21_000],
   ["src/components/ProfileActions.tsx", 6_500],
 ];
