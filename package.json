@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "generate-routes": "npx --yes @tanstack/router-cli@1.167.30 generate",
-    "build": "node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts src/lib/catalog-reliability.test.ts && npm run generate-routes && tsc --noEmit && vite build",
+    "build": "node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts && npm run generate-routes && tsc --noEmit && vite build",
     "build:dev": "node scripts/phase3-validate.mjs && npm run generate-routes && tsc --noEmit && vite build --mode development",
     "patch:legacy": "node scripts/apply-build-patches.mjs && node scripts/apply-late-source-patches.mjs",
     "preview": "vite preview",
@@ -14,17 +14,18 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run check:security && npm run check:phase1 && npm run check:phase2 && npm run check:phase3 && npm run check:phase4 && npm run check:map && npm run check:explorer && npm run lint && npm run generate-routes && npm run typecheck && npm run test && npm run build",
+    "check": "npm run check:security && npm run check:phase1 && npm run check:phase2 && npm run check:phase3 && npm run check:phase4 && npm run check:phase5 && npm run check:map && npm run check:explorer && npm run lint && npm run generate-routes && npm run typecheck && npm run test && npm run build",
     "check:security": "node scripts/security-check.mjs",
     "check:apis": "node scripts/check-official-apis.mjs",
     "check:provider-keys": "node scripts/smoke-provider-keys.mjs",
     "check:phase1": "node scripts/phase1-validate.mjs",
     "check:map": "node scripts/run-map-checks.mjs",
-    "check:explorer": "vitest run src/lib/catalog-reliability.test.ts",
+    "check:explorer": "vitest run src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts",
     "check:phase2": "node scripts/phase2-essential-validate.mjs && node scripts/phase2-critical-routes.mjs",
     "check:phase2:legacy": "node scripts/phase2-validate.mjs",
     "check:phase3": "node scripts/phase3-validate.mjs && node scripts/phase3-e2e-contract.mjs",
-    "check:phase4": "node scripts/phase4-architecture.mjs"
+    "check:phase4": "node scripts/phase4-architecture.mjs",
+    "check:phase5": "node scripts/phase5-catalog-validate.mjs && vitest run src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",
