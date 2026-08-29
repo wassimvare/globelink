@@ -1,0 +1,84 @@
+name: Apply official website link fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-official-site-link.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch official website handling
+        shell: python
+        run: |
+          from pathlib import Path
+
+          map_path = Path('src/routes/map.tsx')
+          text = map_path.read_text()
+
+          import_anchor = 'import { CatalogImage, catalogPlaceMediaInput } from "@/components/CatalogImage";\n'
+          import_add = import_anchor + '''import {\n  placeLogoQueryKey,\n  resolvePlaceLogo,\n  type PlaceLogoInput,\n} from "@/lib/place-logo.functions";\n'''
+          if '@/lib/place-logo.functions' not in text:
+              if import_anchor not in text:
+                  raise SystemExit('CatalogImage import anchor not found')
+              text = text.replace(import_anchor, import_add, 1)
+
+          old_helper = '''function placeWebsite(place: AnyPlace | null) {\n  return catalogTagText(place, "official_website") || catalogTagText(place, "website");\n}\n'''
+          new_helper = '''const NON_OFFICIAL_SITE_HOSTS = [\n  "google.com",\n  "google.fr",\n  "goo.gl",\n  "openstreetmap.org",\n  "booking.com",\n  "tripadvisor.com",\n  "tripadvisor.fr",\n  "getyourguide.com",\n  "ticketmaster.com",\n  "thefork.com",\n  "thefork.fr",\n  "opentable.com",\n  "yelp.com",\n  "ubereats.com",\n] as const;\n\nfunction hostMatchesWebsite(hostname: string, domain: string) {\n  const host = hostname.replace(/^www\\./i, "").toLowerCase();\n  const expected = domain.replace(/^www\\./i, "").toLowerCase();\n  return host === expected || host.endsWith(`.${expected}`);\n}\n\nfunction safeOfficialPlaceWebsite(value: unknown) {\n  if (!value) return null;\n  try {\n    const url = new URL(String(value).trim());\n    if (url.protocol !== "https:" && url.protocol !== "http:") return null;\n    const host = url.hostname.toLowerCase();\n    if (NON_OFFICIAL_SITE_HOSTS.some((domain) => hostMatchesWebsite(host, domain))) return null;\n    return url.toString();\n  } catch {\n    return null;\n  }\n}\n\nfunction placeWebsite(place: AnyPlace | null) {\n  const candidates = [\n    catalogTagText(place, "official_website"),\n    catalogTagText(place, "website"),\n    place?.booking_url ?? null,\n  ];\n  for (const candidate of candidates) {\n    const website = safeOfficialPlaceWebsite(candidate);\n    if (website) return website;\n  }\n  return null;\n}\n'''
+          if old_helper in text:
+              text = text.replace(old_helper, new_helper, 1)
+          elif 'function safeOfficialPlaceWebsite' not in text:
+              raise SystemExit('placeWebsite helper anchor not found')
+
+          hook_anchor = '''  const { user } = useAuth();\n  const qc = useQueryClient();\n  const [saved, setSaved] = useState(false);\n'''
+          hook_new = '''  const { user } = useAuth();\n  const qc = useQueryClient();\n  const resolveOfficialSite = useServerFn(resolvePlaceLogo);\n  const [saved, setSaved] = useState(false);\n'''
+          if 'const resolveOfficialSite = useServerFn(resolvePlaceLogo);' not in text:
+              if hook_anchor not in text:
+                  raise SystemExit('PlaceSheet hook anchor not found')
+              text = text.replace(hook_anchor, hook_new, 1)
+
+          state_anchor = '''  useEffect(() => {\n    setSaved(false);\n    setTripPickerOpen(false);\n  }, [place?.id]);\n\n  const { data: trips = [], isLoading: tripsLoading, isError: tripsError, refetch: refetchTrips } = useQuery({\n'''
+          state_new = '''  useEffect(() => {\n    setSaved(false);\n    setTripPickerOpen(false);\n  }, [place?.id]);\n\n  const officialSiteInput = useMemo<PlaceLogoInput | null>(\n    () =>\n      place\n        ? {\n            title: place.name,\n            kind: placeMediaKind(place),\n            latitude: place.lat,\n            longitude: place.lng,\n            city: place.city || null,\n            country: place.country || null,\n            website: placeWebsite(place),\n          }\n        : null,\n    [place],\n  );\n  const { data: officialSiteResolution } = useQuery({\n    queryKey: officialSiteInput\n      ? [...placeLogoQueryKey(officialSiteInput), "official-site"]\n      : ["place-logo-v1", "official-site", null],\n    queryFn: async () => resolveOfficialSite({ data: officialSiteInput! }),\n    enabled: !!officialSiteInput,\n    staleTime: 12 * 60 * 60_000,\n    gcTime: 24 * 60 * 60_000,\n    retry: 1,\n  });\n\n  const { data: trips = [], isLoading: tripsLoading, isError: tripsError, refetch: refetchTrips } = useQuery({\n'''
+          if 'const officialSiteInput = useMemo<PlaceLogoInput | null>' not in text:
+              if state_anchor not in text:
+                  raise SystemExit('PlaceSheet state anchor not found')
+              text = text.replace(state_anchor, state_new, 1)
+
+          website_anchor = '''  const website = placeWebsite(place);\n  const phone = placePhone(place);\n'''
+          website_new = '''  const website =\n    safeOfficialPlaceWebsite(officialSiteResolution?.website) ?? placeWebsite(place);\n  const phone = placePhone(place);\n'''
+          if website_anchor in text:
+              text = text.replace(website_anchor, website_new, 1)
+          elif 'safeOfficialPlaceWebsite(officialSiteResolution?.website)' not in text:
+              raise SystemExit('website assignment anchor not found')
+
+          map_path.write_text(text)
+
+          logo_path = Path('src/lib/place-logo.functions.ts')
+          logo = logo_path.read_text()
+          google_anchor = '''  "google.com",\n  "google.fr",\n'''
+          google_new = '''  "google.com",\n  "google.fr",\n  "goo.gl",\n'''
+          if '  "goo.gl",\n' not in logo:
+              if google_anchor not in logo:
+                  raise SystemExit('place-logo Google host anchor not found')
+              logo = logo.replace(google_anchor, google_new, 1)
+          logo_path.write_text(logo)
+
+          workflow = Path('.github/workflows/fix-official-site-link.yml')
+          if workflow.exists():
+              workflow.unlink()
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/map.tsx src/lib/place-logo.functions.ts .github/workflows/fix-official-site-link.yml
+          git commit -m "fix(map): open official establishment websites"
+          git push
