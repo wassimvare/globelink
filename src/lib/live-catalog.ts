@@ -20,6 +20,7 @@ import {
   specializedSourceLabel,
 } from "./catalog-source-routing";
 import { filterReliableCatalogItems, filterReliableMapCatalogItems } from "./catalog-reliability";
+import { dedupeVerifiedCatalogItems } from "./catalog-quality";
 import { curatedActivitiesForCountry, dailyWorldActivitySelection } from "./world-activities";
 
 export type LiveCatalogKind = "activity" | "restaurant" | "hotel" | "deal";
@@ -148,10 +149,11 @@ const VIEWPORT_SELECT =
   "id,provider,external_id,kind,slug,title,description,category,city,country,country_code,latitude,longitude,image_url,source_url,booking_url,price_amount,currency,price_text,rating,reviews_count,opening_hours,tags,fetched_at,valid_until";
 
 function uniqueCatalogRows(rows: LiveCatalogItem[]) {
-  return rows.filter((item, index, all) => {
+  const byProviderIdentity = rows.filter((item, index, all) => {
     const key = catalogIdentityKey(item);
     return all.findIndex((candidate) => catalogIdentityKey(candidate) === key) === index;
   });
+  return dedupeVerifiedCatalogItems(byProviderIdentity);
 }
 
 function visibleCatalogRows(rows: LiveCatalogItem[]) {
