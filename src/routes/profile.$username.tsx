@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { AppHeader } from "@/components/AppHeader";
+import { ProfileActions } from "@/components/ProfileActions";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { openOrCreateDirectConversation, toggleFollow } from "@/lib/social";
@@ -281,6 +282,13 @@ function ProfilePage() {
               onClick={() => navigate({ to: "/" })}
               className="absolute left-3 top-3 sm:left-5 sm:top-5"
             />
+            <div className="absolute right-3 top-3 sm:right-5 sm:top-5">
+              <ProfileActions
+                currentUserId={user?.id}
+                targetUserId={profile.id}
+                username={profile.username}
+              />
+            </div>
             <div className="flex flex-col items-center gap-4 pt-10 sm:flex-row sm:items-end sm:gap-6 sm:pt-4">
               <div className="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-3xl font-medium ring-4 ring-background sm:h-28 sm:w-28">
                 {avatar ? (
