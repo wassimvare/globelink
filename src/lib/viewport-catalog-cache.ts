@@ -15,10 +15,67 @@ type CacheEntry = {
   rows: LiveCatalogItem[];
 };
 
-const STORAGE_KEY = "globelink:viewport-catalog:v1";
+// v2 intentionally invalidates the old cache. v1 compacted Google Places rows too
+// aggressively and could drop the exact photo reference/address while keeping the
+// provider label, which produced incomplete place sheets after a reload.
+const STORAGE_KEY = "globelink:viewport-catalog:v2";
+const LEGACY_STORAGE_KEYS = ["globelink:viewport-catalog:v1"];
 const MAX_ENTRIES = 6;
 const MAX_ROWS_PER_ENTRY = 280;
 const CACHE_TTL = 12 * 60 * 60_000;
+
+const CACHE_TAG_KEYS = [
+  // OSM / public enrichment metadata
+  "amenity",
+  "tourism",
+  "leisure",
+  "natural",
+  "shop",
+  "cuisine",
+  "image",
+  "wikimedia_commons",
+  "wikidata",
+  "wikipedia",
+  "website",
+  "official_website",
+  "phone",
+  "address",
+
+  // Google Places exact-place identity + media. These must survive caching so
+  // CatalogImage can resolve the real image instead of displaying a placeholder.
+  "google_place_id",
+  "google_photo_name",
+  "google_photo_attributions",
+  "verified_google_place",
+  "official_image_provider",
+  "official_image_url",
+  "provider_image_url",
+  "source_api_provider",
+  "primary_type",
+  "types",
+
+  // Source verification metadata used by the strict catalog routing layer.
+  "official_source_provider",
+  "official_source_label",
+  "official_source_url",
+  "official_source_verified",
+  "strict_official_source_verified",
+  "provider_verified",
+  "source_is_search_only",
+  "source_strategy",
+  "source_verification_status",
+  "primary_source_provider",
+  "primary_source_label",
+  "primary_source_url",
+  "reservation_source_provider",
+  "reservation_source_label",
+  "reservation_source_url",
+
+  // Map presentation metadata
+  "original_kind",
+  "map_offer_fallback",
+  "location_precision",
+] as const;
 
 export function catalogIdentityKey(
   item: Pick<LiveCatalogItem, "provider" | "external_id">,
@@ -35,9 +92,19 @@ function entryKey(bounds: CatalogViewportBounds) {
   return `${midLat.toFixed(2)}:${midLng.toFixed(2)}:${zoomBucket}`;
 }
 
+function cleanupLegacyCache() {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of LEGACY_STORAGE_KEYS) window.localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable (private mode/quota). The live map still works.
+  }
+}
+
 function readEntries(): CacheEntry[] {
   if (typeof window === "undefined") return [];
   try {
+    cleanupLegacyCache();
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]") as CacheEntry[];
     const now = Date.now();
     return Array.isArray(parsed)
@@ -57,6 +124,7 @@ function readEntries(): CacheEntry[] {
 function writeEntries(entries: CacheEntry[]) {
   if (typeof window === "undefined") return;
   try {
+    cleanupLegacyCache();
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
   } catch {
     // Storage can be unavailable (private mode/quota). The live map still works.
@@ -81,29 +149,14 @@ function insideViewport(
 
 function compactRow(item: LiveCatalogItem): LiveCatalogItem {
   const tags = item.tags ?? {};
-  const keepTag = (key: string) =>
-    Object.prototype.hasOwnProperty.call(tags, key) ? tags[key] : undefined;
   const compactTags: Record<string, unknown> = {};
-  for (const key of [
-    "amenity",
-    "tourism",
-    "leisure",
-    "natural",
-    "shop",
-    "cuisine",
-    "image",
-    "wikimedia_commons",
-    "wikidata",
-    "wikipedia",
-    "website",
-    "phone",
-    "original_kind",
-    "map_offer_fallback",
-    "location_precision",
-  ]) {
-    const value = keepTag(key);
+
+  for (const key of CACHE_TAG_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(tags, key)) continue;
+    const value = tags[key];
     if (value !== undefined && value !== null && value !== "") compactTags[key] = value;
   }
+
   return { ...item, tags: Object.keys(compactTags).length ? compactTags : null };
 }
 
