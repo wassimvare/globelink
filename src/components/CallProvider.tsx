@@ -702,8 +702,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         handlePayload,
       )
       .subscribe((status) => {
-        if (status === "CHANNEL_ERROR")
-          toast.error("Le service d’appel en temps réel est indisponible");
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT")
+          console.warn(
+            "Le canal Realtime SQL des appels se reconnecte; le canal privé et la récupération SQL restent actifs.",
+          );
       });
 
     const since = new Date(Date.now() - 120_000).toISOString();

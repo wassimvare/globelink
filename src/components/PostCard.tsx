@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   EyeOff,
   Undo2,
+  Trash2,
 } from "lucide-react";
 import { REACTIONS, setReaction, toggleFollow, type ReactionKey } from "@/lib/social";
 import { getMutedUserIds, setMute } from "@/lib/social-privacy";
@@ -34,6 +35,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AddToTripButton } from "@/components/AddToTripButton";
+// ADD_TO_TRIP_EVERYWHERE_V1_POST
 
 type Media = {
   id: string;
@@ -61,27 +64,30 @@ type Post = {
   post_media?: Media[];
 };
 
-function useSigned(path: string | null | undefined) {
+function useSigned(path: string | null | undefined, enabled = true) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     setUrl(null);
+    if (!enabled) return () => { active = false; };
     getSignedMediaUrl(path).then((nextUrl) => {
       if (active) setUrl(nextUrl);
     });
     return () => {
       active = false;
     };
-  }, [path]);
+  }, [path, enabled]);
   return url;
 }
+// PERFORMANCE_V1_POST_CARD
 
-function useResolvedMedia(media: Media | null | undefined) {
+function useResolvedMedia(media: Media | null | undefined, enabled = true) {
   const [url, setUrl] = useState<string | null>(null);
   const chunkKey = media?.media_chunks?.join("|") ?? "";
   useEffect(() => {
     let active = true;
     setUrl(null);
+    if (!enabled) return () => { active = false; };
     const chunks = chunkKey ? chunkKey.split("|") : null;
     getMediaManifestUrl(media?.url, chunks, media?.media_mime_type)
       .then((nextUrl) => {
@@ -93,7 +99,7 @@ function useResolvedMedia(media: Media | null | undefined) {
     return () => {
       active = false;
     };
-  }, [media?.url, media?.media_mime_type, chunkKey]);
+  }, [media?.url, media?.media_mime_type, chunkKey, enabled]);
   return url;
 }
 
@@ -104,7 +110,29 @@ export function PostCard({ post }: { post: Post }) {
   const [idx, setIdx] = useState(0);
   const [muted, setMuted] = useState(true);
   const [hidden, setHidden] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [nearViewport, setNearViewport] = useState(false);
+
+  useEffect(() => {
+    const node = cardRef.current;
+    if (!node || nearViewport) return;
+    if (!("IntersectionObserver" in window)) {
+      setNearViewport(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setNearViewport(true);
+        observer.disconnect();
+      },
+      { rootMargin: "800px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [nearViewport]);
 
   const media: Media[] = post.post_media?.length
     ? [...post.post_media].sort((a, b) => a.position - b.position)
@@ -113,9 +141,9 @@ export function PostCard({ post }: { post: Post }) {
       : [{ id: "cover", url: post.image_url, media_type: "image", position: 0 }];
 
   const current = media[Math.min(idx, media.length - 1)];
-  const mediaUrl = useResolvedMedia(current);
-  const posterUrl = useSigned(post.image_url);
-  const avatarUrl = useSigned(post.profiles?.avatar_url);
+  const mediaUrl = useResolvedMedia(current, nearViewport);
+  const posterUrl = useSigned(post.image_url, nearViewport);
+  const avatarUrl = useSigned(post.profiles?.avatar_url, nearViewport);
   const isReel = current.media_type === "reel";
   const isVideo = current.media_type === "video" || isReel;
   const isSelf = user?.id === post.user_id;
@@ -151,7 +179,8 @@ export function PostCard({ post }: { post: Post }) {
 
   const { data: myReaction } = useQuery({
     queryKey: ["post-reaction", post.id, user?.id],
-    enabled: !!user,
+    enabled: !!user && nearViewport,
+    staleTime: 60_000,
     queryFn: async () => {
       const { data } = await supabase
         .from("post_reactions")
@@ -179,7 +208,8 @@ export function PostCard({ post }: { post: Post }) {
 
   const { data: saved } = useQuery({
     queryKey: ["post-saved", post.id, user?.id],
-    enabled: !!user,
+    enabled: !!user && nearViewport,
+    staleTime: 60_000,
     queryFn: async () => {
       const { data } = await supabase
         .from("post_saves")
@@ -250,7 +280,8 @@ export function PostCard({ post }: { post: Post }) {
 
   const { data: isFollowing } = useQuery({
     queryKey: ["follow-card", user?.id, post.user_id],
-    enabled: !!user && !isSelf,
+    enabled: !!user && !isSelf && nearViewport,
+    staleTime: 60_000,
     queryFn: async () => {
       const { data } = await supabase
         .from("follows")
@@ -299,6 +330,29 @@ export function PostCard({ post }: { post: Post }) {
     onError: () => toast.error("Impossible de mettre ce compte en sourdine."),
   });
 
+  const deletePost = useMutation({
+    mutationFn: async () => {
+      if (!user || !isSelf) throw new Error("Cette publication ne t’appartient pas.");
+      const { error } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", post.id)
+        .eq("user_id", user.id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      setDeleted(true);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["feed"] }),
+        qc.invalidateQueries({ queryKey: ["post", post.id] }),
+        qc.invalidateQueries({ queryKey: ["profile"] }),
+      ]);
+      toast.success("Publication supprimée");
+    },
+    onError: (error: any) => toast.error(error?.message ?? "Suppression impossible."),
+  });
+
+  if (deleted) return null;
   if (authorMuted) return null;
 
   if (hidden) {
@@ -319,7 +373,7 @@ export function PostCard({ post }: { post: Post }) {
   }
 
   return (
-    <article className="group surface-card interactive-card media-polish animate-rise overflow-hidden rounded-[1.75rem]">
+    <article ref={cardRef} className="feed-lazy-card group surface-card interactive-card media-polish animate-rise overflow-hidden rounded-[1.75rem]">
       <header className="flex items-center gap-3 p-4">
         <Link
           to="/profile/$username"
@@ -395,7 +449,18 @@ export function PostCard({ post }: { post: Post }) {
                   <VolumeX className="mr-2 h-4 w-4" /> Mettre @{username} en sourdine
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={share} className="rounded-xl">
+              {isSelf && (
+                <DropdownMenuItem
+                  disabled={deletePost.isPending}
+                  onClick={() => {
+                    if (window.confirm("Supprimer définitivement cette publication ?")) deletePost.mutate();
+                  }}
+                  className="rounded-xl text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Supprimer la publication
+                </DropdownMenuItem>
+              )}
+                            <DropdownMenuItem onClick={share} className="rounded-xl">
                 <Share2 className="mr-2 h-4 w-4" /> Partager le lien
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -586,6 +651,24 @@ export function PostCard({ post }: { post: Post }) {
             <Bookmark className={`h-5 w-5 ${saved ? "fill-current" : ""}`} />
           </button>
         </div>
+        {(post.city || post.country || post.activity) && (
+          <div className="mt-3">
+            <AddToTripButton
+              item={{
+                title: post.activity || [post.city, post.country].filter(Boolean).join(", ") || "Lieu partagé sur GlobeLink",
+                city: post.city,
+                country: post.country,
+                kind: post.activity ? "activity" : "stop",
+                source: "Publication GlobeLink",
+                notes: post.caption ? post.caption.slice(0, 300) : null,
+              }}
+              size="sm"
+              variant="secondary"
+              label={post.activity ? "Ajouter cette activité à mon voyage" : "Ajouter ce lieu à mon voyage"}
+              className="w-full rounded-xl"
+            />
+          </div>
+        )}
         {post.caption && (
           <p className="mt-3 text-sm">
             <Link

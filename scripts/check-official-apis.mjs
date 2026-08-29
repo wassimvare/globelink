@@ -1,32 +1,11 @@
 const providers = [
   {
-    label: "Booking.com hotels",
-    required: ["BOOKING_API_TOKEN", "BOOKING_PARTNER_API_KEY"],
-    optional: [
-      "BOOKING_AFFILIATE_ID",
-      "BOOKING_API_BASE_URL",
-      "BOOKING_ACCOMMODATIONS_SEARCH_ENDPOINT",
-    ],
+    label: "Google Places (hôtels, restaurants, attractions)",
+    required: ["GOOGLE_PLACES_API_KEY", "GLOBELINK_GOOGLE_PLACES_API_KEY", "GOOGLE_MAPS_API_KEY"],
   },
   {
-    label: "Tripadvisor activities",
-    required: ["TRIPADVISOR_API_KEY"],
-    optional: ["TRIPADVISOR_API_BASE_URL"],
-  },
-  {
-    label: "GetYourGuide activities",
-    required: ["GETYOURGUIDE_API_KEY", "GETYOURGUIDE_PARTNER_API_KEY"],
-    optional: ["GETYOURGUIDE_API_BASE_URL"],
-  },
-  {
-    label: "Yelp restaurants",
-    required: ["YELP_API_KEY"],
-    optional: ["YELP_API_BASE_URL"],
-  },
-  {
-    label: "Google Places photos",
-    required: ["GOOGLE_PLACES_API_KEY", "GOOGLE_MAPS_API_KEY"],
-    optional: [],
+    label: "Ticketmaster Discovery (événements)",
+    required: ["TICKETMASTER_API_KEY"],
   },
 ];
 
@@ -45,6 +24,6 @@ for (const provider of providers) {
 console.log(`APIs configurees: ${configuredCount}/${providers.length}`);
 if (configuredCount === 0) {
   console.log(
-    "Aucune cle API officielle detectee. GlobeLink utilisera les sources tracables de secours pour eviter une carte vide.",
+    "Aucune cle API officielle detectee. GlobeLink n'inventera ni lieu, ni note, ni photo.",
   );
 }

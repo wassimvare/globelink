@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import {
   Activity,
   Bed,
@@ -22,6 +23,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { refreshTripDayWeather } from "@/lib/trip-weather.functions";
+// TRIP_JOURNAL_DAYS_V2
+// TRIP_DAILY_PROGRAM_V3
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,11 +83,12 @@ type Props = {
   userId: string;
   meta?: any;
   entries: any[];
+  allEntries?: any[];
   expenses: any[];
 };
 
 type ProgramSection = {
-  key: "morning" | "afternoon" | "evening" | "other";
+  key: "morning" | "lunch" | "afternoon" | "dinner" | "hotel" | "evening" | "other";
   title: string;
   items: string[];
 };
@@ -103,20 +108,136 @@ function normalizeProgramTitle(value: string): ProgramSection["key"] {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+  if (text.includes("apres-midi") || text.includes("fin d'apres-midi")) return "afternoon";
+  if (text.includes("petit-dejeuner") || text.includes("petit dejeuner") || text === "matin") return "morning";
+  if (text.includes("dejeuner") || text === "midi") return "lunch";
+  if (text.includes("diner") || text.includes("repas du soir")) return "dinner";
+  if (text.includes("hotel") || text.includes("hebergement") || text.includes("nuit")) return "hotel";
+  if (text.includes("soir")) return "evening";
   if (text.includes("matin")) return "morning";
-  if (text.includes("apres-midi") || text.includes("midi")) return "afternoon";
-  if (text.includes("soir") || text.includes("fin d'apres-midi")) return "evening";
   return "other";
 }
 
 function cleanMarkdownLine(value: string) {
   return value
+    .replace(/^\s*#{1,6}\s*/, "")
     .replace(/^\s*[-*•]+\s*/, "")
     .replace(/\*\*/g, "")
     .replace(/__+/g, "")
     .replace(/`/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+
+const FRENCH_MONTHS: Record<string, number> = {
+  janvier: 0,
+  fevrier: 1,
+  février: 1,
+  mars: 2,
+  avril: 3,
+  mai: 4,
+  juin: 5,
+  juillet: 6,
+  aout: 7,
+  août: 7,
+  septembre: 8,
+  octobre: 9,
+  novembre: 10,
+  decembre: 11,
+  décembre: 11,
+};
+
+function isoDayFromHeading(line: string, fallbackYear: number) {
+  const iso = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+  const french = line
+    .normalize("NFKC")
+    .match(/\b(\d{1,2})\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)(?:\s+(20\d{2}))?\b/i);
+  if (!french) return null;
+  const month = FRENCH_MONTHS[french[2].toLocaleLowerCase("fr-FR")];
+  if (month == null) return null;
+  const year = Number(french[3] || fallbackYear);
+  const date = new Date(Date.UTC(year, month, Number(french[1])));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function extractProgramForDay(raw: string | null | undefined, targetDay: string) {
+  if (!raw) return "";
+  const lines = String(raw).replace(/\r/g, "").split("\n");
+  const year = Number(targetDay.slice(0, 4)) || new Date().getUTCFullYear();
+  const datedHeadings = lines.flatMap((line, index) => {
+    if (!/^\s*#{1,6}\s+/.test(line)) return [];
+    const day = isoDayFromHeading(line, year);
+    return day ? [{ index, day }] : [];
+  });
+
+  if (!datedHeadings.length) return raw;
+  const currentIndex = datedHeadings.findIndex((item) => item.day === targetDay);
+  if (currentIndex < 0) return "";
+  const start = datedHeadings[currentIndex].index + 1;
+  const next = datedHeadings[currentIndex + 1]?.index ?? lines.length;
+  const selected = lines.slice(start, next);
+  const majorCut = selected.findIndex((line) =>
+    /^\s*##\s+(Budget|Impact sur ton carnet|Alternatives|À vérifier|A vérifier|Sources)/i.test(line),
+  );
+  return (majorCut >= 0 ? selected.slice(0, majorCut) : selected).join("\n").trim();
+}
+
+function isAiProgramNote(entry: any) {
+  if (entry?.kind !== "note") return false;
+  const title = String(entry?.title ?? "");
+  const notes = String(entry?.notes ?? "");
+  return (
+    /^IA\+\s*·/i.test(title) ||
+    /##\s*Recommandation IA\+/i.test(notes) ||
+    /###\s*(?:20\d{2}-\d{2}-\d{2}|(?:Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche)\b)/i.test(notes) ||
+    /\*\*(?:Matin|Après-midi|Apres-midi|Soir)/i.test(notes)
+  );
+}
+
+
+function prettyProgramTitle(value: string) {
+  const text = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (text.includes("petit-dejeuner") || text.includes("petit dejeuner")) return "Petit-déjeuner";
+  if (text.includes("dejeuner") || text === "midi") return "Déjeuner";
+  if (text.includes("apres-midi") || text.includes("fin d'apres-midi")) return "Après-midi";
+  if (text.includes("diner") || text.includes("repas du soir")) return "Dîner";
+  if (text.includes("hotel") || text.includes("hebergement") || text.includes("nuit")) return "Hôtel / Nuit";
+  if (text.includes("soir")) return "Soir";
+  if (text.includes("matin")) return "Matin";
+  return value.trim();
+}
+
+function isProgramNoise(value: string) {
+  const text = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  return (
+    !text ||
+    /^recommandation ia\+\s*:?$/.test(text) ||
+    /^note\s*:\s*la recherche web/.test(text) ||
+    /^la recherche web en direct n['’]a pas retourne de source/.test(text) ||
+    /^les informations ci-dessous sont basees sur des donnees generales/.test(text) ||
+    /^programme\s*:?$/.test(text) ||
+    /^plan d['’]action\s*:?$/.test(text) ||
+    /^impact sur ton carnet\s*:?$/.test(text) ||
+    /^a verifier avant d['’]agir\s*:?$/.test(text)
+  );
+}
+
+function programSignature(program: ProgramSection[]) {
+  return program
+    .flatMap((section) => section.items)
+    .map((item) => item.normalize("NFKC").toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi, " ").trim())
+    .filter(Boolean)
+    .join("|");
 }
 
 function parseProgram(raw: string | null | undefined): ProgramSection[] {
@@ -129,36 +250,50 @@ function parseProgram(raw: string | null | undefined): ProgramSection[] {
   let current: ProgramSection | null = null;
 
   for (const original of relevant.split("\n")) {
+    if (/^\s*#{1,6}\s+(Budget|Impact sur ton carnet|Alternatives|À vérifier|A vérifier|Sources|Comparaison)/i.test(original)) break;
     const line = cleanMarkdownLine(original);
     if (!line) continue;
 
     const heading = line.match(
-      /^(Matin|Après-midi|Apres-midi|Midi|Soir|Fin d['’]après-midi|Fin d['’]apres-midi)\s*:\s*(.*)$/i,
+      /^(Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel|Hotel|Hébergement|Hebergement|Nuit)(?:\s*[\/·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i,
     );
     if (heading) {
-      const title = heading[1]
-        .replace(/Apres/i, "Après")
-        .replace(/apres/i, "après");
+      const title = prettyProgramTitle(heading[1]);
       current = { key: normalizeProgramTitle(title), title, items: [] };
       sections.push(current);
-      const tail = cleanMarkdownLine(heading[2]);
+      const tail = [heading[2], heading[3]].filter(Boolean).map((part) => cleanMarkdownLine(part)).filter(Boolean).join(" : ");
       if (tail) current.items.push(tail);
       continue;
     }
 
     if (!current) {
-      current = { key: "other", title: "Programme", items: [] };
+      const timed = line.match(/^(\d{1,2}(?::|h)\d{0,2})\s*[·:–—-]\s*(.+)$/i);
+      if (!timed || isProgramNoise(line)) continue;
+      current = { key: "other", title: "À faire", items: [] };
       sections.push(current);
+      current.items.push(`${timed[1]} · ${timed[2]}`);
+      continue;
     }
-    current.items.push(line);
+    if (!isProgramNoise(line)) current.items.push(line);
   }
 
+  const seenItems = new Set<string>();
   return sections
     .map((section) => ({
       ...section,
       items: section.items
         .map((item) => item.replace(/^[:;,.\-–—]+\s*/, "").trim())
-        .filter(Boolean),
+        .filter((item) => {
+          if (!item || isProgramNoise(item)) return false;
+          const signature = item
+            .normalize("NFKC")
+            .toLowerCase()
+            .replace(/[^a-z0-9à-ÿ]+/gi, " ")
+            .trim();
+          if (!signature || seenItems.has(signature)) return false;
+          seenItems.add(signature);
+          return true;
+        }),
     }))
     .filter((section) => section.items.length > 0);
 }
@@ -298,8 +433,9 @@ function parseForecastBreakdown(
   };
 }
 
-export function TripDaySectionPremium({ index, day, tripId, userId, meta, entries, expenses }: Props) {
+export function TripDaySectionPremium({ index, day, tripId, userId, meta, entries, allEntries = entries, expenses }: Props) {
   const qc = useQueryClient();
+  const weatherFn = useServerFn(refreshTripDayWeather);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const actualExpenses = useMemo(
     () => expenses.filter((expense) => expense.category !== "Prévision IA+"),
@@ -312,18 +448,35 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
   const daySpent = actualExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const dayForecast = forecastExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
-  const aiNote = useMemo(
-    () =>
-      entries.find(
-        (entry) =>
-          entry.kind === "note" &&
-          (/^IA\+\s*·\s*Jour/i.test(String(entry.title ?? "")) || /\*\*Matin/i.test(String(entry.notes ?? ""))),
-      ),
+  const programSource = useMemo(() => {
+    const exact = entries.find(
+      (entry) => entry.kind === "note" && /^IA\+\s*·\s*Jour/i.test(String(entry.title ?? "")),
+    );
+    if (exact?.notes) return String(exact.notes);
+    const legacy = allEntries.find((entry) => {
+      if (!isAiProgramNote(entry) || !entry?.notes) return false;
+      return !!extractProgramForDay(String(entry.notes), day);
+    });
+    return legacy?.notes ? String(legacy.notes) : "";
+  }, [entries, allEntries, day]);
+  const program = useMemo(() => {
+    const parsed = parseProgram(extractProgramForDay(programSource, day));
+    const signature = programSignature(parsed);
+    if (!signature) return parsed;
+
+    const duplicateEarlierDay = allEntries.some((entry) => {
+      if (!isAiProgramNote(entry) || !entry?.notes || !entry?.visited_on || entry.visited_on >= day) return false;
+      const previous = parseProgram(extractProgramForDay(String(entry.notes), String(entry.visited_on)));
+      return programSignature(previous) === signature;
+    });
+
+    return duplicateEarlierDay ? [] : parsed;
+  }, [programSource, day, allEntries]);
+  const otherEntries = useMemo(
+    () => entries.filter((entry) => !isAiProgramNote(entry)),
     [entries],
   );
-  const program = useMemo(() => parseProgram(aiNote?.notes), [aiNote?.notes]);
-  const otherEntries = useMemo(() => entries.filter((entry) => entry.id !== aiNote?.id), [entries, aiNote?.id]);
-  const noteCount = entries.filter((entry) => entry.kind === "note").length + (meta?.notes ? 1 : 0);
+  const noteCount = entries.filter((entry) => entry.kind === "note" && !isAiProgramNote(entry)).length + (meta?.notes ? 1 : 0);
 
   const upsertDay = async (patch: Record<string, any>) => {
     const { error } = await supabase
@@ -343,45 +496,10 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
     const loadWeather = async () => {
       setWeatherLoading(true);
       try {
-        const { data: trip } = await supabase
-          .from("trips")
-          .select("city,country")
-          .eq("id", tripId)
-          .maybeSingle();
-        const destination = String(trip?.city || trip?.country || "").trim();
-        if (!destination) return;
-
-        const geocode = await fetch(
-          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(destination)}&count=1&language=fr&format=json`,
-        );
-        if (!geocode.ok) return;
-        const geoPayload = (await geocode.json()) as {
-          results?: Array<{ latitude: number; longitude: number }>;
-        };
-        const point = geoPayload.results?.[0];
-        if (!point) return;
-
-        const forecast = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${point.latitude}&longitude=${point.longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date=${day}&end_date=${day}`,
-        );
-        if (!forecast.ok) return;
-        const payload = (await forecast.json()) as {
-          daily?: {
-            weather_code?: number[];
-            temperature_2m_max?: number[];
-            temperature_2m_min?: number[];
-          };
-        };
-        const code = payload.daily?.weather_code?.[0];
-        const max = payload.daily?.temperature_2m_max?.[0];
-        const min = payload.daily?.temperature_2m_min?.[0];
-        if (cancelled || code == null || max == null) return;
-
-        const weather = weatherFromCode(Number(code));
-        const temperature = Math.round(Number.isFinite(Number(min)) ? (Number(max) + Number(min)) / 2 : Number(max));
-        await upsertDay({ weather_icon: weather.icon, weather_temp: temperature });
-      } catch {
-        // The journal remains editable manually if the forecast service is temporarily unavailable.
+        await weatherFn({ data: { tripId, day } });
+        if (!cancelled) await qc.invalidateQueries({ queryKey: ["trip-days", tripId] });
+      } catch (error) {
+        console.warn("[GlobeLink météo]", error);
       } finally {
         if (!cancelled) setWeatherLoading(false);
       }
@@ -391,7 +509,6 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
     return () => {
       cancelled = true;
     };
-    // Only retry when the day itself or stored weather changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, tripId, meta?.weather_icon, meta?.weather_temp]);
 
@@ -480,30 +597,55 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
             </span>
             <div>
               <h3 className="font-display text-xl font-bold">Programme du jour</h3>
-              <p className="text-xs text-muted-foreground">Ton itinéraire, simplement.</p>
+              <p className="text-xs text-muted-foreground">Un planning clair, uniquement pour cette journée.</p>
             </div>
           </div>
 
-          <div className="space-y-0">
+          <div className="grid gap-3">
             {program.map((section, sectionIndex) => {
-              const Icon = section.key === "morning" ? Sunrise : section.key === "afternoon" ? Sun : section.key === "evening" ? MoonStar : CalendarDays;
+              const Icon =
+                section.key === "morning"
+                  ? Sunrise
+                  : section.key === "lunch" || section.key === "dinner"
+                    ? UtensilsCrossed
+                    : section.key === "hotel"
+                      ? Bed
+                      : section.key === "afternoon"
+                        ? Sun
+                        : section.key === "evening"
+                          ? MoonStar
+                          : CalendarDays;
               return (
                 <div
                   key={`${section.title}-${sectionIndex}`}
-                  className={`grid grid-cols-[2.75rem_1fr] gap-3 py-4 ${sectionIndex > 0 ? "border-t border-border/60" : "pt-0"}`}
+                  className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-2xl border border-border/60 bg-card/55 p-3.5 sm:p-4"
                 >
                   <div className="flex justify-center pt-0.5 text-primary">
                     <Icon className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="text-base font-bold text-primary sm:text-lg">{section.title}</h4>
-                    <ul className="mt-2 space-y-2.5 text-[15px] leading-6 text-foreground/90 sm:text-base">
-                      {section.items.map((item, itemIndex) => (
-                        <li key={`${section.title}-${itemIndex}`} className="flex gap-2.5">
-                          <span className="mt-[0.65rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
+                    <h4 className="text-[15px] font-bold text-primary sm:text-base">{section.title}</h4>
+                    <ul className="mt-2 space-y-2 text-sm leading-6 text-foreground/90">
+                      {section.items.map((item, itemIndex) => {
+                        const option = item.match(/^(Option\s+[A-C]|Choix\s+\d+)\s*(?:[·:–—-]\s*)?(.*)$/i);
+                        return (
+                          <li
+                            key={`${section.title}-${itemIndex}`}
+                            className="rounded-xl border border-border/40 bg-background/60 px-3 py-2.5"
+                          >
+                            {option ? (
+                              <div className="flex items-start gap-2.5">
+                                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
+                                  {option[1]}
+                                </span>
+                                <span className="min-w-0">{option[2] || item}</span>
+                              </div>
+                            ) : (
+                              <span>{item}</span>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 </div>
@@ -756,9 +898,23 @@ function WeatherEditor({
           type="button"
           className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-background/70 px-4 text-sm font-medium transition hover:border-primary/40"
         >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <span className="text-lg">{icon || "⛅️"}</span>}
-          <span className="font-bold">{temperature == null ? "—" : `${Number(temperature).toFixed(0)}°`}</span>
-          <span className="text-muted-foreground">· {weatherLabel(icon)}</span>
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="font-semibold">Météo…</span>
+            </>
+          ) : temperature != null && icon ? (
+            <>
+              <span className="text-lg">{icon}</span>
+              <span className="font-bold">{Number(temperature).toFixed(0)}°</span>
+              <span className="text-muted-foreground">· {weatherLabel(icon)}</span>
+            </>
+          ) : (
+            <>
+              <CloudSun className="h-4 w-4 text-primary" />
+              <span className="font-semibold">Météo à charger</span>
+            </>
+          )}
         </button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">

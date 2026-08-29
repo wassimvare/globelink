@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { enrichSpecializedCatalogSource } from "./catalog-source-routing";
 import { WORLD_MAP_HUBS } from "./world-map-hubs";
+import { fetchWikidataPublicPlaces, type WikidataPublicPlace } from "./wikidata-public-places";
 
 export type PublicCatalogKind = "activity" | "restaurant" | "hotel";
 type PublicCatalogJson =
@@ -8,7 +9,7 @@ type PublicCatalogJson =
 
 export type PublicCatalogItem = {
   id: string;
-  provider: "openstreetmap-live";
+  provider: "openstreetmap-live" | "wikidata-public";
   external_id: string;
   kind: PublicCatalogKind;
   slug: string;
@@ -64,7 +65,7 @@ const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.openstreetmap.fr/api/interpreter",
-  "https://overpass.nchc.org.tw/api/interpreter",
+  // NCHC retiré : ce miroir ne résout plus de façon fiable en production Vercel.
 ];
 const CACHE_TTL = 6 * 60 * 60_000;
 const SEARCH_CACHE_TTL = 24 * 60 * 60_000;
@@ -418,6 +419,51 @@ function uniqueItems(items: PublicCatalogItem[]) {
   });
 }
 
+function mapWikidataRows(
+  rows: WikidataPublicPlace[],
+  maxResults: number,
+  area?: Area,
+): PublicCatalogItem[] {
+  const fetchedAt = new Date().toISOString();
+  return rows.slice(0, maxResults).map((row) =>
+    enrichSpecializedCatalogSource({
+      id: `wikidata-public-${row.id.toLowerCase()}`,
+      provider: "wikidata-public" as const,
+      external_id: row.id,
+      kind: row.kind,
+      slug: `${slugify(row.title)}-wikidata-${row.id.toLowerCase()}`,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      city: area?.city ?? null,
+      country: area?.country ?? null,
+      country_code: area?.countryCode ?? null,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      image_url: row.imageUrl,
+      source_url: row.sourceUrl,
+      booking_url: row.websiteUrl,
+      price_amount: null,
+      currency: null,
+      price_text: null,
+      rating: null,
+      reviews_count: 0,
+      opening_hours: null,
+      tags: {
+        wikidata: row.id,
+        verified_real_place: true,
+        source_is_search_only: false,
+        source_strategy: "wikidata-public-v1",
+        public_api_provider: "wikidata",
+        official_website: row.websiteUrl,
+        live: true,
+      },
+      fetched_at: fetchedAt,
+      valid_until: new Date(Date.now() + CACHE_TTL).toISOString(),
+    } satisfies PublicCatalogItem),
+  );
+}
+
 async function fetchWorldMapOverpass(): Promise<PublicCatalogItem[]> {
   const areas = dailyAreas(18);
   const batches: Area[][] = [];
@@ -718,7 +764,29 @@ async function fetchViewportOverpass(
     memoryCache.set(key, { expires: Date.now() + CACHE_TTL, value: unique });
     return unique;
   }
-  console.error("[GlobeLink viewport catalog] Overpass unavailable", lastError);
+
+  try {
+    const centerLat = (bounds.south + bounds.north) / 2;
+    const centerLng = (bounds.west + bounds.east) / 2;
+    const radiusKm = Math.max(2, Math.min(15, Math.ceil(Math.max(latSpan, lngSpan) * 55)));
+    const wikidataRows = mapWikidataRows(
+      await fetchWikidataPublicPlaces({
+        latitude: centerLat,
+        longitude: centerLng,
+        radiusKm,
+        limit: Math.min(120, maxResults),
+      }),
+      maxResults,
+    );
+    if (wikidataRows.length) {
+      memoryCache.set(key, { expires: Date.now() + CACHE_TTL, value: wikidataRows });
+      return wikidataRows;
+    }
+  } catch (error) {
+    console.warn("[GlobeLink viewport catalog] Wikidata fallback unavailable", error);
+  }
+
+  console.error("[GlobeLink viewport catalog] Public place APIs unavailable", lastError);
   return [];
 }
 
@@ -839,7 +907,34 @@ async function fetchOverpass(areas: Area[], maxResults: number): Promise<PublicC
       clearTimeout(timer);
     }
   }
-  console.error("[GlobeLink live catalog] Overpass unavailable", lastError);
+  try {
+    const perArea = Math.max(15, Math.ceil(maxResults / Math.max(1, areas.length)));
+    const chunks = await Promise.allSettled(
+      areas.map(async (area) =>
+        mapWikidataRows(
+          await fetchWikidataPublicPlaces({
+            latitude: area.lat,
+            longitude: area.lng,
+            radiusKm: Math.max(2, Math.min(15, area.radius / 1000)),
+            limit: perArea,
+          }),
+          perArea,
+          area,
+        ),
+      ),
+    );
+    const fallbackRows = uniqueItems(
+      chunks.flatMap((chunk) => (chunk.status === "fulfilled" ? chunk.value : [])),
+    ).slice(0, maxResults);
+    if (fallbackRows.length) {
+      memoryCache.set(key, { expires: Date.now() + CACHE_TTL, value: fallbackRows });
+      return fallbackRows;
+    }
+  } catch (error) {
+    console.warn("[GlobeLink live catalog] Wikidata fallback unavailable", error);
+  }
+
+  console.error("[GlobeLink live catalog] Public place APIs unavailable", lastError);
   return [];
 }
 

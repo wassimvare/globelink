@@ -1,16 +1,22 @@
 # Pipeline technique GlobeLink
 
-Les transformations historiques sont centralisées ici pour éviter de dupliquer leur ordre dans `package.json` et pour garder `vite.config.ts` sans effet de bord.
+Depuis la phase 1 de stabilisation, le code présent dans `src/` est la source de vérité. Les commandes normales de développement, build et contrôle ne doivent plus modifier les sources avant de démarrer.
 
-- `apply-build-patches.mjs` : transformations principales, exécutées dans un ordre déterministe.
-- `apply-late-source-patches.mjs` : transformations qui étaient auparavant lancées au chargement de Vite.
-- `apply-explorer-travel-map-v1.mjs` : exécute l’ancien transform Explorer depuis un template texte temporaire, sans réécrire un fichier `.mjs` du dépôt.
-- `apply-travel-match-v3.mjs` : regroupe le transform Travel Match et son ancien correctif TypeScript.
-- `run-map-checks.mjs` : lance les validations carte v2 à v16 sans dupliquer quinze commandes npm.
-- `lib/run-node-sequence.mjs` : exécuteur commun avec arrêt immédiat au premier échec.
+## Pipeline normal
+
+- `npm run dev` : démarre directement Vite.
+- `npm run build` : validations Phase 3, tests ciblés, génération des routes, TypeScript puis build Vite.
+- `npm run check` : contrôles sécurité, phases, carte, Explorer, lint, TypeScript, tests et build sans mutation préalable de `src/`.
+- `check:apis` et `check:explorer` sont désormais des contrôles uniquement, pas des scripts de transformation.
+
+## Transformations historiques
+
+- `apply-build-patches.mjs` et `apply-late-source-patches.mjs` sont conservés uniquement comme outils de récupération/migration explicites via `npm run patch:legacy`.
+- Ils ne doivent plus être appelés automatiquement par `dev`, `build`, `build:dev` ou les commandes `check:*`.
+- `apply-recap-media-map-fix.mjs` a été retiré du runner historique car il ciblait une ancienne structure de code et faisait échouer le pipeline.
 
 ## Règle
 
-Tout nouveau patch doit être ajouté une seule fois dans le runner approprié. Il ne faut plus ajouter de mutation de source dans `vite.config.ts`.
+Les nouveaux correctifs doivent être écrits directement dans les fichiers source concernés. Ne plus ajouter de patch automatique de source dans Vite, `package.json`, les checks ou les workflows de production.
 
-À terme, les transformations encore présentes doivent être intégrées progressivement dans les fichiers source puis supprimées du pipeline, sans modifier le comportement produit.
+Si une migration ponctuelle nécessite une transformation, elle doit être exécutée explicitement, validée, intégrée au code source puis retirée du chemin normal d'exécution.

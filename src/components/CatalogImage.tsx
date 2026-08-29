@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import type { LiveCatalogItem } from "@/lib/live-catalog";
+import { trustedDirectCatalogImage } from "@/lib/catalog-reliability";
 import {
   resolveVerifiedPlaceMedia,
   verifiedPlaceMediaQueryKey,
@@ -61,12 +62,15 @@ function safeExactHttps(value: unknown): string | null {
   }
 }
 
-function directImage(item: Pick<LiveCatalogItem, "image_url" | "tags">): string | null {
+function directImage(
+  item: Pick<LiveCatalogItem, "kind" | "title" | "image_url" | "tags"> &
+    Partial<Pick<LiveCatalogItem, "provider" | "source_url">>,
+): string | null {
   const tags = asRecord(item.tags);
   return (
-    safeExactHttps(item.image_url) ??
-    safeExactHttps(tags.official_image_url) ??
-    safeExactHttps(tags.provider_image_url)
+    trustedDirectCatalogImage(item, item.image_url) ??
+    trustedDirectCatalogImage(item, tags.official_image_url) ??
+    trustedDirectCatalogImage(item, tags.provider_image_url)
   );
 }
 

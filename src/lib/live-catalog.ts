@@ -19,6 +19,7 @@ import {
   specializedReservationLabel,
   specializedSourceLabel,
 } from "./catalog-source-routing";
+import { filterReliableCatalogItems, filterReliableMapCatalogItems } from "./catalog-reliability";
 import { curatedActivitiesForCountry, dailyWorldActivitySelection } from "./world-activities";
 
 export type LiveCatalogKind = "activity" | "restaurant" | "hotel" | "deal";
@@ -107,7 +108,7 @@ export async function fetchLiveCatalog(
   const officialAndDatabaseRows = uniqueCatalogRows([...officialRows, ...visibleDatabaseRows]);
   const enoughDatabaseRows = officialAndDatabaseRows.length >= Math.min(limit, 24);
   const isMapRequest = limit > 200 && !options.city && !options.country;
-  if (enoughDatabaseRows)
+  if (enoughDatabaseRows && !options.city && !options.country)
     return uniqueCatalogRows(
       visibleCatalogRows([...officialRows, ...curatedRows, ...databaseRows]),
     ).slice(0, limit);
@@ -154,7 +155,7 @@ function uniqueCatalogRows(rows: LiveCatalogItem[]) {
 }
 
 function visibleCatalogRows(rows: LiveCatalogItem[]) {
-  return filterTrustedVisibleCatalogItems(rows);
+  return filterReliableCatalogItems(filterTrustedVisibleCatalogItems(rows));
 }
 
 async function requireRows(promise: Promise<unknown>, source: string) {
@@ -211,7 +212,9 @@ export async function fetchPersistedViewportCatalog(
       .limit(bounds.zoom >= 11 ? 500 : 280);
     if (error) throw error;
     const rows = uniqueCatalogRows(
-      visibleCatalogRows(((data ?? []) as LiveCatalogItem[]).map(enrichCatalogRow)),
+      filterReliableMapCatalogItems(
+        visibleCatalogRows(((data ?? []) as LiveCatalogItem[]).map(enrichCatalogRow)),
+      ),
     );
     if (rows.length) saveCachedViewportCatalog(bounds, rows);
     return rows;
@@ -227,7 +230,9 @@ export async function fetchFastViewportCatalog(
   if (typeof window === "undefined" || bounds.zoom < 7) return [];
   try {
     const rows = (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[];
-    const unique = uniqueCatalogRows(visibleCatalogRows(rows.map(enrichCatalogRow)));
+    const unique = uniqueCatalogRows(
+      filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
+    );
     if (unique.length) saveCachedViewportCatalog(bounds, unique);
     return unique;
   } catch (error) {
@@ -251,35 +256,38 @@ export async function fetchLiveViewportCatalog(
   );
   try {
     if (typeof window !== "undefined" && bounds.zoom >= 7) {
-      rows = await Promise.any([
-        requireRows(
-          fetchOfficialProviderCatalog({
-            data: {
-              kinds: ["activity", "hotel", "restaurant"],
-              limit: bounds.zoom >= 13 ? 120 : 80,
-              latitude: centerLatitude,
-              longitude: centerLongitude,
-              radiusMeters,
-            },
-          }) as Promise<unknown>,
-          "APIs officielles",
-        ),
-        requireRows(
-          getViewportInternetCatalog({ data: bounds }) as Promise<unknown>,
-          "serveur viewport",
-        ),
-        requireRows(
-          fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<unknown>,
-          "navigateur viewport",
-        ),
+      // The map already renders its fast browser/OSM layer separately. This live pass
+      // always waits for the verified providers too, so a faster fallback cannot hide
+      // Google Places or Ticketmaster results.
+      const settled = await Promise.allSettled([
+        fetchOfficialProviderCatalog({
+          data: {
+            kinds: ["activity", "hotel", "restaurant"],
+            limit: bounds.zoom >= 13 ? 120 : 80,
+            latitude: centerLatitude,
+            longitude: centerLongitude,
+            radiusMeters,
+          },
+        }) as Promise<unknown>,
+        getViewportInternetCatalog({ data: bounds }) as Promise<unknown>,
       ]);
+      rows = settled.flatMap((result) =>
+        result.status === "fulfilled" && Array.isArray(result.value)
+          ? (result.value as LiveCatalogItem[])
+          : [],
+      );
+      if (!rows.length) {
+        rows = (await fetchBrowserViewportCatalog(bounds, { mode: "full" })) as LiveCatalogItem[];
+      }
     } else {
       rows = (await getViewportInternetCatalog({ data: bounds })) as LiveCatalogItem[];
     }
   } catch (error) {
     console.warn("[GlobeLink catalog] Aucun fournisseur viewport temps réel disponible", error);
   }
-  const unique = uniqueCatalogRows(visibleCatalogRows(rows.map(enrichCatalogRow)));
+  const unique = uniqueCatalogRows(
+    filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
+  );
   if (unique.length) saveCachedViewportCatalog(bounds, unique);
   return unique;
 }
@@ -352,7 +360,9 @@ export function providerLabel(provider: string) {
     openstreetmap: "OpenStreetMap",
     "openstreetmap-live": "OpenStreetMap (direct)",
     "openstreetmap-browser": "OpenStreetMap (direct navigateur)",
-    "google-places": "Google Maps",
+    "wikidata-public": "Wikidata (API publique)",
+    "google-places": "Google Places",
+    ticketmaster: "Ticketmaster",
     "booking-com": "Booking.com",
     booking: "Booking.com",
     getyourguide: "GetYourGuide",

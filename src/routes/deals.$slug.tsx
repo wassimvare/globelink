@@ -4,6 +4,10 @@ import { ArrowLeft, ExternalLink, Flame, MapPin, ShieldCheck, RefreshCw, Star } 
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
+import { AIContextActions } from "@/components/AIContextActions";
+// AI_CONTEXT_LAYER_V1_DEAL
+// ADD_TO_TRIP_EVERYWHERE_V1_DEAL
 import {
   fetchLiveCatalog,
   fetchLiveDeal,
@@ -134,6 +138,31 @@ function DealPage() {
                 {fetchedLabel}. Les offres expirées sont retirées automatiquement.
               </p>
             </div>
+
+            <AddToTripButton
+              item={{
+                title: deal.title,
+                city: deal.city,
+                country: deal.country,
+                lat: deal.latitude,
+                lng: deal.longitude,
+                kind: deal.kind,
+                rating: deal.rating,
+                source: catalogSourceLabel(deal),
+                sourceUrl: deal.source_url,
+              }}
+              variant="default"
+              className="mt-6 w-full rounded-full sm:w-auto"
+            />
+
+            <AIContextActions
+              destination={[deal.city, deal.country].filter(Boolean).join(", ")}
+              freePrompt={`Explique-moi rapidement si l’offre "${deal.title}" semble intéressante pour un voyage à ${[deal.city, deal.country].filter(Boolean).join(", ") || "cette destination"}, et quels points je dois vérifier.`}
+              proPrompt={`Compare l’offre "${deal.title}" avec les meilleures alternatives actuelles pour mon voyage. Vérifie le rapport qualité-prix, les contraintes et donne un verdict clair.`}
+              proMode="compare"
+              proLabel="Comparer cette offre avec IA+"
+              className="mt-3"
+            />
 
             <div className="mt-7 flex flex-col gap-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
               <div>

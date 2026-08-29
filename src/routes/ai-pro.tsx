@@ -2,7 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import ReactMarkdown from "react-markdown";
+import { AIReadableAnswer } from "@/components/AIReadableAnswer";
+// AI_READABLE_RESPONSE_V1
+import { z } from "zod";
 import {
   BookmarkPlus,
   CalendarDays,
@@ -46,6 +48,12 @@ const MODES = [
 ] as const;
 
 type Mode = (typeof MODES)[number]["id"];
+const aiProSearch = z.object({
+  prompt: z.string().max(3_000).optional(),
+  mode: z.enum(["research", "compare", "plan", "safety"]).optional(),
+  tripId: z.string().uuid().optional(),
+});
+// AI_CONTEXT_LAYER_V1_PRO
 type BillingPlan = "monthly" | "annual";
 type Source = { title: string; url: string; snippet: string };
 type ThreadTurn = {
@@ -96,6 +104,7 @@ export const Route = createFileRoute("/ai-pro")({
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
+  validateSearch: (search) => aiProSearch.parse(search),
   component: AiPlusPage,
 });
 
@@ -112,14 +121,15 @@ function friendlyAiError(error: Error) {
 }
 
 function AiPlusPage() {
+  const { prompt, mode: requestedMode, tripId } = Route.useSearch();
   const { user } = useAuth();
   const entitlementFn = useServerFn(getAiProEntitlement);
   const askFn = useServerFn(askGlobeLinkPro);
   const saveFn = useServerFn(saveAiPlusRecommendation);
   const checkoutFn = useServerFn(createAiPlusCheckout);
   const [billing, setBilling] = useState<BillingPlan>("annual");
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<Mode>("plan");
+  const [query, setQuery] = useState(prompt?.trim() || "");
+  const [mode, setMode] = useState<Mode>(requestedMode ?? "plan");
   const [turns, setTurns] = useState<ThreadTurn[]>([]);
 
   const entitlement = useQuery({
@@ -132,14 +142,16 @@ function AiPlusPage() {
   const hasAccess = !!entitlement.data?.entitled;
 
   const tripQuery = useQuery({
-    queryKey: ["ai-plus-current-trip", user?.id],
+    queryKey: ["ai-plus-current-trip", user?.id, tripId],
     enabled: !!user && hasAccess,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let request = supabase
         .from("trips")
         .select("id, title, city, country, budget, starts_on, ends_on, status")
-        .eq("user_id", user!.id)
+        .eq("user_id", user!.id);
+      if (tripId) request = request.eq("id", tripId);
+      const { data, error } = await request
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -163,6 +175,7 @@ function AiPlusPage() {
           query: request.query,
           mode: request.mode,
           history: turns.slice(-6).map(({ role, content }) => ({ role, content })),
+          tripId: tripId || undefined,
         },
       });
     },
@@ -213,6 +226,26 @@ function AiPlusPage() {
     <div className="app-page min-h-screen">
       <AppHeader />
       <main className="page-container pb-24 pt-4 sm:pt-7">
+        {/* JOURNEY_CONTINUITY_V1_AI_PRO */}
+        {tripId && (
+          <section className="mb-4 flex flex-col gap-3 rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.08] to-cyan-500/[0.05] p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-500">Voyage connecté</p>
+              <p className="mt-1 truncate text-sm font-semibold">
+                IA+ travaille sur {tripQuery.data?.title ?? "ce carnet précis"}.
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Le contexte du voyage reste sélectionné pendant cette session.
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0 rounded-full">
+              <Link to="/trips/$id" params={{ id: tripId }}>
+                <Notebook className="mr-2 h-4 w-4" /> Retour au carnet
+              </Link>
+            </Button>
+          </section>
+        )}
+
         {user && entitlement.isLoading ? (
           <div className="surface-card grid min-h-[360px] place-items-center rounded-[2rem]">
             <div className="text-center text-sm text-muted-foreground">
@@ -551,7 +584,7 @@ function PremiumWorkspace({
                           )}
                         </div>
                       </div>
-                      <div className="md-body text-sm"><ReactMarkdown>{turn.content}</ReactMarkdown></div>
+                      <AIReadableAnswer content={turn.content} />
 
                       {turn.sources && turn.sources.length > 0 && (
                         <div className="mt-5 border-t border-border/60 pt-4">

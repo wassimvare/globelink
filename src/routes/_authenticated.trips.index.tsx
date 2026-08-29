@@ -18,6 +18,7 @@ import {
   Plus,
   Sparkles,
   Wallet,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -150,6 +151,31 @@ function TripsPage() {
     },
     onError: (e: any) => toast.error(e?.message ?? "Erreur"),
   });
+
+  const deleteTrip = useMutation({
+    mutationFn: async (tripId: string) => {
+      if (!user) throw new Error("Connecte-toi pour supprimer ce voyage.");
+      const { error } = await supabase
+        .from("trips")
+        .delete()
+        .eq("id", tripId)
+        .eq("user_id", user.id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["trips"] });
+      toast.success("Voyage supprimé");
+    },
+    onError: (error: any) => toast.error(error?.message ?? "Impossible de supprimer ce voyage."),
+  });
+
+  const confirmDeleteTrip = (tripId: string, title: string) => {
+    if (deleteTrip.isPending) return;
+    const confirmed = window.confirm(
+      `Supprimer « ${title} » ? Le carnet, les journées, dépenses et souvenirs de ce voyage seront supprimés.`,
+    );
+    if (confirmed) deleteTrip.mutate(tripId);
+  };
 
   return (
     <div className="app-page min-h-screen">
@@ -305,6 +331,15 @@ function TripsPage() {
                       <Sparkles className="mr-2 h-4 w-4" /> Demander à l’IA
                     </Link>
                   </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-11 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive sm:col-span-2 lg:col-span-1 xl:col-span-2"
+                    disabled={deleteTrip.isPending}
+                    onClick={() => confirmDeleteTrip(focusTrip.id, focusTrip.title)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Supprimer le voyage
+                  </Button>
                 </div>
               </div>
             </div>
@@ -395,9 +430,31 @@ function TripsPage() {
                         loading="lazy"
                         className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
                       />
-                      <span className="absolute right-3 top-3 rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-semibold backdrop-blur">
-                        {trip.finalized_at ? "Terminé" : statusLabel(trip.status)}
-                      </span>
+                      <div className="absolute right-3 top-3 flex items-center gap-2">
+                        <span className="rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-semibold backdrop-blur">
+                          {trip.finalized_at ? "Terminé" : statusLabel(trip.status)}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Supprimer le voyage ${trip.title}`}
+                          title="Supprimer le voyage"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            confirmDeleteTrip(trip.id, trip.title);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            confirmDeleteTrip(trip.id, trip.title);
+                          }}
+                          className="grid h-8 w-8 place-items-center rounded-full bg-background/90 text-destructive shadow-soft backdrop-blur transition hover:bg-destructive hover:text-destructive-foreground"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </span>
+                      </div>
                     </div>
                     <div className="p-4">
                       <h3 className="truncate font-display text-lg">{trip.title}</h3>

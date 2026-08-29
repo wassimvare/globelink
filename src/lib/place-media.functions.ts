@@ -41,7 +41,7 @@ export function verifiedPlaceMediaQueryKey(
 ) {
   return [
     "catalog-image",
-    "verified-place-media-v7-strict-official",
+    "verified-place-media-v8-public-verified",
     variant,
     placeId,
     input.title,
@@ -312,7 +312,96 @@ async function resolveFromNominatim(input: PlaceMediaInput): Promise<ResolvedPla
     const result = await wikipediaImage(wikipedia);
     if (result) return result;
   }
+
+  if (!input.skipOfficialSite) {
+    const website = safeWebsite(
+      extra.website || extra["contact:website"] || extra.url || extra["contact:url"],
+    );
+    if (website) {
+      const official = await resolveOfficialWebsiteImage(input, website);
+      if (official) return official;
+    }
+  }
   return null;
+}
+
+async function resolveWikimediaNameSearch(
+  input: PlaceMediaInput,
+): Promise<ResolvedPlaceMedia | null> {
+  const query =
+    `"${input.title.replace(/"/g, "")}" ${[input.city, input.country].filter(Boolean).join(" ")}`.trim();
+  if (!query) return null;
+
+  const url = new URL("https://commons.wikimedia.org/w/api.php");
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", query.slice(0, 220));
+  url.searchParams.set("gsrnamespace", "6");
+  url.searchParams.set("gsrlimit", "12");
+  url.searchParams.set("prop", "imageinfo");
+  url.searchParams.set("iiprop", "url|extmetadata");
+  url.searchParams.set("iiurlwidth", "1600");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const json = await fetchJson(url.toString(), {}, 6_000);
+  const queryData = json?.query as AnyRecord | undefined;
+  const pages =
+    queryData?.pages && typeof queryData.pages === "object"
+      ? (Object.values(queryData.pages as AnyRecord) as AnyRecord[])
+      : [];
+  let best: { page: AnyRecord; image: string; score: number; title: string } | null = null;
+  const placeTokens = significantTokens(input.title);
+  const city = normalize(input.city ?? "");
+
+  for (const page of pages) {
+    const fileTitle = cleanText(page.title, 320).replace(/^File:/i, "");
+    const imageInfo = Array.isArray(page.imageinfo) ? (page.imageinfo[0] as AnyRecord | undefined) : undefined;
+    if (!imageInfo) continue;
+    const metadata =
+      imageInfo.extmetadata && typeof imageInfo.extmetadata === "object"
+        ? (imageInfo.extmetadata as AnyRecord)
+        : {};
+    const metadataValue = (key: string) => {
+      const entry = metadata[key] as AnyRecord | undefined;
+      return cleanText(entry?.value, 700);
+    };
+    const searchable = [
+      fileTitle,
+      metadataValue("ObjectName"),
+      metadataValue("ImageDescription"),
+      metadataValue("Categories"),
+    ]
+      .filter(Boolean)
+      .join(" " );
+    const similarity = nameSimilarity(input.title, searchable);
+    const searchTokens = new Set(significantTokens(searchable));
+    const matched = placeTokens.filter((token) => searchTokens.has(token)).length;
+    const citySeen = !city || normalize(searchable).includes(city);
+    if (similarity < 0.72) continue;
+    if (placeTokens.length >= 2 && matched < Math.min(2, placeTokens.length)) continue;
+    if (!citySeen && similarity < 0.9) continue;
+    const image = safeHttps(imageInfo.thumburl) ?? safeHttps(imageInfo.url);
+    if (!image) continue;
+    const score = similarity * 100 + (citySeen ? 8 : 0) + matched * 4;
+    if (!best || score > best.score) best = { page, image, score, title: fileTitle };
+  }
+
+  if (!best) return null;
+  const commonsTitle = cleanText(best.page.title, 400);
+  return {
+    url: best.image,
+    source: "wikimedia",
+    matchedName: best.title || input.title,
+    attributions: [
+      {
+        label: "Wikimedia Commons",
+        url: commonsTitle
+          ? `https://commons.wikimedia.org/wiki/${encodeURIComponent(commonsTitle.replace(/ /g, "_"))}`
+          : "https://commons.wikimedia.org/",
+      },
+    ],
+  };
 }
 
 async function resolveWikidataSearch(input: PlaceMediaInput): Promise<ResolvedPlaceMedia | null> {
@@ -1327,6 +1416,9 @@ export const resolveVerifiedPlaceMedia = createServerFn({ method: "POST" })
 
     const wikidataSearch = await resolveWikidataSearch(data);
     if (wikidataSearch) return wikidataSearch;
+
+    const wikimediaNameSearch = await resolveWikimediaNameSearch(data);
+    if (wikimediaNameSearch) return wikimediaNameSearch;
 
     const openverse = await resolveOpenverse(data);
     if (openverse) return openverse;

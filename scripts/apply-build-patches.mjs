@@ -1,12 +1,13 @@
 import { runNodeSequence } from "./lib/run-node-sequence.mjs";
 
-runNodeSequence("GlobeLink patches", [
+// Historical transforms retained only for explicit recovery/migration via
+// `npm run patch:legacy`. Normal dev/build/check commands must never mutate src/.
+runNodeSequence("GlobeLink legacy patches", [
   "scripts/apply-v11-api-patch.mjs",
   "scripts/apply-free-public-catalog.mjs",
   "scripts/apply-destination-public-catalog.mjs",
   "scripts/apply-public-place-photo-fallback.mjs",
   "scripts/explorer-reliability-v1.mjs",
-  "scripts/apply-recap-media-map-fix.mjs",
   "scripts/apply-recap-geocoder-v2.mjs",
   "scripts/apply-explorer-travel-map-v1.mjs",
   "scripts/fix-explorer-add-to-trip-mobile-v1.mjs",

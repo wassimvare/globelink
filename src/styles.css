@@ -2076,3 +2076,12 @@ button {
     animation: none;
   }
 }
+
+
+/* PERFORMANCE_V1_CSS: skip layout/paint work for feed cards far below the viewport. */
+@supports (content-visibility: auto) {
+  .feed-lazy-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 760px;
+  }
+}

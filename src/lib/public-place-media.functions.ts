@@ -13,7 +13,7 @@ export type PublicPlaceMediaInput = {
 
 export type PublicPlaceMediaResult = {
   url: string | null;
-  source: "official-site" | "osm-wikimedia" | "wikidata" | "wikipedia" | null;
+  source: "official-site" | "osm-wikimedia" | "wikidata" | "wikipedia" | "kartaview" | null;
   matchedName: string | null;
   attributions: Array<{ label: string; url?: string | null }>;
 };
@@ -428,6 +428,119 @@ async function resolveFromNominatim(input: PublicPlaceMediaInput): Promise<Publi
   return null;
 }
 
+function bearingDegrees(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const toDeg = (value: number) => (value * 180) / Math.PI;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const lambda = toRad(lng2 - lng1);
+  const y = Math.sin(lambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(lambda);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function headingDelta(left: number, right: number) {
+  const diff = Math.abs(((left - right + 540) % 360) - 180);
+  return Number.isFinite(diff) ? diff : 180;
+}
+
+function kartaViewImageUrl(value: unknown) {
+  const raw = clean(value, 2500).replace("[[sizeprefix]]", "proc");
+  const direct = safeHttps(raw);
+  if (!direct) return null;
+  try {
+    const host = new URL(direct).hostname.toLowerCase();
+    if (host === "cdn.kartaview.org") return direct;
+    if (/(^|\.)openstreetcam\.org$/i.test(host)) {
+      return (
+        "https://cdn.kartaview.org/pr:sharp/" +
+        Buffer.from(direct, "utf8").toString("base64url")
+      );
+    }
+  } catch {
+    return null;
+  }
+  return direct;
+}
+
+async function resolveKartaView(
+  input: PublicPlaceMediaInput,
+): Promise<PublicPlaceMediaResult | null> {
+  if (input.latitude == null || input.longitude == null) return null;
+  const url = new URL("https://api.openstreetcam.org/2.0/photo/");
+  url.searchParams.set("lat", String(input.latitude));
+  url.searchParams.set("lng", String(input.longitude));
+  url.searchParams.set("radius", "220");
+  url.searchParams.set("zoomLevel", "18");
+  url.searchParams.set("join", "sequence");
+  url.searchParams.set("orderBy", "id");
+  url.searchParams.set("orderDirection", "desc");
+
+  const json = await fetchJson(url.toString(), 6_000);
+  const root = json && typeof json === "object" ? (json as AnyRecord) : null;
+  const result = root?.result && typeof root.result === "object" ? (root.result as AnyRecord) : null;
+  const rows = Array.isArray(result?.data) ? (result.data as AnyRecord[]) : [];
+  let best: { row: AnyRecord; image: string; score: number } | null = null;
+
+  for (const row of rows.slice(0, 80)) {
+    const visibility = clean(row.visibility, 40).toLowerCase();
+    if (visibility && visibility !== "public") continue;
+    const status = clean(row.status, 40).toLowerCase();
+    if (status && status !== "active") continue;
+
+    const lat = Number(row.lat ?? row.matchLat);
+    const lng = Number(row.lng ?? row.matchLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const distance = haversineKm(input.latitude, input.longitude, lat, lng);
+    if (distance > 0.28) continue;
+
+    const image =
+      kartaViewImageUrl(row.imageProcUrl) ??
+      kartaViewImageUrl(row.fileurlProc) ??
+      kartaViewImageUrl(row.fileUrlProc) ??
+      kartaViewImageUrl(row.fileurl) ??
+      kartaViewImageUrl(row.fileUrl) ??
+      kartaViewImageUrl(row.fileurlTh);
+    if (!image) continue;
+
+    const projection = clean(row.projection, 40).toUpperCase();
+    const fieldOfView = Number(row.fieldOfView);
+    const heading = Number(row.heading);
+    let directionPenalty = 0;
+    if (Number.isFinite(heading) && projection !== "SPHERE" && fieldOfView < 180) {
+      const targetBearing = bearingDegrees(lat, lng, input.latitude, input.longitude);
+      const delta = headingDelta(heading, targetBearing);
+      const allowed = Math.max(75, Number.isFinite(fieldOfView) ? fieldOfView / 2 + 30 : 80);
+      if (delta > allowed) continue;
+      directionPenalty = delta * 0.35;
+    }
+
+    const score = distance * 1000 + directionPenalty;
+    if (!best || score < best.score) best = { row, image, score };
+  }
+
+  if (!best) return null;
+  const sequence =
+    best.row.sequence && typeof best.row.sequence === "object"
+      ? (best.row.sequence as AnyRecord)
+      : {};
+  const sequenceId = clean(best.row.sequenceId ?? sequence.id, 80);
+  const sequenceIndex = clean(best.row.sequenceIndex, 40) || "0";
+  const sourceUrl = sequenceId
+    ? "https://kartaview.org/details/" + sequenceId + "/" + sequenceIndex + "/track-info"
+    : "https://kartaview.org/";
+  return {
+    url: best.image,
+    source: "kartaview",
+    matchedName: input.title,
+    attributions: [
+      { label: "Vue réelle à proximité · KartaView", url: sourceUrl },
+    ],
+  };
+}
+
 function validateInput(raw: PublicPlaceMediaInput): PublicPlaceMediaInput {
   const title = clean(raw?.title, 220);
   const kind = ["activity", "restaurant", "hotel", "deal"].includes(String(raw?.kind))
@@ -447,7 +560,7 @@ function validateInput(raw: PublicPlaceMediaInput): PublicPlaceMediaInput {
 
 export function publicPlaceMediaQueryKey(input: PublicPlaceMediaInput) {
   return [
-    "public-place-media-v1",
+    "public-place-media-v2-kartaview",
     input.title,
     input.kind,
     input.latitude ?? null,
