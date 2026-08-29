@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -29,7 +29,15 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { destinationCover, resolvedDestinationCover } from "@/lib/destination-cover";
+import { resolvedDestinationCover } from "@/lib/destination-cover";
+import {
+  EMPTY_TRIP_FORM,
+  buildTripInsert,
+  formatTripDate,
+  isTripActive,
+  selectFocusTrip,
+  tripStatusLabel,
+} from "@/features/travel/trip-domain";
 
 export const Route = createFileRoute("/_authenticated/trips/")({
   head: () => ({
@@ -50,15 +58,7 @@ function TripsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    title: "",
-    country: "",
-    city: "",
-    budget: "",
-    startsOn: "",
-    endsOn: "",
-    notes: "",
-  });
+  const [form, setForm] = useState({ ...EMPTY_TRIP_FORM });
 
   const { data: trips, isLoading } = useQuery({
     queryKey: ["trips", user?.id],
@@ -75,60 +75,14 @@ function TripsPage() {
   });
 
   const today = new Date().toISOString().slice(0, 10);
-  const focusTrip = useMemo(() => {
-    if (!trips?.length) return null;
-
-    const active = trips.find(
-      (trip) =>
-        !trip.finalized_at &&
-        !!trip.starts_on &&
-        trip.starts_on <= today &&
-        (!trip.ends_on || trip.ends_on >= today),
-    );
-    if (active) return active;
-
-    const upcoming = trips
-      .filter(
-        (trip) =>
-          !trip.finalized_at &&
-          (!trip.starts_on || trip.starts_on >= today),
-      )
-      .sort((a, b) => {
-        if (!a.starts_on && !b.starts_on) return 0;
-        if (!a.starts_on) return 1;
-        if (!b.starts_on) return -1;
-        return a.starts_on.localeCompare(b.starts_on);
-      });
-
-    return upcoming[0] ?? trips[0];
-  }, [trips, today]);
-
-  const focusIsActive = Boolean(
-    focusTrip?.starts_on &&
-      focusTrip.starts_on <= today &&
-      (!focusTrip.ends_on || focusTrip.ends_on >= today),
-  );
+  const focusTrip = selectFocusTrip(trips, today);
+  const focusIsActive = isTripActive(focusTrip, today);
 
   const create = useMutation({
     mutationFn: async () => {
-      if (form.startsOn && form.endsOn && form.endsOn < form.startsOn) {
-        throw new Error("La date de retour doit être après la date de départ.");
-      }
-
       const { data, error } = await supabase
         .from("trips")
-        .insert({
-          user_id: user!.id,
-          title: form.title || `${form.country} voyage`,
-          country: form.country.trim(),
-          city: form.city.trim() || null,
-          budget: form.budget ? Number(form.budget) : null,
-          starts_on: form.startsOn || null,
-          ends_on: form.endsOn || null,
-          notes: form.notes.trim() || null,
-          cover_url: destinationCover(form.country, form.city),
-          status: "planned",
-        })
+        .insert(buildTripInsert(user!.id, form))
         .select("id")
         .single();
       if (error) throw error;
@@ -137,15 +91,7 @@ function TripsPage() {
     onSuccess: (data) => {
       toast.success("Voyage créé");
       setOpen(false);
-      setForm({
-        title: "",
-        country: "",
-        city: "",
-        budget: "",
-        startsOn: "",
-        endsOn: "",
-        notes: "",
-      });
+      setForm({ ...EMPTY_TRIP_FORM });
       qc.invalidateQueries({ queryKey: ["trips"] });
       navigate({ to: "/trips/$id", params: { id: data.id } });
     },
@@ -296,8 +242,8 @@ function TripsPage() {
                     {focusTrip.starts_on && (
                       <span className="flex items-center gap-1.5">
                         <Calendar className="h-3.5 w-3.5" />
-                        {formatDate(focusTrip.starts_on)}
-                        {focusTrip.ends_on ? ` → ${formatDate(focusTrip.ends_on)}` : ""}
+                        {formatTripDate(focusTrip.starts_on)}
+                        {focusTrip.ends_on ? ` → ${formatTripDate(focusTrip.ends_on)}` : ""}
                       </span>
                     )}
                     {focusTrip.budget && (
@@ -432,7 +378,7 @@ function TripsPage() {
                       />
                       <div className="absolute right-3 top-3 flex items-center gap-2">
                         <span className="rounded-full bg-background/85 px-2.5 py-1 text-[11px] font-semibold backdrop-blur">
-                          {trip.finalized_at ? "Terminé" : statusLabel(trip.status)}
+                          {trip.finalized_at ? "Terminé" : tripStatusLabel(trip.status)}
                         </span>
                         <span
                           role="button"
@@ -469,7 +415,7 @@ function TripsPage() {
                         )}
                         {trip.starts_on && (
                           <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" /> {formatDate(trip.starts_on)}
+                            <Calendar className="h-3 w-3" /> {formatTripDate(trip.starts_on)}
                           </span>
                         )}
                       </div>
@@ -521,18 +467,4 @@ function JourneyCard({
       </span>
     </Link>
   );
-}
-
-function formatDate(value: string) {
-  return new Date(`${value}T12:00:00`).toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function statusLabel(status: string | null) {
-  if (status === "active") return "En cours";
-  if (status === "completed") return "Terminé";
-  return "Prévu";
 }
