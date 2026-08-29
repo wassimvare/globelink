@@ -38,13 +38,6 @@ type CatalogImageProps = {
   showAttribution?: boolean;
 };
 
-const PLACEHOLDER_META: Record<LiveCatalogItem["kind"], { emoji: string; label: string }> = {
-  activity: { emoji: "🎯", label: "Activité" },
-  restaurant: { emoji: "🍽️", label: "Restaurant" },
-  hotel: { emoji: "🏨", label: "Hôtel" },
-  deal: { emoji: "🔥", label: "Offre" },
-};
-
 const THIRD_PARTY_LOGO_HOSTS = [
   "google.com",
   "google.fr",
@@ -82,8 +75,6 @@ function safeExactHttps(value: unknown): string | null {
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:") return null;
-    // Older GlobeLink builds used generic Unsplash pictures. Never present
-    // those illustrations as photos of a named place.
     if (/^(images\.)?unsplash\.com$/i.test(url.hostname)) return null;
     return url.toString();
   } catch {
@@ -131,7 +122,25 @@ function safeOfficialLogoWebsite(value: unknown): string | null {
 function faviconUrl(value: unknown): string | null {
   const website = safeOfficialLogoWebsite(value);
   if (!website) return null;
-  return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(website)}&sz=256`;
+  try {
+    const url = new URL(website);
+    if (url.protocol !== "https:") return null;
+    return new URL("/favicon.ico", url.origin).toString();
+  } catch {
+    return null;
+  }
+}
+
+function safeResolvedLogoUrl(value: unknown): string | null {
+  const candidate = safeExactHttps(value);
+  if (!candidate) return null;
+  try {
+    const hostname = new URL(candidate).hostname.toLowerCase();
+    if (THIRD_PARTY_LOGO_HOSTS.some((domain) => hostMatches(hostname, domain))) return null;
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 function knownPlaceLogo(
@@ -145,8 +154,6 @@ function knownPlaceLogo(
     safeExactHttps(tags.logo);
   if (direct) return { url: direct, label: "Logo officiel du lieu" };
 
-  // A source page (Google Maps, Booking, Tripadvisor, etc.) is not the place's
-  // official website. Never turn its favicon into the establishment logo.
   const website = [
     tagString(tags, "official_website"),
     lookup?.website ?? null,
@@ -264,8 +271,6 @@ export function CatalogImage({
     queryKey: verifiedPlaceMediaQueryKey(item.id, primaryInput, "primary"),
     queryFn: async () => resolveMedia({ data: primaryInput }),
     enabled: canResolveSource,
-    // Google Places photo URIs are temporary. A short freshness window keeps
-    // prefetched photos instant without pinning an expired URI for many minutes.
     staleTime: 30_000,
     gcTime: 15 * 60_000,
     retry: 1,
@@ -274,12 +279,9 @@ export function CatalogImage({
   const primaryUrl = safeExactHttps(resolvedMedia?.url);
   const primaryFailed = !!primaryUrl && failedUrls.has(primaryUrl);
   const primaryExhausted = canResolveSource && !isFetching && (!primaryUrl || primaryFailed);
-  const { data: publicMedia, isFetching: isFetchingPublic } = useQuery({
+  const { data: publicMedia } = useQuery({
     queryKey: publicPlaceMediaQueryKey(publicInput),
     queryFn: async () => resolvePublicMedia({ data: publicInput }),
-    // The selected place sheet passes priority=true. Run the stronger keyless
-    // Nominatim -> official-site lookup there, rather than hammering Nominatim for
-    // every small card that happens to be visible on the map.
     enabled: primaryExhausted && priority,
     staleTime: 12 * 60 * 60_000,
     gcTime: 24 * 60 * 60_000,
@@ -288,7 +290,7 @@ export function CatalogImage({
 
   const publicUrl = safeExactHttps(publicMedia?.url);
   const publicFailed = !!publicUrl && failedUrls.has(publicUrl);
-  const { data: fallbackMedia, isFetching: isFetchingFallback } = useQuery({
+  const { data: fallbackMedia } = useQuery({
     queryKey: verifiedPlaceMediaQueryKey(item.id, fallbackInput, "fallback"),
     queryFn: async () => resolveMedia({ data: fallbackInput }),
     enabled: canResolveSource && (primaryFailed || publicFailed),
@@ -297,11 +299,9 @@ export function CatalogImage({
     retry: 1,
   });
 
-  const { data: resolvedLogo, isFetching: isFetchingLogo } = useQuery({
+  const { data: resolvedLogo } = useQuery({
     queryKey: placeLogoQueryKey(logoInput),
     queryFn: async () => resolveLogo({ data: logoInput }),
-    // Only run the extra establishment lookup for the large selected-place sheet.
-    // Photos keep priority; the logo is a verified visual fallback when none exists.
     enabled: priority && primaryExhausted,
     staleTime: 12 * 60 * 60_000,
     gcTime: 24 * 60 * 60_000,
@@ -338,8 +338,6 @@ export function CatalogImage({
         className={className}
         onError={() => {
           setFailedUrls((current) => new Set([...current, resolvedUrl]));
-          // A prefetched Google photo URI may expire. Ask the server for a fresh
-          // Places media URI instead of permanently skipping Google after one failure.
           if (activeMedia?.source === "google-places") {
             void refetchPrimary();
           }
@@ -375,11 +373,15 @@ export function CatalogImage({
     );
   }
 
-  const resolvedLogoUrl = safeExactHttps(resolvedLogo?.url);
+  const resolvedLogoUrl = safeResolvedLogoUrl(resolvedLogo?.url);
   const logoCandidates = [
     knownLogo,
-    resolvedLogoUrl ? { url: resolvedLogoUrl, label: resolvedLogo?.label ?? "Logo du site officiel" } : null,
-  ].filter((entry): entry is { url: string; label: string } => !!entry && !failedUrls.has(entry.url));
+    resolvedLogoUrl
+      ? { url: resolvedLogoUrl, label: resolvedLogo?.label ?? "Logo du site officiel" }
+      : null,
+  ].filter(
+    (entry): entry is { url: string; label: string } => !!entry && !failedUrls.has(entry.url),
+  );
   const logo = logoCandidates[0] ?? null;
 
   if (logo) {
@@ -409,25 +411,6 @@ export function CatalogImage({
     );
   }
 
-  const placeholder = PLACEHOLDER_META[item.kind] ?? PLACEHOLDER_META.activity;
-  const lookingForPhoto = isFetching || isFetchingPublic || isFetchingFallback || isFetchingLogo;
-  return (
-    <div
-      className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-secondary via-background to-secondary text-center text-muted-foreground`}
-      role="img"
-      aria-label={`Aucune photo vérifiée disponible pour ${item.title}`}
-    >
-      <span className="text-4xl" aria-hidden="true">
-        {placeholder.emoji}
-      </span>
-      <span className="px-4 text-xs font-semibold text-foreground/75">
-        {lookingForPhoto ? "Recherche d’un visuel officiel du lieu…" : "Visuel officiel indisponible"}
-      </span>
-      <span className="px-4 text-[10px]">
-        {lookingForPhoto
-          ? "Photo Google Places · site officiel · logo du lieu"
-          : `${placeholder.label} · aucun logo de plateforme utilisé`}
-      </span>
-    </div>
-  );
+  // No photo and no real establishment logo: do not reserve a fake/empty visual area.
+  return null;
 }
