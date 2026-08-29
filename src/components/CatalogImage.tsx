@@ -34,33 +34,14 @@ type CatalogImageProps = {
 };
 
 const THIRD_PARTY_LOGO_HOSTS = [
-  "google.com",
-  "google.fr",
-  "googleapis.com",
-  "gstatic.com",
-  "openstreetmap.org",
-  "booking.com",
-  "tripadvisor.com",
-  "tripadvisor.fr",
-  "thefork.com",
-  "thefork.fr",
-  "opentable.com",
-  "yelp.com",
-  "getyourguide.com",
-  "ticketmaster.com",
-  "expedia.com",
-  "expedia.fr",
-  "hotels.com",
-  "agoda.com",
-  "airbnb.com",
-  "kayak.com",
-  "trivago.com",
+  "google.com", "google.fr", "googleapis.com", "gstatic.com", "openstreetmap.org",
+  "booking.com", "tripadvisor.com", "tripadvisor.fr", "thefork.com", "thefork.fr",
+  "opentable.com", "yelp.com", "getyourguide.com", "ticketmaster.com", "expedia.com",
+  "expedia.fr", "hotels.com", "agoda.com", "airbnb.com", "kayak.com", "trivago.com",
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function safeExactHttps(value: unknown): string | null {
@@ -72,21 +53,12 @@ function safeExactHttps(value: unknown): string | null {
     if (url.protocol !== "https:") return null;
     if (/^(images\.)?unsplash\.com$/i.test(url.hostname)) return null;
     return url.toString();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-function directImage(
-  item: Pick<LiveCatalogItem, "kind" | "title" | "image_url" | "tags"> &
-    Partial<Pick<LiveCatalogItem, "provider" | "source_url">>,
-): string | null {
+function directImage(item: Pick<LiveCatalogItem, "kind" | "title" | "image_url" | "tags"> & Partial<Pick<LiveCatalogItem, "provider" | "source_url">>): string | null {
   const tags = asRecord(item.tags);
-  return (
-    trustedDirectCatalogImage(item, item.image_url) ??
-    trustedDirectCatalogImage(item, tags.official_image_url) ??
-    trustedDirectCatalogImage(item, tags.provider_image_url)
-  );
+  return trustedDirectCatalogImage(item, item.image_url) ?? trustedDirectCatalogImage(item, tags.official_image_url) ?? trustedDirectCatalogImage(item, tags.provider_image_url);
 }
 
 function tagString(tags: Record<string, unknown>, key: string) {
@@ -107,230 +79,78 @@ function safeResolvedLogoUrl(value: unknown): string | null {
     const hostname = new URL(candidate).hostname.toLowerCase();
     if (THIRD_PARTY_LOGO_HOSTS.some((domain) => hostMatches(hostname, domain))) return null;
     return candidate;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-function knownPlaceLogo(
-  item: Pick<LiveCatalogItem, "tags">,
-): { url: string; label: string } | null {
+function knownPlaceLogo(item: Pick<LiveCatalogItem, "tags">): { url: string; label: string } | null {
   const tags = asRecord(item.tags);
-  const direct =
-    safeResolvedLogoUrl(tags.official_logo_url) ??
-    safeResolvedLogoUrl(tags.logo_url) ??
-    safeResolvedLogoUrl(tags.logo);
-
+  const direct = safeResolvedLogoUrl(tags.official_logo_url) ?? safeResolvedLogoUrl(tags.logo_url) ?? safeResolvedLogoUrl(tags.logo);
   return direct ? { url: direct, label: "Logo officiel du lieu" } : null;
 }
 
-export function catalogPlaceMediaInput(
-  item: Pick<LiveCatalogItem, "kind" | "title" | "tags">,
-  lookup: CatalogImageLookup | null,
-  options?: { skipGoogle?: boolean; skipOfficialSite?: boolean },
-): PlaceMediaInput {
+function placeInitials(title: string) {
+  const words = title.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "GL";
+  if (words.length === 1) return words[0].slice(0, 2).toLocaleUpperCase("fr-FR");
+  return `${words[0][0] ?? ""}${words[1][0] ?? ""}`.toLocaleUpperCase("fr-FR");
+}
+
+export function catalogPlaceMediaInput(item: Pick<LiveCatalogItem, "kind" | "title" | "tags">, lookup: CatalogImageLookup | null, options?: { skipGoogle?: boolean; skipOfficialSite?: boolean }): PlaceMediaInput {
   const tags = asRecord(item.tags);
   return {
-    title: item.title,
-    kind: item.kind,
-    latitude: lookup?.latitude ?? null,
-    longitude: lookup?.longitude ?? null,
-    city: lookup?.city ?? null,
-    country: lookup?.country ?? null,
-    website:
-      tagString(tags, "official_website") ?? lookup?.website ?? tagString(tags, "website") ?? null,
+    title: item.title, kind: item.kind, latitude: lookup?.latitude ?? null, longitude: lookup?.longitude ?? null,
+    city: lookup?.city ?? null, country: lookup?.country ?? null,
+    website: tagString(tags, "official_website") ?? lookup?.website ?? tagString(tags, "website") ?? null,
     googlePhotoName: tagString(tags, "google_photo_name"),
-    googlePhotoAttributions: Array.isArray(tags.google_photo_attributions)
-      ? tags.google_photo_attributions
-          .map((entry) => {
-            const value = asRecord(entry);
-            return {
-              displayName: typeof value.displayName === "string" ? value.displayName : null,
-              uri: typeof value.uri === "string" ? value.uri : null,
-            };
-          })
-          .filter((entry) => !!entry.displayName)
-      : [],
+    googlePhotoAttributions: Array.isArray(tags.google_photo_attributions) ? tags.google_photo_attributions.map((entry) => { const value = asRecord(entry); return { displayName: typeof value.displayName === "string" ? value.displayName : null, uri: typeof value.uri === "string" ? value.uri : null }; }).filter((entry) => !!entry.displayName) : [],
     address: lookup?.address ?? tagString(tags, "address") ?? null,
-    wikidata: tagString(tags, "wikidata"),
-    wikipedia: tagString(tags, "wikipedia"),
+    wikidata: tagString(tags, "wikidata"), wikipedia: tagString(tags, "wikipedia"),
     wikimediaCommons: tagString(tags, "wikimedia_commons") ?? tagString(tags, "commons"),
-    skipGoogle: options?.skipGoogle === true,
-    skipOfficialSite: options?.skipOfficialSite === true,
+    skipGoogle: options?.skipGoogle === true, skipOfficialSite: options?.skipOfficialSite === true,
   };
 }
 
-export function CatalogImage({
-  item,
-  className = "h-full w-full object-cover",
-  placeholderClassName,
-  priority = false,
-  lookup = null,
-  showAttribution = false,
-}: CatalogImageProps) {
+export function CatalogImage({ item, className = "h-full w-full object-cover", placeholderClassName, priority = false, lookup = null, showAttribution = false }: CatalogImageProps) {
   const exactDirect = useMemo(() => directImage(item), [item]);
   const resolveMedia = useServerFn(resolveVerifiedPlaceMedia);
   const resolvePublicMedia = useServerFn(resolvePublicPlaceMedia);
-  const primaryInput = useMemo(
-    () => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false }),
-    [item, lookup],
-  );
-  const fallbackInput = useMemo(
-    () => catalogPlaceMediaInput(item, lookup, { skipGoogle: true, skipOfficialSite: true }),
-    [item, lookup],
-  );
-  const publicInput = useMemo(
-    () => ({
-      title: item.title,
-      kind: item.kind,
-      latitude: primaryInput.latitude,
-      longitude: primaryInput.longitude,
-      city: primaryInput.city ?? null,
-      country: primaryInput.country ?? null,
-    }),
-    [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude],
-  );
+  const primaryInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false }), [item, lookup]);
+  const fallbackInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: true, skipOfficialSite: true }), [item, lookup]);
+  const publicInput = useMemo(() => ({ title: item.title, kind: item.kind, latitude: primaryInput.latitude, longitude: primaryInput.longitude, city: primaryInput.city ?? null, country: primaryInput.country ?? null }), [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude]);
   const knownLogo = useMemo(() => knownPlaceLogo(item), [item]);
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   useEffect(() => setFailedUrls(new Set()), [item.id]);
 
   const directFailed = !!exactDirect && failedUrls.has(exactDirect);
-  const canResolveSource =
-    (!exactDirect || directFailed) &&
-    (!!lookup ||
-      !!primaryInput.wikidata ||
-      !!primaryInput.wikipedia ||
-      !!primaryInput.wikimediaCommons);
-  const {
-    data: resolvedMedia,
-    isFetching,
-    refetch: refetchPrimary,
-  } = useQuery({
-    queryKey: verifiedPlaceMediaQueryKey(item.id, primaryInput, "primary"),
-    queryFn: async () => resolveMedia({ data: primaryInput }),
-    enabled: canResolveSource,
-    staleTime: 30_000,
-    gcTime: 15 * 60_000,
-    retry: 1,
-  });
-
+  const canResolveSource = (!exactDirect || directFailed) && (!!lookup || !!primaryInput.wikidata || !!primaryInput.wikipedia || !!primaryInput.wikimediaCommons);
+  const { data: resolvedMedia, isFetching, refetch: refetchPrimary } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, primaryInput, "primary"), queryFn: async () => resolveMedia({ data: primaryInput }), enabled: canResolveSource, staleTime: 30_000, gcTime: 15 * 60_000, retry: 1 });
   const primaryUrl = safeExactHttps(resolvedMedia?.url);
   const primaryFailed = !!primaryUrl && failedUrls.has(primaryUrl);
   const primaryExhausted = canResolveSource && !isFetching && (!primaryUrl || primaryFailed);
-  const { data: publicMedia } = useQuery({
-    queryKey: publicPlaceMediaQueryKey(publicInput),
-    queryFn: async () => resolvePublicMedia({ data: publicInput }),
-    enabled: primaryExhausted && priority,
-    staleTime: 12 * 60 * 60_000,
-    gcTime: 24 * 60 * 60_000,
-    retry: 1,
-  });
-
+  const { data: publicMedia } = useQuery({ queryKey: publicPlaceMediaQueryKey(publicInput), queryFn: async () => resolvePublicMedia({ data: publicInput }), enabled: primaryExhausted && priority, staleTime: 12 * 60 * 60_000, gcTime: 24 * 60 * 60_000, retry: 1 });
   const publicUrl = safeExactHttps(publicMedia?.url);
   const publicFailed = !!publicUrl && failedUrls.has(publicUrl);
-  const { data: fallbackMedia } = useQuery({
-    queryKey: verifiedPlaceMediaQueryKey(item.id, fallbackInput, "fallback"),
-    queryFn: async () => resolveMedia({ data: fallbackInput }),
-    enabled: canResolveSource && (primaryFailed || publicFailed),
-    staleTime: 30 * 60_000,
-    gcTime: 60 * 60_000,
-    retry: 1,
-  });
+  const { data: fallbackMedia } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, fallbackInput, "fallback"), queryFn: async () => resolveMedia({ data: fallbackInput }), enabled: canResolveSource && (primaryFailed || publicFailed), staleTime: 30 * 60_000, gcTime: 60 * 60_000, retry: 1 });
 
   const directAvailable = exactDirect && !failedUrls.has(exactDirect) ? exactDirect : null;
   const resolvedCandidate = safeExactHttps(resolvedMedia?.url);
   const publicCandidate = safeExactHttps(publicMedia?.url);
   const fallbackCandidate = safeExactHttps(fallbackMedia?.url);
-  const resolvedUrl =
-    directAvailable ??
-    (resolvedCandidate && !failedUrls.has(resolvedCandidate) ? resolvedCandidate : null) ??
-    (publicCandidate && !failedUrls.has(publicCandidate) ? publicCandidate : null) ??
-    (fallbackCandidate && !failedUrls.has(fallbackCandidate) ? fallbackCandidate : null);
-  const activeMedia =
-    resolvedUrl && fallbackCandidate === resolvedUrl
-      ? fallbackMedia
-      : resolvedUrl && publicCandidate === resolvedUrl
-        ? publicMedia
-        : resolvedUrl && resolvedCandidate === resolvedUrl
-          ? resolvedMedia
-          : null;
+  const resolvedUrl = directAvailable ?? (resolvedCandidate && !failedUrls.has(resolvedCandidate) ? resolvedCandidate : null) ?? (publicCandidate && !failedUrls.has(publicCandidate) ? publicCandidate : null) ?? (fallbackCandidate && !failedUrls.has(fallbackCandidate) ? fallbackCandidate : null);
+  const activeMedia = resolvedUrl && fallbackCandidate === resolvedUrl ? fallbackMedia : resolvedUrl && publicCandidate === resolvedUrl ? publicMedia : resolvedUrl && resolvedCandidate === resolvedUrl ? resolvedMedia : null;
 
   if (resolvedUrl) {
-    const image = (
-      <img
-        src={resolvedUrl}
-        alt={item.title}
-        loading={priority ? "eager" : "lazy"}
-        fetchPriority={priority ? "high" : "auto"}
-        decoding="async"
-        referrerPolicy="no-referrer"
-        className={className}
-        onError={() => {
-          setFailedUrls((current) => new Set([...current, resolvedUrl]));
-          if (activeMedia?.source === "google-places") {
-            void refetchPrimary();
-          }
-        }}
-      />
-    );
+    const image = <img src={resolvedUrl} alt={item.title} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" referrerPolicy="no-referrer" className={className} onError={() => { setFailedUrls((current) => new Set([...current, resolvedUrl])); if (activeMedia?.source === "google-places") void refetchPrimary(); }} />;
     const attributions = activeMedia?.attributions ?? [];
     if (!showAttribution || !attributions.length) return image;
-    return (
-      <div className="relative w-full overflow-hidden bg-secondary">
-        {image}
-        <div className="absolute bottom-1.5 right-1.5 max-w-[85%] rounded-md bg-black/65 px-2 py-1 text-[9px] leading-tight text-white backdrop-blur-sm">
-          Photo ·{" "}
-          {attributions.slice(0, 2).map((entry, index) => (
-            <span key={`${entry.label}-${index}`}>
-              {index > 0 ? " · " : ""}
-              {entry.url ? (
-                <a
-                  href={entry.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-2"
-                >
-                  {entry.label}
-                </a>
-              ) : (
-                entry.label
-              )}
-            </span>
-          ))}
-        </div>
-      </div>
-    );
+    return <div className="relative w-full overflow-hidden bg-secondary">{image}<div className="absolute bottom-1.5 right-1.5 max-w-[85%] rounded-md bg-black/65 px-2 py-1 text-[9px] leading-tight text-white backdrop-blur-sm">Photo · {attributions.slice(0, 2).map((entry, index) => <span key={`${entry.label}-${index}`}>{index > 0 ? " · " : ""}{entry.url ? <a href={entry.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{entry.label}</a> : entry.label}</span>)}</div></div>;
   }
 
   const logo = knownLogo && !failedUrls.has(knownLogo.url) ? knownLogo : null;
-
   if (logo) {
-    return (
-      <div
-        className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-secondary via-background to-secondary px-5 text-center`}
-        role="img"
-        aria-label={`${logo.label} pour ${item.title}`}
-      >
-        <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-          <img
-            src={logo.url}
-            alt={`Logo de ${item.title}`}
-            loading={priority ? "eager" : "lazy"}
-            fetchPriority={priority ? "high" : "auto"}
-            decoding="async"
-            referrerPolicy="no-referrer"
-            className="h-full w-full object-contain"
-            onError={() => setFailedUrls((current) => new Set([...current, logo.url]))}
-          />
-        </div>
-        <span className="text-xs font-semibold text-foreground/80">{logo.label}</span>
-        <span className="text-[10px] text-muted-foreground">
-          Photo officielle indisponible · logo du lieu utilisé
-        </span>
-      </div>
-    );
+    return <div className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-secondary via-background to-secondary px-5 text-center`} role="img" aria-label={`${logo.label} pour ${item.title}`}><div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5"><img src={logo.url} alt={`Logo de ${item.title}`} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setFailedUrls((current) => new Set([...current, logo.url]))} /></div><span className="text-xs font-semibold text-foreground/80">{logo.label}</span><span className="text-[10px] text-muted-foreground">Photo officielle indisponible · logo du lieu utilisé</span></div>;
   }
 
-  // No photo and no real establishment logo: do not reserve a fake/empty visual area.
-  return null;
+  const initials = placeInitials(item.title);
+  return <div className={`${placeholderClassName ?? className} flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-secondary via-background to-secondary px-5 text-center`} role="img" aria-label={`Initiales de ${item.title}`}><div className="grid h-20 w-20 place-items-center rounded-2xl border border-primary/25 bg-primary/10 shadow-sm"><span className="text-2xl font-bold tracking-tight text-primary">{initials}</span></div><span className="text-xs font-semibold text-foreground/80">{item.title}</span><span className="text-[10px] text-muted-foreground">Photo officielle indisponible</span></div>;
 }
