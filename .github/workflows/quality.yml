@@ -40,6 +40,9 @@ jobs:
       - name: Validate Phase 4 architecture boundaries
         run: npm run check:phase4
 
+      - name: Validate Phase 5 travel data reliability
+        run: npm run check:phase5
+
       - name: Build GlobeLink
         run: npm run build
 
