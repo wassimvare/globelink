@@ -22,12 +22,17 @@ import {
   Pause,
   Phone,
   Video,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { uploadMedia, getSignedMediaUrl } from "@/lib/storage";
 import { formatDistanceToNow } from "date-fns";
+import { z } from "zod";
 import { fr } from "date-fns/locale";
 import { useCalls } from "@/components/CallProvider";
+
+const messageSearch = z.object({ draft: z.string().max(360).optional() });
+// TRAVEL_MATCH_V3_DRAFT
 
 export const Route = createFileRoute("/_authenticated/messages/$id")({
   head: () => ({
@@ -46,6 +51,7 @@ export const Route = createFileRoute("/_authenticated/messages/$id")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search) => messageSearch.parse(search),
   component: ConversationPage,
 });
 
@@ -61,11 +67,12 @@ type Msg = {
 
 function ConversationPage() {
   const { id } = Route.useParams();
+  const { draft } = Route.useSearch();
   const { user } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { startCall, busy: callBusy } = useCalls();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draft?.trim() ?? "");
   const [otherTyping, setOtherTyping] = useState(false);
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -100,6 +107,19 @@ function ConversationPage() {
       return participant ? { ...participant, direct: arr.length === 2 } : null;
     },
   });
+
+  useEffect(() => {
+    if (!other?.user_id || typeof window === "undefined") return;
+    const key = `globelink:match-intent:${other.user_id}`;
+    const pending = window.localStorage.getItem(key);
+    if (draft?.trim()) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    if (!pending) return;
+    setText((current: string) => current.trim() ? current : pending);
+    window.localStorage.removeItem(key);
+  }, [other?.user_id, draft]);
 
   const { data: conversationControlled = false } = useQuery({
     queryKey: ["conversation-controlled", id, user?.id, other?.user_id],
@@ -295,6 +315,25 @@ function ConversationPage() {
     setRecording(false);
   };
 
+  const deleteMessage = async (message: Msg) => {
+    if (!user || message.sender_id !== user.id) return;
+    if (!window.confirm("Supprimer ce message pour la conversation ?")) return;
+    const { error } = await supabase
+      .from("messages")
+      .delete()
+      .eq("id", message.id)
+      .eq("sender_id", user.id);
+    if (error) {
+      toast.error(error.message || "Impossible de supprimer ce message.");
+      return;
+    }
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["messages", id] }),
+      qc.invalidateQueries({ queryKey: ["conversations", user.id] }),
+    ]);
+    toast.success("Message supprimé");
+  };
+
   const otherName = other?.profile?.display_name ?? other?.profile?.username ?? "Voyageur";
   const otherReadAt = other?.last_read_at ? new Date(other.last_read_at) : null;
   const lastOwn = useMemo(
@@ -406,6 +445,15 @@ function ConversationPage() {
                     <span>
                       {formatDistanceToNow(new Date(m.created_at), { addSuffix: true, locale: fr })}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteMessage(m)}
+                      aria-label="Supprimer ce message"
+                      title="Supprimer ce message"
+                      className="ml-1 grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
                     {lastOwn?.id === m.id &&
                       (seen ? (
                         <CheckCheck className="h-3 w-3 text-accent" />

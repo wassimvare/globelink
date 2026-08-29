@@ -12,6 +12,10 @@ import {
   type LiveCatalogItem,
 } from "@/lib/live-catalog";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
+import { AIContextActions } from "@/components/AIContextActions";
+// AI_CONTEXT_LAYER_V1_ACTIVITY
+// ADD_TO_TRIP_EVERYWHERE_V1_ACTIVITY
 import { getSignedMediaUrl } from "@/lib/storage";
 import { isTrustedVisibleCatalogItem } from "@/lib/catalog-source-routing";
 import { curatedActivityBySlug } from "@/lib/world-activities";
@@ -131,6 +135,31 @@ function ActivityPage() {
                   {Number(place.rating).toFixed(1)}
                 </p>
               )}
+              <AddToTripButton
+                item={{
+                  title: place.name,
+                  city: place.city ?? null,
+                  country: place.country ?? null,
+                  lat: place.latitude ?? null,
+                  lng: place.longitude ?? null,
+                  kind: place.kind || place.category || "activity",
+                  rating: place.rating != null ? Number(place.rating) : null,
+                  source: place.isExternal ? place.provider || "Source partenaire" : "GlobeLink",
+                  sourceUrl: place.source_url ?? null,
+                }}
+                variant="default"
+                className="mt-5 w-full rounded-full sm:w-auto"
+              />
+              <AIContextActions
+                destination={[place.city, place.country].filter(Boolean).join(", ")}
+                freePrompt={`Que dois-je savoir sur ${place.name} à ${[place.city, place.country].filter(Boolean).join(", ") || "cette destination"} ? Donne-moi des conseils rapides et pratiques.`}
+                proPrompt={String(place.kind || place.category).toLowerCase().includes("hotel")
+                  ? `Compare ${place.name} aux meilleures alternatives proches pour mon voyage : prix, emplacement, avantages, limites et verdict.`
+                  : `Recherche et vérifie ${place.name} pour mon voyage : intérêt, horaires ou conditions à confirmer, prix indicatifs, alternatives proches et recommandation finale.`}
+                proMode={String(place.kind || place.category).toLowerCase().includes("hotel") ? "compare" : "research"}
+                proLabel={String(place.kind || place.category).toLowerCase().includes("hotel") ? "Comparer avec IA+" : "Vérifier avec IA+"}
+                className="mt-3"
+              />
               {place.description ? (
                 <p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-foreground/90">
                   {place.description}

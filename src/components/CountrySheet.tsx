@@ -3,6 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import {
   CalendarDays,
   Wallet,
@@ -26,6 +27,7 @@ import { fetchLiveCatalog, type LiveCatalogItem } from "@/lib/live-catalog";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { CatalogImage } from "@/components/CatalogImage";
 import { DestinationImage } from "@/components/DestinationImage";
+import { getPublicExchangeRate, getPublicWeather } from "@/lib/public-open-data.functions";
 
 const slugify = (value: string) =>
   value
@@ -52,6 +54,28 @@ export function CountrySheet({
   const [tab, setTab] = useState<"apercu" | "photos" | "voyageurs" | "questions">("apercu");
   useEffect(() => setTab("apercu"), [code]);
   const c = code ? COUNTRY_BY_CODE.get(code) : null;
+  const loadPublicWeather = useServerFn(getPublicWeather);
+  const loadPublicExchangeRate = useServerFn(getPublicExchangeRate);
+  const { data: publicWeather } = useQuery({
+    queryKey: ["country-public-weather", c?.code],
+    enabled: !!c,
+    queryFn: () =>
+      loadPublicWeather({
+        data: { latitude: c!.center[0], longitude: c!.center[1] },
+      }),
+    staleTime: 15 * 60_000,
+    retry: 1,
+  });
+  const { data: publicExchangeRate } = useQuery({
+    queryKey: ["country-public-fx", c?.currency],
+    enabled: !!c && c.currency !== "EUR",
+    queryFn: () =>
+      loadPublicExchangeRate({
+        data: { base: "EUR", quote: c!.currency },
+      }),
+    staleTime: 6 * 60 * 60_000,
+    retry: 1,
+  });
 
   const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ["country-posts", c?.name],
@@ -296,7 +320,15 @@ export function CountrySheet({
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <FactCard icon={CalendarDays} label="Meilleure période" value={c.bestTime} />
                 <FactCard icon={Wallet} label="Coût / jour" value={c.costPerDay} />
-                <FactCard icon={CloudSun} label="Météo" value={c.weatherNow} />
+                <FactCard
+                  icon={CloudSun}
+                  label="Météo"
+                  value={
+                    publicWeather
+                      ? `${publicWeather.summary} · ${Math.round(publicWeather.temperatureC)}°C`
+                      : c.weatherNow
+                  }
+                />
                 <div className={`rounded-2xl border p-3 ${safetyColor[c.safety]}`}>
                   <div className="flex items-center gap-2 text-xs opacity-80">
                     <Shield className="h-3.5 w-3.5" /> Sécurité
@@ -304,8 +336,43 @@ export function CountrySheet({
                   <div className="mt-1 text-sm font-semibold">{c.safety}</div>
                 </div>
                 <FactCard icon={Languages} label="Langue" value={c.language} />
-                <FactCard icon={Wallet} label="Monnaie" value={c.currency} />
+                <FactCard
+                  icon={Wallet}
+                  label="Monnaie"
+                  value={
+                    publicExchangeRate
+                      ? `${c.currency} · 1 € ≈ ${publicExchangeRate.rate.toLocaleString("fr-FR", {
+                          maximumFractionDigits: publicExchangeRate.rate >= 100 ? 0 : 4,
+                        })} ${c.currency}`
+                      : c.currency
+                  }
+                />
               </div>
+
+              {(publicWeather || publicExchangeRate) && (
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                  {publicWeather && (
+                    <a
+                      href={publicWeather.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      Météo · MET Norway
+                    </a>
+                  )}
+                  {publicExchangeRate && (
+                    <a
+                      href={publicExchangeRate.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-foreground"
+                    >
+                      Taux · Frankfurter
+                    </a>
+                  )}
+                </div>
+              )}
 
               <div className="mt-5 grid gap-2 sm:grid-cols-2">
                 <Button

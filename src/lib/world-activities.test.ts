@@ -23,9 +23,9 @@ describe("world activities coverage", () => {
         expect(activity.kind).toBe("activity");
         expect(activity.provider).toBe("globelink-curated");
         expect(activity.source_url).toMatch(/^https:\/\/fr\.wikipedia\.org\/wiki\//);
-        expect(activity.booking_url).toMatch(/^https:\/\/www\.getyourguide\.fr\/s\//);
+        expect(activity.booking_url).toContain("google.com/maps/search");
         expect(activity.tags?.wikipedia).toMatch(/^fr:/);
-        expect(activity.tags?.primary_source_label).toBe("GetYourGuide");
+        expect(activity.tags?.primary_source_label).toBe("Google Places");
       }
     }
   });

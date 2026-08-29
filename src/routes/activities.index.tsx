@@ -82,9 +82,9 @@ function ActivitiesExplorerPage() {
                 Activités dans tous les pays
               </h1>
               <p className="mt-2 text-sm leading-6 text-muted-foreground sm:text-base">
-                Activités affichées uniquement si le lieu est traçable, avec GetYourGuide ou
-                Tripadvisor en lien de vérification. Aucune image générique n’est utilisée comme
-                photo de lieu.
+                Activités affichées uniquement avec une source vérifiée : Google Places pour les
+                attractions et Ticketmaster pour les événements. Aucune image générique n’est utilisée
+                comme photo de lieu.
               </p>
               <p className="mt-2 text-xs font-semibold text-primary">
                 {activities.length} activité{activities.length > 1 ? "s" : ""} vérifiée

@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
+// JOURNEY_CONTINUITY_V1_MATCH
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -19,7 +21,11 @@ import {
   CheckCircle2,
   Settings2,
   ShieldCheck,
+  Coffee,
+  Footprints,
+  UsersRound,
 } from "lucide-react";
+// TRAVEL_MATCH_V3
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +36,13 @@ import {
   getAccountSettings,
   getSuggestionExcludedUserIds,
 } from "@/lib/account-settings";
+
+const matchJourneySearch = z.object({
+  tripId: z.string().uuid().optional(),
+  destination: z.string().max(180).optional(),
+  startsOn: z.string().max(10).optional(),
+  endsOn: z.string().max(10).optional(),
+});
 
 export const Route = createFileRoute("/_authenticated/match")({
   head: () => ({
@@ -50,6 +63,7 @@ export const Route = createFileRoute("/_authenticated/match")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search) => matchJourneySearch.parse(search),
   component: MatchPage,
 });
 
@@ -157,6 +171,47 @@ function scoreTraveler(t: MapTraveler, p: MyPrefs) {
   return { score, parts, sharedLangs, sharedInts, overlap, age };
 }
 
+type MatchIntent = {
+  id: "activity" | "coffee" | "explore";
+  label: string;
+  helper: string;
+  draft: string;
+};
+
+function matchQuality(score: number) {
+  if (score >= 80) return "Excellent match";
+  if (score >= 65) return "Très compatible";
+  if (score >= 50) return "Bon potentiel";
+  return "À découvrir";
+}
+
+function suggestedMeetups(t: MapTraveler, sharedInts: string[]): MatchIntent[] {
+  const place = [t.city, t.country].filter(Boolean).join(", ") || "votre destination";
+  const shared = sharedInts[0];
+  return [
+    {
+      id: "activity",
+      label: "Faire une activité ensemble",
+      helper: shared ? `Vous aimez tous les deux : ${shared}` : "Choisir une activité sur place",
+      draft: shared
+        ? `Salut ${t.name} 👋 On a ${shared} en commun. Ça te dirait de faire une activité ensemble autour de ça à ${place} ?`
+        : `Salut ${t.name} 👋 Ça te dirait qu’on fasse une activité ensemble à ${place} pendant nos dates en commun ?`,
+    },
+    {
+      id: "coffee",
+      label: "Prendre un café",
+      helper: "Un premier contact simple",
+      draft: `Salut ${t.name} 👋 On sera à ${place} au même moment. Ça te dirait de prendre un café et d’échanger sur nos plans ?`,
+    },
+    {
+      id: "explore",
+      label: "Explorer ensemble",
+      helper: "Partager une demi-journée ou une journée",
+      draft: `Salut ${t.name} 👋 Nos voyages se croisent à ${place}. Ça te dirait d’explorer un coin ensemble pendant une demi-journée ou une journée ?`,
+    },
+  ];
+}
+
 type Candidate = { key: string; t: MapTraveler; profileId: string; verified: boolean };
 
 type RealProfile = {
@@ -219,9 +274,26 @@ function candidateFromData(profile: RealProfile, intent: RealIntent): Candidate 
 }
 
 function MatchPage() {
+  const { tripId, destination, startsOn, endsOn } = Route.useSearch();
   const { user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const { data: journeyTrip } = useQuery({
+    queryKey: ["match-journey-trip", user?.id, tripId],
+    enabled: !!user && !!tripId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("id,title,city,country,starts_on,ends_on,budget")
+        .eq("id", tripId!)
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
   const [prefs, setPrefs] = useState<MyPrefs>(DEFAULT_PREFS);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -293,6 +365,23 @@ function MatchPage() {
         : current.interests,
     }));
   }, [accountSettings]);
+
+  useEffect(() => {
+    const journeyDestination =
+      destination?.trim() || [journeyTrip?.city, journeyTrip?.country].filter(Boolean).join(", ");
+    const journeyStart = startsOn || journeyTrip?.starts_on || null;
+    const journeyEnd = endsOn || journeyTrip?.ends_on || null;
+    const journeyBudget = Number(journeyTrip?.budget || 0);
+    if (!journeyDestination && !journeyStart && !journeyEnd && !journeyBudget) return;
+
+    setPrefs((current) => ({
+      ...current,
+      destination: journeyDestination || current.destination,
+      budget: journeyBudget > 0 ? journeyBudget : current.budget,
+      startsOn: journeyStart || current.startsOn,
+      endsOn: journeyEnd || current.endsOn,
+    }));
+  }, [destination, endsOn, journeyTrip, startsOn]);
 
   const { data: realCandidates = [] } = useQuery({
     queryKey: ["match-real-candidates", user?.id],
@@ -390,7 +479,7 @@ function MatchPage() {
     return new Promise((resolve) => window.setTimeout(resolve, 190));
   }
 
-  async function advance(direction: "left" | "right") {
+  async function advance(direction: "left" | "right", intent?: MatchIntent) {
     if (!current || busy) return;
     const candidate = current.c;
     setBusy(true);
@@ -415,22 +504,34 @@ function MatchPage() {
         return;
       }
 
+      if (intent && typeof window !== "undefined") {
+        window.localStorage.setItem(`globelink:match-intent:${targetId}`, intent.draft);
+      }
+
       const result = await sendLike({ data: { toUserId: targetId } });
       qc.invalidateQueries({ queryKey: ["match-exclusions", user.id] });
       if (result.matched && result.conversationId) {
         qc.invalidateQueries({ queryKey: ["conversations", user.id] });
         setMatches((list) => [...list, candidate.key]);
         toast.success(`Match avec ${candidate.t.name} ✨`, {
-          description: "La conversation est ouverte dans Messages.",
+          description: intent
+            ? `Votre match est mutuel. Le message « ${intent.label} » est prêt.`
+            : "La conversation est ouverte dans Messages.",
           action: {
-            label: "Message",
+            label: intent ? "Préparer l’invitation" : "Message",
             onClick: () =>
-              navigate({ to: "/messages/$id", params: { id: result.conversationId! } }),
+              navigate({
+                to: "/messages/$id",
+                params: { id: result.conversationId! },
+                search: intent ? { draft: intent.draft } : {},
+              }),
           },
         });
       } else {
         toast(`Like envoyé à ${candidate.t.name}`, {
-          description: "Tu verras un match s'il te like en retour.",
+          description: intent
+            ? `Si le match devient mutuel, GlobeLink gardera ton idée : « ${intent.label} ».`
+            : "Tu verras un match s'il te like en retour.",
         });
       }
     } catch (error) {
@@ -487,6 +588,24 @@ function MatchPage() {
     <div className="app-page">
       <AppHeader />
       <main className="mx-auto max-w-lg px-4 py-5">
+        {tripId && (
+          <section className="mb-4 rounded-[1.6rem] border border-primary/20 bg-primary/[0.06] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">Match pour ton voyage</p>
+                <p className="mt-1 truncate text-sm font-bold">{journeyTrip?.title ?? destination ?? "Voyage GlobeLink"}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Destination, dates et budget du carnet sont utilisés pour classer les voyageurs les plus compatibles.
+                </p>
+              </div>
+              <MapPin className="h-5 w-5 shrink-0 text-primary" />
+            </div>
+            <Button asChild size="sm" variant="outline" className="mt-3 rounded-full">
+              <Link to="/trips/$id" params={{ id: tripId }}>Retour au carnet</Link>
+            </Button>
+          </section>
+        )}
+
         <div className="surface-card mb-4 flex items-center justify-between gap-3 rounded-[1.6rem] p-4">
           <div className="min-w-0">
             <h1 className="font-display text-2xl font-semibold">Travel Match</h1>
@@ -641,7 +760,7 @@ function MatchPage() {
               </div>
             )}
 
-            <div className="relative mx-auto h-[585px] w-full max-w-sm select-none">
+            <div className="relative mx-auto h-[660px] w-full max-w-sm select-none">
               {!current ? (
                 <div className="absolute inset-0 grid place-items-center rounded-3xl border border-dashed border-border bg-card p-8 text-center">
                   <div>
@@ -666,6 +785,7 @@ function MatchPage() {
                       score={next.s.score}
                       parts={next.s.parts}
                       sharedInts={next.s.sharedInts}
+                      sharedLangs={next.s.sharedLangs}
                       overlap={next.s.overlap}
                       age={next.s.age}
                       verified={next.c.verified}
@@ -692,6 +812,7 @@ function MatchPage() {
                       score={current.s.score}
                       parts={current.s.parts}
                       sharedInts={current.s.sharedInts}
+                      sharedLangs={current.s.sharedLangs}
                       overlap={current.s.overlap}
                       age={current.s.age}
                       verified={current.c.verified}
@@ -702,6 +823,38 @@ function MatchPage() {
                 </>
               )}
             </div>
+
+            {current && (
+              <section className="surface-card mt-4 rounded-[1.6rem] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">Une idée pour briser la glace</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Choisis une intention : elle envoie un like et prépare le message si le match devient mutuel.
+                    </p>
+                  </div>
+                  <UsersRound className="h-5 w-5 shrink-0 text-primary" />
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  {suggestedMeetups(current.c.t, current.s.sharedInts).map((intent) => {
+                    const Icon = intent.id === "coffee" ? Coffee : intent.id === "explore" ? Footprints : Sparkles;
+                    return (
+                      <button
+                        key={intent.id}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => advance("right", intent)}
+                        className="rounded-2xl border border-border bg-background/70 p-3 text-left transition hover:border-primary/30 hover:bg-primary/[0.04] disabled:opacity-60"
+                      >
+                        <Icon className="h-4 w-4 text-primary" />
+                        <span className="mt-2 block text-xs font-semibold leading-snug">{intent.label}</span>
+                        <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">{intent.helper}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {current && (
               <div className="mt-4 flex items-center justify-center gap-4">
@@ -740,6 +893,7 @@ function SwipeCard({
   score,
   parts,
   sharedInts,
+  sharedLangs,
   overlap,
   age,
   verified,
@@ -751,6 +905,7 @@ function SwipeCard({
   score: number;
   parts: { label: string; got: number; max: number }[];
   sharedInts: string[];
+  sharedLangs: string[];
   overlap: number;
   age: number | null;
   verified: boolean;
@@ -758,12 +913,20 @@ function SwipeCard({
   likeOpacity?: number;
   nopeOpacity?: number;
 }) {
+  const strongParts = parts.filter((part) => part.max > 0 && part.got / part.max >= 0.6);
+  const cautionParts = parts.filter((part) => ["Destination", "Dates", "Budget"].includes(part.label) && part.got === 0);
+  const signals = [
+    overlap > 0 ? `${overlap} jour${overlap > 1 ? "s" : ""} de voyage en commun` : null,
+    sharedInts.length ? `${sharedInts.length} centre${sharedInts.length > 1 ? "s" : ""} d’intérêt commun${sharedInts.length > 1 ? "s" : ""}` : null,
+    sharedLangs.length ? `${sharedLangs.length} langue${sharedLangs.length > 1 ? "s" : ""} commune${sharedLangs.length > 1 ? "s" : ""}` : null,
+  ].filter(Boolean) as string[];
+
   return (
     <div
       className={`surface-card absolute inset-0 overflow-hidden rounded-[2rem] ${stacked ? "scale-95 opacity-65" : ""}`}
       style={stacked ? { transform: "translateY(12px) scale(0.95)" } : undefined}
     >
-      <div className="relative h-80 w-full">
+      <div className="relative h-72 w-full">
         {t.avatar ? (
           <img src={t.avatar} alt={t.name} className="h-full w-full object-cover" />
         ) : (
@@ -833,27 +996,53 @@ function SwipeCard({
           ))}
         </div>
         <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-primary">
-            <CheckCircle2 className="h-4 w-4" /> Pourquoi {score}% ?
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {overlap > 0
-              ? `${overlap} jour${overlap > 1 ? "s" : ""} de voyage en commun`
-              : "Dates différentes"}
-            {sharedInts.length
-              ? ` · ${sharedInts.slice(0, 3).join(" · ")}`
-              : " · complète tes centres d'intérêt pour affiner"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-1 pt-1">
-          {parts.map((part) => (
-            <span
-              key={part.label}
-              className="rounded-full bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground"
-            >
-              {part.label} {part.got}/{part.max}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+              <CheckCircle2 className="h-4 w-4" /> Pourquoi ce match ?
+            </div>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+              {matchQuality(score)}
             </span>
-          ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {signals.length ? signals.map((signal) => (
+              <span key={signal} className="rounded-full bg-background/80 px-2 py-1 text-[10px] font-medium text-foreground">
+                {signal}
+              </span>
+            )) : (
+              <span className="text-[11px] text-muted-foreground">Complète tes préférences pour obtenir une explication plus précise.</span>
+            )}
+          </div>
+          {sharedInts.length > 0 && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Affinités fortes : <span className="font-semibold text-foreground">{sharedInts.slice(0, 4).join(" · ")}</span>
+            </p>
+          )}
+          {sharedLangs.length > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Langues communes : <span className="font-semibold text-foreground">{sharedLangs.slice(0, 3).join(" · ")}</span>
+            </p>
+          )}
+          {cautionParts.length > 0 && (
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              À vérifier : {cautionParts.map((part) => part.label.toLowerCase()).join(", ")}.
+            </p>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-1.5 pt-1">
+          {parts.slice(0, 6).map((part) => {
+            const pct = part.max ? Math.round((part.got / part.max) * 100) : 0;
+            return (
+              <div key={part.label} className="rounded-xl bg-secondary/55 p-2">
+                <div className="flex items-center justify-between gap-1 text-[9px] text-muted-foreground">
+                  <span>{part.label}</span><span>{pct}%</span>
+                </div>
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-background">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

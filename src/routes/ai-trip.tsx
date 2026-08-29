@@ -22,7 +22,11 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { askGlobeLinkFree } from "@/lib/ai-free.functions";
 
-const search = z.object({ destination: z.string().optional() });
+const search = z.object({
+  destination: z.string().max(180).optional(),
+  prompt: z.string().max(1_200).optional(),
+});
+// AI_CONTEXT_LAYER_V1_FREE
 
 export const Route = createFileRoute("/ai-trip")({
   head: () => ({
@@ -64,13 +68,15 @@ const SUGGESTIONS = [
 ] as const;
 
 function FreeAiPage() {
-  const { destination } = Route.useSearch();
+  const { destination, prompt } = Route.useSearch();
   const { user } = useAuth();
   const askFreeFn = useServerFn(askGlobeLinkFree);
   const [query, setQuery] = useState(
-    destination
-      ? `Donne-moi des idées pour préparer un voyage à ${destination}.`
-      : "",
+    prompt?.trim()
+      ? prompt.trim()
+      : destination
+        ? `Donne-moi des idées pour préparer un voyage à ${destination}.`
+        : "",
   );
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [remaining, setRemaining] = useState<number | null>(null);

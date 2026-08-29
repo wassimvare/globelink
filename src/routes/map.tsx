@@ -9,6 +9,7 @@ import { fetchLocatedTravelers, type LocatedTraveler } from "@/lib/real-traveler
 import { COUNTRY_INFO } from "@/lib/country-info";
 import { CountrySheet } from "@/components/CountrySheet";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,10 @@ export const Route = createFileRoute("/map")({
   component: MapPage,
 });
 
+// EXPLORER_TRAVEL_MAP_V1
+// JOURNEY_CONTINUITY_V1_MAP
+// EXPLORER_ADD_TO_TRIP_MOBILE_FIX_V1
+
 type AnyPlace = {
   id: string;
   name: string;
@@ -93,6 +98,7 @@ type AnyPlace = {
   provider?: string;
   source_url?: string | null;
   booking_url?: string | null;
+  price_text?: string | null;
   created_at?: string;
   isSearched?: boolean;
   filter_categories?: string[];
@@ -225,6 +231,18 @@ function isOfferPlace(place: Pick<AnyPlace, "category" | "filter_categories" | "
     place.category === "deal" ||
     (place.filter_categories ?? []).includes("deal")
   );
+}
+
+function distanceBetweenKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const radius = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const lat1 = (aLat * Math.PI) / 180;
+  const lat2 = (bLat * Math.PI) / 180;
+  const value =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * radius * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
 
 function escapeHtml(value: string) {
@@ -532,6 +550,7 @@ function MapPage() {
       provider: "GlobeLink",
       source_url: null,
       booking_url: null,
+      price_text: null,
       created_at: p.created_at,
       filter_categories: [p.category],
       marker_category: p.category,
@@ -568,6 +587,7 @@ function MapPage() {
           provider: catalogSourceLabel(item),
           source_url: item.source_url,
           booking_url: item.booking_url,
+          price_text: item.price_text,
           created_at: item.fetched_at,
           isSearched: searchedExternalIds.has(catalogIdentityKey(item)),
           filter_categories: filterCategories,
@@ -626,6 +646,33 @@ function MapPage() {
       displayedPlaces.filter((place) => (place.filter_categories ?? []).includes("deal")).length,
     [displayedPlaces],
   );
+
+  const explorerOrigin = useMemo(() => {
+    if (userPosition) return { lat: userPosition[0], lng: userPosition[1], label: "autour de toi" };
+    if (!viewport) return null;
+    return {
+      lat: (viewport.south + viewport.north) / 2,
+      lng: (viewport.west + viewport.east) / 2,
+      label: countryQuery.trim() ? "près de " + countryQuery.trim() : "dans cette zone",
+    };
+  }, [countryQuery, userPosition, viewport]);
+
+  const explorerResults = useMemo(() => {
+    return displayedPlaces
+      .map((place) => ({
+        place,
+        distanceKm: explorerOrigin
+          ? distanceBetweenKm(explorerOrigin.lat, explorerOrigin.lng, place.lat, place.lng)
+          : null,
+      }))
+      .sort((a, b) => {
+        if (a.distanceKm != null && b.distanceKm != null && Math.abs(a.distanceKm - b.distanceKm) > 0.15)
+          return a.distanceKm - b.distanceKm;
+        if (a.place.rating !== b.place.rating) return b.place.rating - a.place.rating;
+        return b.place.reviews_count - a.place.reviews_count;
+      })
+      .slice(0, 24);
+  }, [displayedPlaces, explorerOrigin]);
 
   const prefetchPlaceMedia = useCallback(
     async (place: AnyPlace, highPriority = false) => {
@@ -1004,7 +1051,37 @@ function MapPage() {
           </div>
         )}
 
-        <div className="map-canvas-shell surface-card relative mx-auto mt-2 h-[68dvh] min-h-[520px] max-w-[1600px] overflow-hidden rounded-[1.6rem] p-1 shadow-soft sm:h-[calc(100dvh-13.5rem)] sm:min-h-[600px] sm:rounded-[2rem] sm:p-1.5">
+        <div className="mt-2 grid gap-2 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="surface-card hidden h-[calc(100dvh-13.5rem)] min-h-[600px] overflow-hidden rounded-[1.6rem] lg:flex lg:flex-col">
+            <div className="border-b border-border/70 p-4">
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Explorer</div>
+              <div className="mt-1 flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-xl font-bold">À découvrir {explorerOrigin?.label ?? "ici"}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">Photos, notes, distance et sources fiables dans la zone de la carte.</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold">{explorerResults.length}</span>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
+              {explorerResults.length ? (
+                explorerResults.map((entry) => (
+                  <ExplorerPlaceCard
+                    key={entry.place.id}
+                    entry={entry}
+                    onSelect={(place) => setSelected(place)}
+                    onPrefetch={(place) => void prefetchPlaceMedia(place, true)}
+                  />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  Déplace la carte ou recherche une destination pour voir les meilleures adresses de la zone.
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <div className="map-canvas-shell surface-card relative h-[68dvh] min-h-[520px] min-w-0 overflow-hidden rounded-[1.6rem] p-1 shadow-soft sm:h-[calc(100dvh-13.5rem)] sm:min-h-[600px] sm:rounded-[2rem] sm:p-1.5">
           <ClientOnly
             fallback={
               <div className="grid h-full place-items-center rounded-[1.35rem] bg-secondary text-muted-foreground">
@@ -1098,7 +1175,31 @@ function MapPage() {
                 : "Chargement des lieux…"}
             </div>
           )}
+          </div>
         </div>
+
+        {explorerResults.length > 0 && (
+          <section className="mt-2 lg:hidden">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-primary">Explorer</div>
+                <h2 className="font-display text-lg font-bold">À découvrir {explorerOrigin?.label ?? "ici"}</h2>
+              </div>
+              <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold">{explorerResults.length}</span>
+            </div>
+            <div className="flex snap-x gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {explorerResults.slice(0, 12).map((entry) => (
+                <ExplorerPlaceCard
+                  key={entry.place.id}
+                  entry={entry}
+                  mobile
+                  onSelect={(place) => setSelected(place)}
+                  onPrefetch={(place) => void prefetchPlaceMedia(place, true)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         <div className="mt-2 flex items-center justify-between gap-3 px-1 text-[11px] text-muted-foreground sm:text-xs">
           <span>
@@ -1472,9 +1573,80 @@ function LeafletMap({
   );
 }
 
+function ExplorerPlaceCard({
+  entry,
+  onSelect,
+  onPrefetch,
+  mobile = false,
+}: {
+  entry: { place: AnyPlace; distanceKm: number | null };
+  onSelect: (place: AnyPlace) => void;
+  onPrefetch: (place: AnyPlace) => void;
+  mobile?: boolean;
+}) {
+  const { place, distanceKm } = entry;
+  const cat = mapCategoryMeta(place.marker_category || place.category);
+  const price = place.price_text || (place.budget ? BUDGET_LABELS[place.budget - 1] : null);
+  const openState = placeOpenState(place);
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(place)}
+      onPointerEnter={() => onPrefetch(place)}
+      onTouchStart={() => onPrefetch(place)}
+      className={[
+        "group overflow-hidden rounded-2xl border border-border/70 bg-card text-left shadow-sm transition hover:border-primary/30 hover:shadow-soft",
+        mobile ? "w-[84vw] max-w-[340px] shrink-0 snap-start" : "w-full",
+      ].join(" ")}
+    >
+      <div className="grid grid-cols-[108px_minmax(0,1fr)]">
+        <CatalogImage
+          item={placeMediaItem(place)}
+          lookup={placeMediaLookup(place)}
+          className="h-full min-h-[118px] w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+          placeholderClassName="h-full min-h-[118px] w-full"
+        />
+        <div className="min-w-0 p-3">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>{cat?.emoji ?? "📍"}</span>
+            <span className="truncate">{cat?.label ?? "Lieu"}</span>
+            {isOfferPlace(place) && <span className="text-orange-500">· Offre</span>}
+          </div>
+          <h3 className="mt-1 line-clamp-2 font-display text-[15px] font-bold leading-tight">{place.name}</h3>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+            {place.rating > 0 && (
+              <span className="inline-flex items-center gap-0.5 font-semibold">
+                {place.rating.toFixed(1)} <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+              </span>
+            )}
+            {distanceKm != null && Number.isFinite(distanceKm) && (
+              <span className="text-muted-foreground">· {distanceKm < 1 ? String(Math.max(50, Math.round(distanceKm * 1000 / 50) * 50)) + " m" : distanceKm.toFixed(distanceKm < 10 ? 1 : 0) + " km"}</span>
+            )}
+            {price && <span className="font-semibold text-foreground">· {price}</span>}
+          </div>
+          <p className="mt-1.5 truncate text-[11px] text-muted-foreground">{[place.city, place.country].filter(Boolean).join(", ") || "Position sur la carte"}</p>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
+            <span className={openState === "Ouvert" ? "font-semibold text-emerald-600 dark:text-emerald-400" : openState === "Fermé" ? "font-semibold text-rose-600 dark:text-rose-400" : "text-muted-foreground"}>
+              {openState || (place.hours && !/à vérifier|non renseignés/i.test(place.hours) ? place.hours.slice(0, 34) : "Horaires sur la source")}
+            </span>
+            <span className="max-w-[45%] truncate font-medium text-primary">{place.provider || "GlobeLink"}</span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function catalogTagText(place: AnyPlace | null, key: string) {
   const value = place?.catalog_tags?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function placeOpenState(place: AnyPlace | null) {
+  const raw = place?.catalog_tags?.open_now ?? place?.catalog_tags?.is_open;
+  if (raw === true || raw === "true" || raw === "open") return "Ouvert";
+  if (raw === false || raw === "false" || raw === "closed") return "Fermé";
+  return null;
 }
 
 function placeWebsite(place: AnyPlace | null) {
@@ -1502,8 +1674,94 @@ function PlaceSheet({
   place: AnyPlace | null;
   onOpenChange: (o: boolean) => void;
 }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const [saved, setSaved] = useState(false);
-  useEffect(() => setSaved(false), [place?.id]);
+  const [tripPickerOpen, setTripPickerOpen] = useState(false);
+  const [addingTripId, setAddingTripId] = useState<string | null>(null);
+  useEffect(() => {
+    setSaved(false);
+    setTripPickerOpen(false);
+  }, [place?.id]);
+
+  const { data: trips = [], isLoading: tripsLoading, isError: tripsError, refetch: refetchTrips } = useQuery({
+    queryKey: ["explorer-trips", user?.id],
+    enabled: !!user && !!place && tripPickerOpen,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("id,title,city,country,starts_on,ends_on,status")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const addToTrip = async (trip: (typeof trips)[number]) => {
+    if (!place || !user || addingTripId) return;
+    setAddingTripId(trip.id);
+    try {
+      const { data: existing } = await supabase
+        .from("trip_entries")
+        .select("id")
+        .eq("trip_id", trip.id)
+        .eq("title", place.name)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        setSaved(true);
+        setTripPickerOpen(false);
+        toast.message("Ce lieu est déjà dans ce voyage", {
+          description: "Ouvre le carnet pour continuer l’organisation.",
+          action: {
+            label: "Ouvrir le voyage",
+            onClick: () => window.location.assign("/trips/" + trip.id),
+          },
+        });
+        return;
+      }
+      const visitDate = trip.starts_on || new Date().toISOString().slice(0, 10);
+      const kind = place.category === "hotel" ? "hotel" : place.category === "restaurant" ? "restaurant" : "activity";
+      const sourceNote = [
+        "Ajouté depuis Explorer · " + (place.provider || "GlobeLink"),
+        place.source_url ? "Source : " + place.source_url : null,
+      ].filter(Boolean).join("\n");
+      const { error } = await supabase.from("trip_entries").insert({
+        trip_id: trip.id,
+        user_id: user.id,
+        kind,
+        title: place.name,
+        city: place.city || null,
+        country: place.country || null,
+        notes: sourceNote,
+        lat: place.lat,
+        lng: place.lng,
+        price_level: place.budget,
+        rating: place.rating || null,
+        visited_on: visitDate,
+        position: Math.floor(Date.now() % 2_000_000_000),
+      });
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["trip-entries", trip.id] });
+      await qc.invalidateQueries({ queryKey: ["trips", user.id] });
+      setSaved(true);
+      setTripPickerOpen(false);
+      toast.success("Ajouté à " + trip.title, {
+        description: "Le lieu est maintenant dans ton carnet.",
+        action: {
+          label: "Ouvrir le voyage",
+          onClick: () => window.location.assign("/trips/" + trip.id),
+        },
+      });
+    } catch (error: any) {
+      toast.error(error?.message ?? "Impossible d’ajouter ce lieu au voyage.");
+    } finally {
+      setAddingTripId(null);
+    }
+  };
 
   const share = async () => {
     if (!place) return;
@@ -1604,7 +1862,99 @@ function PlaceSheet({
                 <span>{place.hours}</span>
               </div>
 
-              <div className="-mx-1 mt-5 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <Button
+                className="mt-5 h-12 w-full rounded-2xl text-sm font-bold shadow-soft"
+                onClick={() => {
+                  if (!user) {
+                    toast.info("Connecte-toi pour ajouter ce lieu à un voyage.");
+                    const redirect = window.location.pathname + window.location.search;
+                    window.location.assign("/auth?redirect=" + encodeURIComponent(redirect));
+                    return;
+                  }
+                  setTripPickerOpen((open) => !open);
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                {saved ? "Ajouté à mon voyage" : "Ajouter à mon voyage"}
+              </Button>
+
+              {tripPickerOpen && (
+                <div
+                  data-testid="explorer-trip-picker"
+                  className="mt-3 rounded-2xl border border-primary/25 bg-primary/[0.06] p-3 shadow-soft"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold">Ajouter à quel voyage ?</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Choisis le carnet où enregistrer ce lieu.</p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Fermer le choix du voyage"
+                      onClick={() => setTripPickerOpen(false)}
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-card text-muted-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {tripsLoading ? (
+                    <div className="flex min-h-20 items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" /> Chargement de tes voyages…
+                    </div>
+                  ) : tripsError ? (
+                    <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-center">
+                      <p className="text-xs text-muted-foreground">Impossible de charger tes voyages pour le moment.</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 rounded-full"
+                        onClick={() => void refetchTrips()}
+                      >
+                        Réessayer
+                      </Button>
+                    </div>
+                  ) : trips.length ? (
+                    <div className="max-h-[34dvh] space-y-2 overflow-y-auto overscroll-contain pr-0.5">
+                      {trips.map((trip) => (
+                        <button
+                          key={trip.id}
+                          type="button"
+                          disabled={!!addingTripId}
+                          onClick={() => void addToTrip(trip)}
+                          className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 text-left transition active:scale-[0.99] disabled:opacity-60"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{trip.title}</div>
+                            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              {[trip.city, trip.country].filter(Boolean).join(", ") || "Voyage GlobeLink"}
+                              {trip.starts_on
+                                ? " · dès le " + new Date(trip.starts_on + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+                                : ""}
+                            </div>
+                          </div>
+                          {addingTripId === trip.id ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                          ) : (
+                            <Plus className="h-4 w-4 shrink-0 text-primary" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border bg-card/60 p-4 text-center">
+                      <p className="text-sm font-semibold">Tu n’as pas encore de voyage.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Crée ton premier carnet puis reviens ajouter ce lieu.</p>
+                      <Button asChild size="sm" className="mt-3 rounded-full">
+                        <Link to="/trips">Créer mon voyage</Link>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <Button
                   asChild
                   className="h-auto min-w-[82px] shrink-0 flex-col gap-1 rounded-2xl py-2.5"
@@ -1739,6 +2089,43 @@ function PlaceSheet({
           </div>
         )}
       </SheetContent>
+
+      <Dialog open={false} onOpenChange={() => undefined}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-3xl sm:w-full">
+          <DialogHeader>
+            <DialogTitle>Ajouter à quel voyage ?</DialogTitle>
+          </DialogHeader>
+          {trips.length ? (
+            <div className="max-h-[55dvh] space-y-2 overflow-y-auto">
+              {trips.map((trip) => (
+                <button
+                  key={trip.id}
+                  type="button"
+                  disabled={!!addingTripId}
+                  onClick={() => void addToTrip(trip)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/40 disabled:opacity-60"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{trip.title}</div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {[trip.city, trip.country].filter(Boolean).join(", ") || "Voyage GlobeLink"}
+                      {trip.starts_on ? " · dès le " + new Date(trip.starts_on + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
+                    </div>
+                  </div>
+                  {addingTripId === trip.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" /> : <Plus className="h-4 w-4 shrink-0 text-primary" />}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border p-6 text-center">
+              <p className="text-sm text-muted-foreground">Crée d’abord un voyage pour y enregistrer ce lieu.</p>
+              <Button asChild className="mt-4 rounded-full">
+                <Link to="/trips">Créer mon voyage</Link>
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }

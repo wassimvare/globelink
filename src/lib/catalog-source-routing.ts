@@ -47,27 +47,12 @@ const SEARCH_ONLY_PROVIDERS = new Set([
   "tavily",
 ]);
 const OFFICIAL_SOURCE_PROVIDERS: Record<Exclude<CatalogSourceKind, "deal">, Set<string>> = {
-  hotel: new Set(["booking", "booking-com", "booking.com"]),
-  restaurant: new Set([
-    "google-places",
-    "google-maps",
-    "uber-eats",
-    "ubereats",
-    "yelp",
-    "yelp-restaurants",
-    "thefork",
-    "opentable",
-    "tripadvisor-restaurants",
-  ]),
-  activity: new Set([
-    "getyourguide",
-    "get-your-guide",
-    "tripadvisor",
-    "tripadvisor-attractions",
-    "tripadvisor-activities",
-  ]),
+  hotel: new Set(["google-places", "google-maps"]),
+  restaurant: new Set(["google-places", "google-maps"]),
+  activity: new Set(["google-places", "google-maps", "ticketmaster"]),
 };
 const OFFICIAL_IMAGE_HOSTS: Record<string, RegExp> = {
+  ticketmaster: /(^|\.)ticketm\.net$|(^|\.)ticketmaster\.[a-z.]+$/i,
   "booking-com": /(^|\.)bstatic\.com$|(^|\.)booking\.com$/i,
   booking: /(^|\.)bstatic\.com$|(^|\.)booking\.com$/i,
   "booking.com": /(^|\.)bstatic\.com$|(^|\.)booking\.com$/i,
@@ -288,8 +273,8 @@ export function catalogVerificationReason(
   if (!officialProviderForKind(provider, item.kind)) return "source_non_autorisee";
   if (isSearchOnlyCatalogSource(item)) return "lien_de_recherche_non_verifie";
   const googleVerified =
-    provider === "google-places" &&
-    item.kind === "restaurant" &&
+    (provider === "google-places" || provider === "google-maps") &&
+    ["activity", "hotel", "restaurant"].includes(item.kind) &&
     tagBoolean(tags, "verified_google_place") &&
     !!tagText(tags, "google_photo_name");
   const providerVerified =
@@ -437,79 +422,38 @@ export function googlePlacesSearchUrl(
 export function specializedSourceRoute(
   item: Pick<RoutableCatalogItem, "kind" | "title" | "city" | "country">,
 ): CatalogSourceRoute | null {
+  const google = googlePlacesSearchUrl(item);
+
   if (item.kind === "hotel") {
-    const booking = bookingHotelUrl(item);
     return {
-      primary: { provider: "booking-com", label: "Booking.com", url: booking },
-      reservation: { provider: "booking-com", label: "Booking.com", url: booking },
-      secondary: [
-        { provider: "google-places", label: "Google Places", url: googlePlacesSearchUrl(item) },
-        {
-          provider: "tripadvisor-hotels",
-          label: "Tripadvisor hôtels",
-          url: tripadvisorSearchUrl(item, "hotel"),
-        },
-      ],
-      apiEnvVars: [
-        "BOOKING_API_TOKEN",
-        "BOOKING_PARTNER_API_KEY",
-        "BOOKING_AFFILIATE_ID",
-        "BOOKING_API_BASE_URL",
-      ],
-      cacheTtlMs: DAY_MS,
+      primary: { provider: "google-places", label: "Google Places", url: google },
+      reservation: { provider: "google-places", label: "Google Places", url: google },
+      secondary: [],
+      apiEnvVars: ["GOOGLE_PLACES_API_KEY"],
+      cacheTtlMs: 15 * 60_000,
       photoPriority: ["google-places", "official-site", "wikimedia"],
     };
   }
 
   if (item.kind === "restaurant") {
-    const yelp = yelpRestaurantUrl(item);
-    const google = googlePlacesSearchUrl(item);
-    const uberEats = uberEatsRestaurantUrl(item);
     return {
-      primary: { provider: "google-places", label: "Google Maps", url: google },
-      reservation: { provider: "google-places", label: "Google Maps", url: google },
-      secondary: [
-        { provider: "uber-eats", label: "Uber Eats", url: uberEats },
-        {
-          provider: "tripadvisor-restaurants",
-          label: "Tripadvisor restaurants",
-          url: tripadvisorSearchUrl(item, "restaurant"),
-        },
-        { provider: "yelp-restaurants", label: "Yelp Restaurants", url: yelp },
-      ],
-      apiEnvVars: [
-        "GOOGLE_MAPS_API_KEY",
-        "UBER_EATS_PARTNER_API_KEY",
-        "YELP_API_KEY",
-        "TRIPADVISOR_API_KEY",
-        "THEFORK_PARTNER_API_KEY",
-      ],
-      cacheTtlMs: 12 * 60 * 60_000,
+      primary: { provider: "google-places", label: "Google Places", url: google },
+      reservation: { provider: "google-places", label: "Google Places", url: google },
+      secondary: [],
+      apiEnvVars: ["GOOGLE_PLACES_API_KEY"],
+      cacheTtlMs: 15 * 60_000,
       photoPriority: ["google-places", "official-site", "wikimedia"],
     };
   }
 
   if (item.kind === "activity") {
-    const getYourGuide = getYourGuideActivityUrl(item);
     return {
-      primary: { provider: "getyourguide", label: "GetYourGuide", url: getYourGuide },
-      reservation: { provider: "getyourguide", label: "GetYourGuide", url: getYourGuide },
-      secondary: [
-        {
-          provider: "tripadvisor-attractions",
-          label: "Tripadvisor activités",
-          url: tripadvisorSearchUrl(item, "activité attraction"),
-        },
-        { provider: "google-places", label: "Google Places", url: googlePlacesSearchUrl(item) },
-      ],
-      apiEnvVars: [
-        "GETYOURGUIDE_API_KEY",
-        "GETYOURGUIDE_PARTNER_API_KEY",
-        "GETYOURGUIDE_API_BASE_URL",
-        "TRIPADVISOR_API_KEY",
-      ],
-      cacheTtlMs: 6 * 60 * 60_000,
-      photoPriority: ["google-places", "wikimedia", "official-site"],
+      primary: { provider: "google-places", label: "Google Places", url: google },
+      reservation: { provider: "google-places", label: "Google Places", url: google },
+      secondary: [],
+      apiEnvVars: ["GOOGLE_PLACES_API_KEY", "TICKETMASTER_API_KEY"],
+      cacheTtlMs: 15 * 60_000,
+      photoPriority: ["google-places", "official-site", "wikimedia"],
     };
   }
 

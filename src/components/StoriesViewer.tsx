@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Volume2, VolumeX, X } from "lucide-react";
+import { AlertTriangle, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { StoryLikeBar } from "@/components/StoryLikeBar";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { prefetchStoryMedia } from "@/lib/storage";
 
 export type StoryItem = {
@@ -47,8 +51,12 @@ export function StoriesViewer({
   const paused = useRef(false);
   const segmentCompleted = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [deletingStory, setDeletingStory] = useState(false);
 
   const current = stories[index];
+  const ownStory = !!user && current?.userId === user.id;
   const currentMedia = resolvedMedia ?? current?.media ?? null;
   const hasMediaReference =
     !!current?.media || !!current?.mediaPath || !!current?.mediaChunks?.length;
@@ -242,6 +250,27 @@ export function StoriesViewer({
     }
   };
 
+  const deleteCurrentStory = async () => {
+    if (!user || !current || current.userId !== user.id || deletingStory) return;
+    if (!window.confirm("Supprimer définitivement cette story ?")) return;
+    setDeletingStory(true);
+    try {
+      const { error } = await supabase
+        .from("stories")
+        .delete()
+        .eq("id", current.id)
+        .eq("user_id", user.id);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["stories"] });
+      toast.success("Story supprimée");
+      onClose();
+    } catch (error: any) {
+      toast.error(error?.message ?? "Impossible de supprimer cette story.");
+    } finally {
+      setDeletingStory(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[200] bg-black"
@@ -319,6 +348,21 @@ export function StoriesViewer({
             {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
           </button>
         )}
+        {ownStory && (
+          <button
+            type="button"
+            disabled={deletingStory}
+            onClick={(event) => {
+              event.stopPropagation();
+              void deleteCurrentStory();
+            }}
+            aria-label="Supprimer la story"
+            title="Supprimer la story"
+            className={`${isVideo ? "" : "ml-auto"} grid h-9 w-9 place-items-center rounded-full bg-red-500/25 text-white backdrop-blur transition hover:bg-red-500/45 disabled:opacity-50`}
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={(event) => {
@@ -326,7 +370,7 @@ export function StoriesViewer({
             onClose();
           }}
           aria-label="Fermer"
-          className={`${isVideo ? "" : "ml-auto"} grid h-9 w-9 place-items-center rounded-full bg-white/15 backdrop-blur`}
+          className={`${isVideo || ownStory ? "" : "ml-auto"} grid h-9 w-9 place-items-center rounded-full bg-white/15 backdrop-blur`}
         >
           <X className="h-5 w-5" />
         </button>

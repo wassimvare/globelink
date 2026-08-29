@@ -70,7 +70,11 @@ function AuthPage() {
       });
       return;
     }
-    router.navigate({ to: safeInternalPath(redirect), replace: true });
+    router.navigate({
+      to: "/onboarding",
+      search: { next: safeInternalPath(redirect) },
+      replace: true,
+    });
   }, [user, redirect, router]);
 
   const strength = useMemo(() => {
@@ -137,7 +141,7 @@ function AuthPage() {
       password,
       options: {
         data: { username: validUsername.data, full_name: validUsername.data },
-        emailRedirectTo: authRedirect("/"),
+        emailRedirectTo: authRedirect("/onboarding"),
       },
     });
     setBusy(null);
@@ -179,7 +183,9 @@ function AuthPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: authRedirect(safeInternalPath(redirect)),
+        redirectTo: authRedirect(
+          "/onboarding?next=" + encodeURIComponent(safeInternalPath(redirect)),
+        ),
         queryParams: { prompt: "select_account" },
       },
     });

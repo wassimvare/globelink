@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Play,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -265,6 +266,27 @@ function PostDetail() {
     },
   });
 
+  const deletePost = useMutation({
+    mutationFn: async () => {
+      if (!user || post?.user_id !== user.id) throw new Error("Cette publication ne t’appartient pas.");
+      const { error } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["feed"] }),
+        qc.invalidateQueries({ queryKey: ["profile"] }),
+      ]);
+      toast.success("Publication supprimée");
+      navigate({ to: "/" });
+    },
+    onError: (error: any) => toast.error(error?.message ?? "Suppression impossible."),
+  });
+
   if (error) return <div className="p-8">Erreur</div>;
   if (!post) return <div className="p-8">Chargement…</div>;
 
@@ -412,6 +434,20 @@ function PostDetail() {
                 <Link to="/profile/$username" params={{ username }} tabIndex={-1}>
                   <span />
             </Link>
+            {post.user_id === user?.id && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={deletePost.isPending}
+                onClick={() => {
+                  if (window.confirm("Supprimer définitivement cette publication ?")) deletePost.mutate();
+                }}
+                className="mt-3 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" /> Supprimer la publication
+              </Button>
+            )}
             {post.caption && <p className="mt-4 text-sm">{post.caption}</p>}
               </div>
             </div>

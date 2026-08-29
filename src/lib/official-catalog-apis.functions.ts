@@ -1,16 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
-import {
-  bookingHotelUrl,
-  enrichSpecializedCatalogSource,
-  getYourGuideActivityUrl,
-  googlePlacesSearchUrl,
-  tripadvisorSearchUrl,
-} from "./catalog-source-routing";
+import { enrichSpecializedCatalogSource } from "./catalog-source-routing";
 import type { LiveCatalogItem, LiveCatalogKind } from "./live-catalog";
 
 type ProviderKind = Exclude<LiveCatalogKind, "deal">;
 type CatalogJson =
-  string | number | boolean | null | CatalogJson[] | { [key: string]: CatalogJson };
+  | string
+  | number
+  | boolean
+  | null
+  | CatalogJson[]
+  | { [key: string]: CatalogJson };
+
 type OfficialCatalogItem = Omit<LiveCatalogItem, "tags"> & {
   tags: Record<string, CatalogJson> | null;
 };
@@ -35,34 +35,57 @@ type ProviderContext = {
   radiusMeters: number;
 };
 
-type FetchOptions = {
-  method?: "GET" | "POST";
-  headers?: Record<string, string>;
-  body?: unknown;
-  timeoutMs?: number;
+type GooglePhotoAttribution = { displayName?: string; uri?: string };
+type GooglePhoto = { name?: string; authorAttributions?: GooglePhotoAttribution[] };
+type GooglePlace = {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
+  primaryType?: string;
+  types?: string[];
+  photos?: GooglePhoto[];
+  rating?: number;
+  userRatingCount?: number;
+  regularOpeningHours?: { weekdayDescriptions?: string[] };
+  websiteUri?: string;
+  googleMapsUri?: string;
 };
 
-export const OFFICIAL_CATALOG_API_VERSION = "official-catalog-apis-v1";
+type TicketmasterImage = {
+  url?: string;
+  width?: number;
+  height?: number;
+  fallback?: boolean;
+};
+type TicketmasterVenue = {
+  name?: string;
+  city?: { name?: string };
+  country?: { name?: string; countryCode?: string };
+  location?: { latitude?: string; longitude?: string };
+};
+type TicketmasterEvent = {
+  id?: string;
+  name?: string;
+  url?: string;
+  info?: string;
+  pleaseNote?: string;
+  images?: TicketmasterImage[];
+  dates?: { start?: { dateTime?: string; localDate?: string; localTime?: string } };
+  priceRanges?: Array<{ min?: number; max?: number; currency?: string }>;
+  classifications?: Array<{ segment?: { name?: string }; genre?: { name?: string } }>;
+  _embedded?: { venues?: TicketmasterVenue[] };
+};
 
-const PROVIDER_CACHE_TTL = 12 * 60 * 60_000;
-const DEFAULT_RADIUS_METERS = 8_000;
+export const OFFICIAL_CATALOG_API_VERSION = "official-catalog-apis-v2-google-ticketmaster";
+
+const PROVIDER_CACHE_TTL = 15 * 60_000;
+const DEFAULT_RADIUS_METERS = 12_000;
 const cache = new Map<string, { expires: number; rows: OfficialCatalogItem[] }>();
 
 export const OFFICIAL_CATALOG_API_ENV_VARS = {
-  booking: [
-    "BOOKING_API_TOKEN",
-    "BOOKING_PARTNER_API_KEY",
-    "BOOKING_AFFILIATE_ID",
-    "BOOKING_API_BASE_URL",
-    "BOOKING_ACCOMMODATIONS_SEARCH_ENDPOINT",
-  ],
-  tripadvisor: ["TRIPADVISOR_API_KEY", "TRIPADVISOR_API_BASE_URL"],
-  getyourguide: [
-    "GETYOURGUIDE_API_KEY",
-    "GETYOURGUIDE_PARTNER_API_KEY",
-    "GETYOURGUIDE_API_BASE_URL",
-  ],
-  restaurants: ["YELP_API_KEY", "YELP_API_BASE_URL"],
+  google: ["GOOGLE_PLACES_API_KEY", "GLOBELINK_GOOGLE_PLACES_API_KEY", "GOOGLE_MAPS_API_KEY"],
+  ticketmaster: ["TICKETMASTER_API_KEY"],
 };
 
 export type OfficialCatalogApiProviderStatus = {
@@ -81,18 +104,24 @@ export type OfficialCatalogApiStatus = {
 };
 
 const OFFICIAL_CATALOG_API_REQUIRED_ENV_VARS = {
-  booking: ["BOOKING_API_TOKEN", "BOOKING_PARTNER_API_KEY"],
-  tripadvisor: ["TRIPADVISOR_API_KEY"],
-  getyourguide: ["GETYOURGUIDE_API_KEY", "GETYOURGUIDE_PARTNER_API_KEY"],
-  restaurants: ["YELP_API_KEY"],
+  google: ["GOOGLE_PLACES_API_KEY", "GLOBELINK_GOOGLE_PLACES_API_KEY", "GOOGLE_MAPS_API_KEY"],
+  ticketmaster: ["TICKETMASTER_API_KEY"],
 } satisfies Record<keyof typeof OFFICIAL_CATALOG_API_ENV_VARS, string[]>;
 
 const OFFICIAL_CATALOG_API_PROVIDER_LABELS = {
-  booking: "Booking.com",
-  tripadvisor: "Tripadvisor",
-  getyourguide: "GetYourGuide",
-  restaurants: "Yelp Restaurants",
+  google: "Google Places",
+  ticketmaster: "Ticketmaster Discovery",
 } satisfies Record<keyof typeof OFFICIAL_CATALOG_API_ENV_VARS, string>;
+
+const GOOGLE_SEARCHES: Array<{
+  kind: ProviderKind;
+  queryLabel: string;
+  category: string;
+}> = [
+  { kind: "hotel", queryLabel: "hôtels", category: "hotel" },
+  { kind: "restaurant", queryLabel: "restaurants", category: "restaurant" },
+  { kind: "activity", queryLabel: "attractions touristiques activités", category: "activite" },
+];
 
 function clean(value: unknown, max = 240) {
   return String(value ?? "")
@@ -143,86 +172,25 @@ export function getOfficialCatalogApiStatusSnapshot(): OfficialCatalogApiStatus 
   const providers = (
     Object.keys(OFFICIAL_CATALOG_API_ENV_VARS) as Array<keyof typeof OFFICIAL_CATALOG_API_ENV_VARS>
   ).map((provider) => {
-    const requiredEnvVars = OFFICIAL_CATALOG_API_REQUIRED_ENV_VARS[provider];
-    const optionalEnvVars = OFFICIAL_CATALOG_API_ENV_VARS[provider].filter(
-      (name) => !requiredEnvVars.includes(name),
-    );
+    const aliases = OFFICIAL_CATALOG_API_REQUIRED_ENV_VARS[provider];
+    const configured = hasEnv(...aliases);
     return {
       provider,
       label: OFFICIAL_CATALOG_API_PROVIDER_LABELS[provider],
-      configured: hasEnv(...requiredEnvVars),
-      requiredEnvVars,
-      optionalEnvVars,
+      configured,
+      requiredEnvVars: aliases,
+      optionalEnvVars: [],
     };
   });
+
   return {
     version: OFFICIAL_CATALOG_API_VERSION,
     anyConfigured: providers.some((provider) => provider.configured),
     providers,
     missingRequiredEnvVars: providers.flatMap((provider) =>
-      provider.configured ? [] : provider.requiredEnvVars,
+      provider.configured ? [] : [provider.requiredEnvVars[0]],
     ),
   };
-}
-
-function envBase(name: string, fallback: string) {
-  return env(name).replace(/\/+$/, "") || fallback;
-}
-
-function asArray(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    for (const key of ["data", "results", "items", "businesses", "tours", "accommodations"]) {
-      if (Array.isArray(record[key])) return record[key] as unknown[];
-    }
-  }
-  return [];
-}
-
-function nested(value: unknown, path: string): unknown {
-  return path.split(".").reduce<unknown>((current, key) => {
-    if (!current || typeof current !== "object") return undefined;
-    return (current as Record<string, unknown>)[key];
-  }, value);
-}
-
-function firstString(item: unknown, paths: string[]) {
-  for (const path of paths) {
-    const value = nested(item, path);
-    if (typeof value === "string" && value.trim()) return clean(value, 500);
-    if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  }
-  return "";
-}
-
-function firstNumber(item: unknown, paths: string[]) {
-  for (const path of paths) {
-    const value = numberOrNull(nested(item, path));
-    if (value != null) return value;
-  }
-  return null;
-}
-
-function firstHttps(item: unknown, paths: string[]) {
-  for (const path of paths) {
-    const value = nested(item, path);
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        const direct = safeHttps(entry);
-        if (direct) return direct;
-        const nestedUrl = safeHttps(nested(entry, "url") ?? nested(entry, "large.url"));
-        if (nestedUrl) return nestedUrl;
-      }
-    }
-    const url = safeHttps(value);
-    if (url) return url;
-  }
-  return null;
-}
-
-function areaText(context: ProviderContext) {
-  return [context.city, context.country].filter(Boolean).join(", ");
 }
 
 function validateInput(raw: Partial<OfficialCatalogApiInput>): OfficialCatalogApiInput {
@@ -241,9 +209,10 @@ function validateInput(raw: Partial<OfficialCatalogApiInput>): OfficialCatalogAp
     throw new Error("Latitude invalide");
   if (longitude != null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180))
     throw new Error("Longitude invalide");
+
   return {
     kinds,
-    limit: Math.min(240, Math.max(1, Math.trunc(Number(raw.limit ?? 80)))),
+    limit: Math.min(120, Math.max(1, Math.trunc(Number(raw.limit ?? 60)))),
     city: clean(raw.city, 100) || null,
     country: clean(raw.country, 100) || null,
     latitude,
@@ -255,7 +224,7 @@ function validateInput(raw: Partial<OfficialCatalogApiInput>): OfficialCatalogAp
 function providerContext(input: OfficialCatalogApiInput): ProviderContext {
   return {
     input,
-    limit: Math.min(240, Math.max(1, Math.trunc(Number(input.limit ?? 80)))),
+    limit: Math.min(120, Math.max(1, Math.trunc(Number(input.limit ?? 60)))),
     city: clean(input.city, 100) || null,
     country: clean(input.country, 100) || null,
     latitude: input.latitude ?? null,
@@ -267,7 +236,7 @@ function providerContext(input: OfficialCatalogApiInput): ProviderContext {
 function cacheKey(input: OfficialCatalogApiInput) {
   return JSON.stringify({
     kinds: [...(input.kinds ?? ["activity", "hotel", "restaurant"])].sort(),
-    limit: input.limit ?? 80,
+    limit: input.limit ?? 60,
     city: clean(input.city, 100).toLowerCase(),
     country: clean(input.country, 100).toLowerCase(),
     latitude: input.latitude == null ? null : Number(input.latitude).toFixed(3),
@@ -276,9 +245,13 @@ function cacheKey(input: OfficialCatalogApiInput) {
   });
 }
 
-async function fetchJson(url: string, options: FetchOptions = {}) {
+async function fetchJson(
+  url: string,
+  options: { method?: "GET" | "POST"; headers?: Record<string, string>; body?: unknown } = {},
+  timeoutMs = 7_000,
+) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 7_500);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       method: options.method ?? "GET",
@@ -313,6 +286,12 @@ function providerTags(
     source_is_search_only: false,
     source_strategy: OFFICIAL_CATALOG_API_VERSION,
     source_verification_status: "source_officielle_api",
+    primary_source_provider: provider,
+    primary_source_label: label,
+    primary_source_url: sourceUrl,
+    reservation_source_provider: provider,
+    reservation_source_label: label,
+    reservation_source_url: sourceUrl,
   };
   for (const [key, value] of Object.entries(extra)) {
     if (value !== undefined) tags[key] = value;
@@ -332,297 +311,236 @@ function officialItem(
   });
 }
 
-async function fetchBookingHotels(context: ProviderContext): Promise<OfficialCatalogItem[]> {
-  const token = env("BOOKING_API_TOKEN", "BOOKING_PARTNER_API_KEY");
-  if (!token) return [];
-  const affiliateId = env("BOOKING_AFFILIATE_ID");
-  const base = envBase("BOOKING_API_BASE_URL", "https://demandapi.booking.com/3.1");
-  const endpoint = env("BOOKING_ACCOMMODATIONS_SEARCH_ENDPOINT") || `${base}/accommodations/search`;
+function wants(input: OfficialCatalogApiInput, kind: ProviderKind) {
+  return !input.kinds?.length || input.kinds.includes(kind);
+}
+
+function areaText(context: ProviderContext) {
+  return [context.city, context.country].filter(Boolean).join(", ");
+}
+
+function googleKey() {
+  return env("GOOGLE_PLACES_API_KEY", "GLOBELINK_GOOGLE_PLACES_API_KEY", "GOOGLE_MAPS_API_KEY");
+}
+
+function mapGooglePlace(
+  place: GooglePlace,
+  context: ProviderContext,
+  kind: ProviderKind,
+  fallbackCategory: string,
+): OfficialCatalogItem | null {
+  const externalId = clean(place.id, 180);
+  const title = clean(place.displayName?.text, 180);
+  const latitude = numberOrNull(place.location?.latitude);
+  const longitude = numberOrNull(place.location?.longitude);
+  if (!externalId || !title || latitude == null || longitude == null) return null;
+
+  const firstPhoto = (place.photos ?? []).find((photo) => !!clean(photo?.name, 500));
+  const photoName = clean(firstPhoto?.name, 500) || null;
+  // GlobeLink intentionally does not invent a fallback image. A Google place is
+  // only published by this strict connector when Google provides a photo reference.
+  if (!photoName) return null;
+
+  const photoAttributions = (firstPhoto?.authorAttributions ?? [])
+    .map((item) => ({ displayName: clean(item.displayName, 120), uri: safeHttps(item.uri) }))
+    .filter((item) => !!item.displayName)
+    .slice(0, 4);
+  const website = safeHttps(place.websiteUri);
+  const sourceUrl =
+    safeHttps(place.googleMapsUri) ||
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      [title, context.city, context.country].filter(Boolean).join(", "),
+    )}&query_place_id=${encodeURIComponent(externalId)}`;
+
+  return officialItem({
+    provider: "google-places",
+    external_id: externalId,
+    kind,
+    slug: `${slugify(title)}-google-${slugify(externalId).slice(-24)}`,
+    title,
+    description: null,
+    category: clean(place.primaryType, 80) || fallbackCategory,
+    city: context.city,
+    country: context.country,
+    country_code: null,
+    latitude,
+    longitude,
+    image_url: null,
+    source_url: sourceUrl,
+    booking_url: website ?? sourceUrl,
+    price_amount: null,
+    currency: null,
+    price_text: null,
+    rating: numberOrNull(place.rating),
+    reviews_count: Math.max(0, Math.trunc(Number(place.userRatingCount) || 0)),
+    opening_hours: Array.isArray(place.regularOpeningHours?.weekdayDescriptions)
+      ? place.regularOpeningHours?.weekdayDescriptions?.join(" · ") || null
+      : null,
+    tags: providerTags("google-places", "Google Places", sourceUrl, {
+      google_place_id: externalId,
+      google_photo_name: photoName,
+      google_photo_attributions: photoAttributions as unknown as CatalogJson,
+      address: clean(place.formattedAddress, 320) || null,
+      website,
+      primary_type: clean(place.primaryType, 80) || null,
+      types: Array.isArray(place.types) ? place.types.slice(0, 20) : [],
+      verified_google_place: true,
+      official_image_provider: "google-places",
+      source_api_provider: "google-places-api-new",
+    }),
+  });
+}
+
+async function fetchGoogleKind(
+  context: ProviderContext,
+  search: (typeof GOOGLE_SEARCHES)[number],
+): Promise<OfficialCatalogItem[]> {
+  const key = googleKey();
+  if (!key) return [];
+  const area = areaText(context);
+  if (!area && (context.latitude == null || context.longitude == null)) return [];
+
   const body: Record<string, unknown> = {
-    booker: { country: "fr", platform: "desktop" },
-    currency: "EUR",
-    language: "fr",
-    guests: { number_of_adults: 2, number_of_rooms: 1 },
-    rows: Math.min(50, context.limit),
-    extras: ["extra_charges", "photos"],
+    textQuery: [search.queryLabel, area].filter(Boolean).join(" à "),
+    languageCode: "fr",
+    pageSize: Math.min(20, Math.max(6, Math.ceil(context.limit / 3))),
   };
   if (context.latitude != null && context.longitude != null) {
-    body.coordinates = {
-      latitude: context.latitude,
-      longitude: context.longitude,
-      radius: Math.max(1, Math.round(context.radiusMeters / 1000)),
+    body.locationBias = {
+      circle: {
+        center: { latitude: context.latitude, longitude: context.longitude },
+        radius: Math.min(50_000, Math.max(1_000, context.radiusMeters)),
+      },
     };
-  } else if (context.city || context.country) {
-    body.query = areaText(context);
-  } else {
-    return [];
   }
 
-  const json = await fetchJson(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "X-Booking-API-Key": token,
-      ...(affiliateId ? { "X-Affiliate-Id": affiliateId } : {}),
+  const json = await fetchJson(
+    "https://places.googleapis.com/v1/places:searchText",
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": [
+          "places.id",
+          "places.displayName",
+          "places.formattedAddress",
+          "places.location",
+          "places.primaryType",
+          "places.types",
+          "places.photos",
+          "places.rating",
+          "places.userRatingCount",
+          "places.regularOpeningHours",
+          "places.websiteUri",
+          "places.googleMapsUri",
+        ].join(","),
+      },
+      body,
     },
-    body,
-  });
+    6_500,
+  );
 
-  return asArray(json)
-    .slice(0, context.limit)
-    .flatMap((item) => {
-      const externalId = firstString(item, ["id", "hotel_id", "accommodation_id"]);
-      const title = firstString(item, ["name", "hotel_name", "accommodation.name"]);
-      if (!externalId || !title) return [];
-      const sourceUrl =
-        firstHttps(item, ["url", "booking_url", "deep_link", "page_url"]) ||
-        bookingHotelUrl({ title, city: context.city, country: context.country });
-      const imageUrl = firstHttps(item, [
-        "main_photo_url",
-        "photo_url",
-        "image_url",
-        "photos",
-        "photos.0.url",
-      ]);
-      if (!imageUrl) return [];
-      return [
-        officialItem({
-          provider: "booking-com",
-          external_id: externalId,
-          kind: "hotel",
-          slug: `${slugify(title)}-booking-${slugify(externalId).slice(-24)}`,
-          title,
-          description: firstString(item, ["description", "summary"]) || null,
-          category: "hotel",
-          city: context.city,
-          country: context.country,
-          country_code: firstString(item, ["country_code", "address.country_code"]) || null,
-          latitude: firstNumber(item, ["latitude", "location.latitude", "coordinates.latitude"]),
-          longitude: firstNumber(item, [
-            "longitude",
-            "location.longitude",
-            "coordinates.longitude",
-          ]),
-          image_url: imageUrl,
-          source_url: sourceUrl,
-          booking_url: sourceUrl,
-          price_amount: firstNumber(item, ["price.amount", "price.total", "min_total_price"]),
-          currency: firstString(item, ["price.currency", "currency"]) || null,
-          price_text: null,
-          rating: firstNumber(item, ["review_score", "rating", "score"]),
-          reviews_count: Math.max(0, Math.trunc(firstNumber(item, ["review_count"]) ?? 0)),
-          opening_hours: null,
-          tags: providerTags("booking-com", "Booking.com", sourceUrl, {
-            official_image_url: imageUrl,
-            source_api_provider: "booking-demand-api",
-          }),
-        }),
-      ];
-    });
+  const places = Array.isArray(json.places) ? (json.places as GooglePlace[]) : [];
+  return places
+    .map((place) => mapGooglePlace(place, context, search.kind, search.category))
+    .filter((item): item is OfficialCatalogItem => !!item)
+    .slice(0, Math.min(context.limit, 20));
 }
 
-async function tripadvisorPhoto(apiKey: string, locationId: string) {
-  const base = envBase("TRIPADVISOR_API_BASE_URL", "https://api.content.tripadvisor.com/api/v1");
-  const url = new URL(`${base}/location/${encodeURIComponent(locationId)}/photos`);
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("language", "fr");
-  const json = await fetchJson(url.toString(), { timeoutMs: 4_500 });
-  return firstHttps(json, ["data.0.images.large.url", "data.0.images.original.url", "data.0.url"]);
+function bestTicketmasterImage(images: TicketmasterImage[] | undefined) {
+  return (images ?? [])
+    .filter((image) => !image.fallback && !!safeHttps(image.url))
+    .sort((a, b) => (Number(b.width) || 0) * (Number(b.height) || 0) - (Number(a.width) || 0) * (Number(a.height) || 0))
+    .map((image) => safeHttps(image.url))
+    .find(Boolean) ?? null;
 }
 
-async function fetchTripadvisorActivities(
-  context: ProviderContext,
-): Promise<OfficialCatalogItem[]> {
-  const apiKey = env("TRIPADVISOR_API_KEY");
-  if (!apiKey || (!context.city && !context.country && context.latitude == null)) return [];
-  const base = envBase("TRIPADVISOR_API_BASE_URL", "https://api.content.tripadvisor.com/api/v1");
-  const url = new URL(`${base}/location/search`);
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("language", "fr");
-  url.searchParams.set("category", "attractions");
-  url.searchParams.set("searchQuery", areaText(context) || "attractions");
+async function fetchTicketmasterEvents(context: ProviderContext): Promise<OfficialCatalogItem[]> {
+  const apiKey = env("TICKETMASTER_API_KEY");
+  if (!apiKey || !wants(context.input, "activity")) return [];
+  if (!context.city && context.latitude == null) return [];
+
+  const url = new URL("https://app.ticketmaster.com/discovery/v2/events.json");
+  url.searchParams.set("apikey", apiKey);
+  url.searchParams.set("locale", "fr-fr");
+  url.searchParams.set("size", String(Math.min(30, Math.max(8, Math.ceil(context.limit / 2)))));
+  url.searchParams.set("sort", "date,asc");
   if (context.latitude != null && context.longitude != null) {
-    url.searchParams.set("latLong", `${context.latitude},${context.longitude}`);
+    url.searchParams.set("latlong", `${context.latitude},${context.longitude}`);
+    url.searchParams.set("radius", String(Math.max(1, Math.round(context.radiusMeters / 1_000))));
+    url.searchParams.set("unit", "km");
+  } else if (context.city) {
+    url.searchParams.set("city", context.city);
   }
-  const json = await fetchJson(url.toString());
-  const rows: OfficialCatalogItem[] = [];
-  for (const item of asArray(json).slice(0, Math.min(context.limit, 16))) {
-    const externalId = firstString(item, ["location_id", "id"]);
-    const title = firstString(item, ["name", "title"]);
-    if (!externalId || !title) continue;
-    const sourceUrl =
-      firstHttps(item, ["web_url", "url"]) ||
-      tripadvisorSearchUrl({ title, city: context.city, country: context.country }, "activité");
-    const imageUrl = await tripadvisorPhoto(apiKey, externalId).catch(() => null);
-    if (!imageUrl) continue;
-    rows.push(
+  if (context.country) url.searchParams.set("keyword", context.country);
+
+  const json = await fetchJson(url.toString(), {}, 6_500);
+  const embedded = json._embedded;
+  const events =
+    embedded && typeof embedded === "object" && Array.isArray((embedded as Record<string, unknown>).events)
+      ? ((embedded as Record<string, unknown>).events as TicketmasterEvent[])
+      : [];
+
+  return events.slice(0, context.limit).flatMap((event) => {
+    const externalId = clean(event.id, 180);
+    const title = clean(event.name, 180);
+    const sourceUrl = safeHttps(event.url);
+    const imageUrl = bestTicketmasterImage(event.images);
+    const venue = event._embedded?.venues?.[0];
+    const latitude = numberOrNull(venue?.location?.latitude);
+    const longitude = numberOrNull(venue?.location?.longitude);
+    if (!externalId || !title || !sourceUrl || !imageUrl || latitude == null || longitude == null)
+      return [];
+
+    const price = event.priceRanges?.[0];
+    const startDateTime =
+      clean(event.dates?.start?.dateTime, 80) ||
+      [clean(event.dates?.start?.localDate, 20), clean(event.dates?.start?.localTime, 20)]
+        .filter(Boolean)
+        .join("T") ||
+      null;
+    const venueName = clean(venue?.name, 160) || null;
+    const city = clean(venue?.city?.name, 100) || context.city;
+    const country = clean(venue?.country?.name, 100) || context.country;
+
+    return [
       officialItem({
-        provider: "tripadvisor-attractions",
+        provider: "ticketmaster",
         external_id: externalId,
         kind: "activity",
-        slug: `${slugify(title)}-tripadvisor-${slugify(externalId).slice(-24)}`,
+        slug: `${slugify(title)}-ticketmaster-${slugify(externalId).slice(-24)}`,
         title,
-        description: firstString(item, ["description", "ranking_data.ranking_string"]) || null,
-        category: "activite",
-        city: context.city || firstString(item, ["address_obj.city"]) || null,
-        country: context.country || firstString(item, ["address_obj.country"]) || null,
-        country_code: null,
-        latitude: firstNumber(item, ["latitude"]),
-        longitude: firstNumber(item, ["longitude"]),
+        description: clean(event.info || event.pleaseNote, 1_200) || null,
+        category: "event",
+        city,
+        country,
+        country_code: clean(venue?.country?.countryCode, 8) || null,
+        latitude,
+        longitude,
         image_url: imageUrl,
         source_url: sourceUrl,
         booking_url: sourceUrl,
-        price_amount: null,
-        currency: null,
-        price_text: null,
-        rating: firstNumber(item, ["rating"]),
-        reviews_count: Math.max(0, Math.trunc(firstNumber(item, ["num_reviews"]) ?? 0)),
+        price_amount: numberOrNull(price?.min),
+        currency: clean(price?.currency, 12) || null,
+        price_text:
+          price?.min != null
+            ? `${Number(price.min).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${clean(price.currency, 12)}`.trim()
+            : null,
+        rating: null,
+        reviews_count: 0,
         opening_hours: null,
-        tags: providerTags("tripadvisor-attractions", "Tripadvisor", sourceUrl, {
+        tags: providerTags("ticketmaster", "Ticketmaster", sourceUrl, {
           official_image_url: imageUrl,
-          source_api_provider: "tripadvisor-content-api",
+          source_api_provider: "ticketmaster-discovery-api-v2",
+          event_subtype: "ticketmaster-event",
+          event_start_date_time: startDateTime,
+          venue_name: venueName,
+          segment: clean(event.classifications?.[0]?.segment?.name, 80) || null,
+          genre: clean(event.classifications?.[0]?.genre?.name, 80) || null,
         }),
       }),
-    );
-  }
-  return rows;
-}
-
-async function fetchGetYourGuideActivities(
-  context: ProviderContext,
-): Promise<OfficialCatalogItem[]> {
-  const apiKey = env("GETYOURGUIDE_API_KEY", "GETYOURGUIDE_PARTNER_API_KEY");
-  if (!apiKey || (!context.city && !context.country && context.latitude == null)) return [];
-  const base = envBase("GETYOURGUIDE_API_BASE_URL", "https://api.getyourguide.com/1");
-  const url = new URL(`${base}/tours`);
-  url.searchParams.set("q", areaText(context) || "activity");
-  url.searchParams.set("cnt_language", "fr");
-  url.searchParams.set("currency", "EUR");
-  url.searchParams.set("limit", String(Math.min(context.limit, 50)));
-  if (context.latitude != null && context.longitude != null) {
-    url.searchParams.set("coordinates", `${context.latitude},${context.longitude}`);
-    url.searchParams.set("radius", String(Math.max(1, Math.round(context.radiusMeters / 1000))));
-  }
-  const json = await fetchJson(url.toString(), {
-    headers: { "X-ACCESS-TOKEN": apiKey, Authorization: `Bearer ${apiKey}` },
+    ];
   });
-  return asArray(json)
-    .slice(0, context.limit)
-    .flatMap((item) => {
-      const externalId = firstString(item, ["tour_id", "id", "activity_id"]);
-      const title = firstString(item, ["title", "name"]);
-      if (!externalId || !title) return [];
-      const sourceUrl =
-        firstHttps(item, ["url", "deeplink", "booking_url", "abstract_link"]) ||
-        getYourGuideActivityUrl({ title, city: context.city, country: context.country });
-      const imageUrl = firstHttps(item, [
-        "pictures",
-        "images",
-        "image.url",
-        "pictures.0.url",
-        "images.0.url",
-      ]);
-      if (!imageUrl) return [];
-      return [
-        officialItem({
-          provider: "getyourguide",
-          external_id: externalId,
-          kind: "activity",
-          slug: `${slugify(title)}-getyourguide-${slugify(externalId).slice(-24)}`,
-          title,
-          description: firstString(item, ["abstract", "description", "teaser_text"]) || null,
-          category: "activite",
-          city: context.city,
-          country: context.country,
-          country_code: null,
-          latitude: firstNumber(item, ["coordinates.lat", "latitude", "location.latitude"]),
-          longitude: firstNumber(item, ["coordinates.long", "longitude", "location.longitude"]),
-          image_url: imageUrl,
-          source_url: sourceUrl,
-          booking_url: sourceUrl,
-          price_amount: firstNumber(item, ["price.values.amount", "price.amount"]),
-          currency: firstString(item, ["price.currency", "currency"]) || null,
-          price_text: firstString(item, ["price.formatted", "price.text"]) || null,
-          rating: firstNumber(item, ["rating", "reviews.average_rating"]),
-          reviews_count: Math.max(0, Math.trunc(firstNumber(item, ["reviews.count"]) ?? 0)),
-          opening_hours: null,
-          tags: providerTags("getyourguide", "GetYourGuide", sourceUrl, {
-            official_image_url: imageUrl,
-            source_api_provider: "getyourguide-partner-api",
-          }),
-        }),
-      ];
-    });
-}
-
-async function fetchYelpRestaurants(context: ProviderContext): Promise<OfficialCatalogItem[]> {
-  const apiKey = env("YELP_API_KEY");
-  if (!apiKey || (!context.city && !context.country && context.latitude == null)) return [];
-  const base = envBase("YELP_API_BASE_URL", "https://api.yelp.com/v3");
-  const url = new URL(`${base}/businesses/search`);
-  url.searchParams.set("categories", "restaurants");
-  url.searchParams.set("locale", "fr_FR");
-  url.searchParams.set("limit", String(Math.min(context.limit, 50)));
-  url.searchParams.set("radius", String(Math.min(40_000, context.radiusMeters)));
-  if (context.latitude != null && context.longitude != null) {
-    url.searchParams.set("latitude", String(context.latitude));
-    url.searchParams.set("longitude", String(context.longitude));
-  } else {
-    url.searchParams.set("location", areaText(context));
-  }
-  const json = await fetchJson(url.toString(), {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-  return asArray(json)
-    .slice(0, context.limit)
-    .flatMap((item) => {
-      const externalId = firstString(item, ["id", "alias"]);
-      const title = firstString(item, ["name"]);
-      const sourceUrl =
-        firstHttps(item, ["url"]) ||
-        googlePlacesSearchUrl({
-          title,
-          city: context.city,
-          country: context.country,
-        });
-      if (!externalId || !title || !sourceUrl) return [];
-      const imageUrl = firstHttps(item, ["image_url"]);
-      if (!imageUrl) return [];
-      return [
-        officialItem({
-          provider: "yelp-restaurants",
-          external_id: externalId,
-          kind: "restaurant",
-          slug: `${slugify(title)}-yelp-${slugify(externalId).slice(-24)}`,
-          title,
-          description: null,
-          category: "restaurant",
-          city: context.city || firstString(item, ["location.city"]) || null,
-          country: context.country || firstString(item, ["location.country"]) || null,
-          country_code: firstString(item, ["location.country"]) || null,
-          latitude: firstNumber(item, ["coordinates.latitude"]),
-          longitude: firstNumber(item, ["coordinates.longitude"]),
-          image_url: imageUrl,
-          source_url: sourceUrl,
-          booking_url: sourceUrl,
-          price_amount: null,
-          currency: null,
-          price_text: firstString(item, ["price"]) || null,
-          rating: firstNumber(item, ["rating"]),
-          reviews_count: Math.max(0, Math.trunc(firstNumber(item, ["review_count"]) ?? 0)),
-          opening_hours: null,
-          tags: providerTags("yelp-restaurants", "Yelp", sourceUrl, {
-            official_image_url: imageUrl,
-            source_api_provider: "yelp-fusion-api",
-            cuisine: firstString(item, ["categories.0.title"]) || null,
-          }),
-        }),
-      ];
-    });
-}
-
-function wants(input: OfficialCatalogApiInput, kind: ProviderKind) {
-  return !input.kinds?.length || input.kinds.includes(kind);
 }
 
 export async function fetchOfficialCatalogRows(
@@ -630,15 +548,22 @@ export async function fetchOfficialCatalogRows(
 ): Promise<OfficialCatalogItem[]> {
   const context = providerContext(input);
   if (!context.city && !context.country && context.latitude == null) return [];
+
   const providers: Array<Promise<OfficialCatalogItem[]>> = [];
-  if (wants(input, "hotel")) providers.push(fetchBookingHotels(context));
-  if (wants(input, "activity")) {
-    providers.push(fetchTripadvisorActivities(context));
-    providers.push(fetchGetYourGuideActivities(context));
+  for (const search of GOOGLE_SEARCHES) {
+    if (wants(input, search.kind)) providers.push(fetchGoogleKind(context, search));
   }
-  if (wants(input, "restaurant")) providers.push(fetchYelpRestaurants(context));
+  if (wants(input, "activity")) providers.push(fetchTicketmasterEvents(context));
+
   const settled = await Promise.allSettled(providers);
-  return settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  const rows = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  return rows.filter(
+    (item, index, all) =>
+      all.findIndex(
+        (candidate) =>
+          candidate.provider === item.provider && candidate.external_id === item.external_id,
+      ) === index,
+  );
 }
 
 export const fetchOfficialProviderCatalog = createServerFn({ method: "GET" })

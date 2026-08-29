@@ -18,6 +18,10 @@ import { AppHeader } from "@/components/AppHeader";
 import { CatalogImage } from "@/components/CatalogImage";
 import { DestinationImage } from "@/components/DestinationImage";
 import { Button } from "@/components/ui/button";
+import { AddToTripButton } from "@/components/AddToTripButton";
+import { AIContextActions } from "@/components/AIContextActions";
+// AI_CONTEXT_LAYER_V1_DESTINATION
+// ADD_TO_TRIP_EVERYWHERE_V1_DESTINATION
 import { supabase } from "@/integrations/supabase/client";
 import { COUNTRY_INFO } from "@/lib/country-info";
 import { verifiedDestinationCover } from "@/lib/destination-cover";
@@ -159,31 +163,39 @@ function DestinationDetail({ slug }: { slug: string }) {
   // Fast first paint: whichever trusted source answers first wins. Cached map rows are
   // shown immediately through placeholderData while Google/DB/OSM refresh in parallel.
   const fastCatalogQuery = useQuery({
-    queryKey: ["destination-fast-catalog-v5", slug, catalogCity, country, latitude, longitude],
+    queryKey: ["destination-fast-catalog-v6", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity,
     placeholderData: cachedCatalog,
     queryFn: async () => {
       if (!bounds || !catalogCity || latitude == null || longitude == null)
         return [] as LiveCatalogItem[];
-      const candidates: Promise<LiveCatalogItem[]>[] = [
-        requireRows(
+      // The free/public catalog is always queried and merged. A partial response from
+      // Google, Booking or the database must never suppress OpenStreetMap/Wikidata
+      // hotels, restaurants or activities.
+      const requests: Promise<LiveCatalogItem[]>[] = [
+        (
+          searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<
+            LiveCatalogItem[]
+          >
+        ).catch(() => []),
+        fetchPersistedViewportCatalog(bounds).catch(() => []),
+        (
           fetchGoogleDestinationCatalog({
             data: { city: catalogCity, country, latitude, longitude },
-          }) as Promise<LiveCatalogItem[]>,
-          "Google Places",
-        ),
-        requireRows(fetchPersistedViewportCatalog(bounds), "catalogue GlobeLink"),
+          }) as Promise<LiveCatalogItem[]>
+        ).catch(() => []),
       ];
       if (typeof window !== "undefined") {
-        candidates.push(
-          requireRows(
-            fetchBrowserViewportCatalog(bounds, { mode: "fast" }) as Promise<LiveCatalogItem[]>,
-            "OpenStreetMap rapide",
-          ),
+        requests.push(
+          (
+            fetchBrowserViewportCatalog(bounds, { mode: "fast" }) as Promise<LiveCatalogItem[]>
+          ).catch(() => []),
         );
       }
-      const winner = await Promise.any(candidates).catch(() => [] as LiveCatalogItem[]);
-      const rows = normalizeCatalog(winner);
+      const settled = await Promise.allSettled(requests);
+      const rows = normalizeCatalog(
+        settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+      );
       if (rows.length) saveCachedViewportCatalog(bounds, rows);
       return rows;
     },
@@ -194,7 +206,7 @@ function DestinationDetail({ slug }: { slug: string }) {
   // Enrich in the background without holding the destination page hostage. This
   // can add missing categories after the first cards are already visible.
   const fullCatalogQuery = useQuery({
-    queryKey: ["destination-full-catalog-v5", slug, catalogCity, country, latitude, longitude],
+    queryKey: ["destination-full-catalog-v6", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity && !fastCatalogQuery.isLoading,
     queryFn: async () => {
       if (!bounds || !catalogCity || latitude == null || longitude == null)
@@ -364,6 +376,29 @@ function DestinationDetail({ slug }: { slug: string }) {
                   Explorer la carte
                 </Link>
               </Button>
+              <AddToTripButton
+                item={{
+                  title,
+                  city: catalogCity,
+                  country,
+                  lat: latitude,
+                  lng: longitude,
+                  kind: "stop",
+                  source: "Destination GlobeLink",
+                }}
+                label="Ajouter cette destination"
+                variant="outline"
+                className="rounded-full border-white/40 bg-black/20 text-white hover:bg-white/10 hover:text-white"
+              />
+              <AIContextActions
+                destination={[catalogCity, country].filter(Boolean).join(", ")}
+                freePrompt={`Donne-moi les meilleurs conseils rapides pour préparer un voyage à ${title}, avec les incontournables et les erreurs à éviter.`}
+                proPrompt={`Recherche et organise un voyage à ${title}. Compare les meilleurs quartiers, hôtels, restaurants et activités adaptés à mes dates et à mon budget.`}
+                proMode="research"
+                freeLabel="Demander à GlobeLink"
+                proLabel="Préparer avec IA+"
+                dark
+              />
               <Button
                 asChild
                 variant="outline"
@@ -717,24 +752,45 @@ function CatalogRail({
                 </div>
               </>
             );
-            return item.kind === "deal" ? (
-              <Link
-                key={item.id}
-                to="/deals/$slug"
-                params={{ slug: item.slug }}
-                className="group overflow-hidden rounded-2xl border border-border bg-card shadow-soft"
-              >
-                {card}
-              </Link>
-            ) : (
-              <Link
-                key={item.id}
-                to="/activities/$slug"
-                params={{ slug: item.slug }}
-                className="group overflow-hidden rounded-2xl border border-border bg-card shadow-soft"
-              >
-                {card}
-              </Link>
+            return (
+              <div key={item.id} className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
+                {item.kind === "deal" ? (
+                  <Link
+                    to="/deals/$slug"
+                    params={{ slug: item.slug }}
+                    className="group block overflow-hidden"
+                  >
+                    {card}
+                  </Link>
+                ) : (
+                  <Link
+                    to="/activities/$slug"
+                    params={{ slug: item.slug }}
+                    className="group block overflow-hidden"
+                  >
+                    {card}
+                  </Link>
+                )}
+                <div className="border-t border-border/70 p-2">
+                  <AddToTripButton
+                    item={{
+                      title: item.title,
+                      city: item.city ?? fallbackCity ?? null,
+                      country: item.country ?? fallbackCountry ?? null,
+                      lat: item.latitude,
+                      lng: item.longitude,
+                      kind: item.kind,
+                      rating: item.rating,
+                      source: item.provider,
+                      sourceUrl: item.source_url,
+                    }}
+                    compact
+                    size="sm"
+                    variant="ghost"
+                    className="w-full rounded-xl"
+                  />
+                </div>
+              </div>
             );
           })}
         </div>

@@ -370,7 +370,45 @@ export function SettingsHub({ activeSection }: { activeSection?: SettingsHubSect
             />
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Link
+          to="/activity"
+          aria-label="Ouvrir Votre activité"
+          className="group mt-5 flex min-h-20 items-center gap-4 rounded-2xl border border-primary/25 bg-primary/[0.07] p-4 transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-soft"
+        >
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-soft">
+            <UserRound className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 font-semibold text-foreground">
+              Votre activité
+              <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+              Likes, commentaires, contenus enregistrés, publications, stories, Travel Match et historique de recherche.
+            </p>
+          </div>
+        </Link>
+
+        <Link
+          to="/settings/account"
+          aria-label="Ouvrir Compte, données et sécurité"
+          className="group mt-3 flex min-h-20 items-center gap-4 rounded-2xl border border-border/70 bg-background/65 p-4 transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-soft"
+        >
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 font-semibold text-foreground">
+              Compte, données et sécurité
+              <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+              Appareils connectés, export, permissions, cache, désactivation et suppression du compte.
+            </p>
+          </div>
+        </Link>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {filteredItems.map((item) => {
               const Icon = item.icon;
               return (

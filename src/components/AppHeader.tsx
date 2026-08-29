@@ -36,7 +36,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
-import { getSignedMediaUrl } from "@/lib/storage";
+import { getLightweightMediaUrl } from "@/lib/media-url";
+// PERFORMANCE_V1_HEADER
 import { loadNotificationPreferences, notificationAllowed } from "@/lib/user-preferences";
 
 const navClass =
@@ -58,8 +59,14 @@ export function AppHeader() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
+    let lastScrolled = window.scrollY > 8;
+    setScrolled(lastScrolled);
+    const onScroll = () => {
+      const nextScrolled = window.scrollY > 8;
+      if (nextScrolled === lastScrolled) return;
+      lastScrolled = nextScrolled;
+      setScrolled(nextScrolled);
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -80,13 +87,15 @@ export function AppHeader() {
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   useEffect(() => {
-    getSignedMediaUrl(profile?.avatar_url).then(setAvatarUrl);
+    getLightweightMediaUrl(profile?.avatar_url).then(setAvatarUrl);
   }, [profile?.avatar_url]);
 
   const { data: unread = 0 } = useQuery({
     queryKey: ["notifications-unread", user?.id],
     enabled: !!user,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data } = await supabase
         .from("notifications")

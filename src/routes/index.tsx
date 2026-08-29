@@ -102,9 +102,10 @@ function StoriesBar({ followingIds }: { followingIds: Set<string> }) {
   const { data: stories = [] } = useQuery({
     queryKey: ["stories", user?.id, followedIds.join(",")],
     enabled: !!user,
-    staleTime: 10_000,
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    // PERFORMANCE_V1_HOME — le realtime invalide déjà les stories
     queryFn: async () => {
       // La fonction SQL applique elle-même la règle « ma story + stories des comptes suivis ».
       // Elle évite les courses entre le chargement des follows et celui des stories après un changement de compte.
@@ -471,6 +472,9 @@ function FeedPage() {
   const [tab, setTab] = useState<FeedTab>("foryou");
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [locationDenied, setLocationDenied] = useState(false);
+  const [loadSecondaryContent, setLoadSecondaryContent] = useState(false);
+  const secondaryContentRef = useRef<HTMLDivElement | null>(null);
+  // HOME_SIMPLIFIED_V1
 
   const { data: followRows = [] } = useQuery({
     queryKey: ["my-follows", user?.id],
@@ -586,58 +590,31 @@ function FeedPage() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const { data: photos = [] } = useQuery({
-    queryKey: ["real-photos-of-day"],
-    staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("posts")
-        .select("id, image_url, city, country, profiles(username), post_likes(user_id)")
-        .not("image_url", "is", null)
-        .is("video_url", null)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      const ranked = (data ?? [])
-        .sort((a: any, b: any) => (b.post_likes?.length ?? 0) - (a.post_likes?.length ?? 0))
-        .slice(0, 6);
-      return Promise.all(
-        ranked.map(async (post: any) => ({
-          ...post,
-          signedUrl: await getSignedMediaUrl(post.image_url),
-        })),
-      );
-    },
-  });
-
-  const { data: recentMembers = [] } = useQuery({
-    queryKey: ["recent-real-members"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, avatar_url, country")
-        .eq("status", "active")
-        .eq("visibility", "public")
-        .order("created_at", { ascending: false })
-        .limit(6);
-      if (error) throw error;
-      return Promise.all(
-        (data ?? []).map(async (profile) => ({
-          ...profile,
-          signedAvatar: profile.avatar_url ? await getSignedMediaUrl(profile.avatar_url) : null,
-        })),
-      );
-    },
-  });
+  useEffect(() => {
+    if (loadSecondaryContent || !secondaryContentRef.current) return;
+    const node = secondaryContentRef.current;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setLoadSecondaryContent(true);
+        observer.disconnect();
+      },
+      { rootMargin: "700px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadSecondaryContent]);
 
   const { data: internetDiscoveries = [], isLoading: discoveriesLoading } = useQuery({
     queryKey: ["live-catalog", "homepage-popular"],
-    queryFn: () => fetchLiveCatalog({ kinds: ["activity", "restaurant", "hotel"], limit: 72 }),
+    enabled: loadSecondaryContent,
+    queryFn: () => fetchLiveCatalog({ kinds: ["activity"], limit: 24 }),
     staleTime: 30 * 60_000,
     retry: 1,
   });
   const { data: internetDeals = [], isLoading: dealsLoading } = useQuery({
     queryKey: ["live-catalog", "homepage-deals"],
+    enabled: loadSecondaryContent,
     queryFn: () => fetchLiveCatalog({ kinds: ["deal"], limit: 12 }),
     staleTime: 10 * 60_000,
     retry: 1,
@@ -689,56 +666,6 @@ function FeedPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
-          <div className="surface-card p-3 sm:p-4">
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && runSearch()}
-                  placeholder="Ville, pays, voyageur…"
-                  className="h-12 rounded-2xl pl-11"
-                />
-              </div>
-              <Button
-                onClick={runSearch}
-                disabled={!query.trim()}
-                className="h-12 rounded-2xl px-4"
-              >
-                <Search className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Rechercher</span>
-              </Button>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Link
-                to="/map"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-secondary px-2 text-xs font-semibold sm:text-sm"
-              >
-                <Map className="h-4 w-4" /> Explorer
-              </Link>
-              <Link
-                to="/deals"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-secondary px-2 text-xs font-semibold sm:text-sm"
-              >
-                <Flame className="h-4 w-4" /> Sélection
-              </Link>
-              <Link
-                to={user ? "/match" : "/auth"}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-secondary px-2 text-xs font-semibold sm:text-sm"
-              >
-                <Users className="h-4 w-4" /> Match
-              </Link>
-              <Link
-                to={user ? "/new-post" : "/auth"}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-2 text-xs font-semibold text-primary-foreground sm:text-sm"
-              >
-                <Plus className="h-4 w-4" /> Publier
-              </Link>
-            </div>
-          </div>
-        </section>
 
         {user && (
           <section className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
@@ -750,7 +677,7 @@ function FeedPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                      Ton GlobeLink personnalisé
+                      Ton espace Voyage
                     </p>
                     {nextTravelIntent ? (
                       <>
@@ -792,34 +719,29 @@ function FeedPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/trips"
+                    className="inline-flex h-10 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"
+                  >
+                    {nextTravelIntent ? "Ouvrir Voyage" : "Créer mon voyage"}
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
                   {nextTravelIntent ? (
                     <Link
                       to="/destinations/$slug"
                       params={{ slug: slugifyDestination(nextTravelIntent.destination_country) }}
                       className="inline-flex h-10 items-center gap-1 rounded-xl bg-secondary px-3 text-xs font-semibold"
                     >
-                      Voir la destination <ChevronRight className="h-4 w-4" />
+                      Explorer la destination <MapPin className="h-4 w-4" />
                     </Link>
                   ) : (
                     <Link
-                      to="/trips"
+                      to="/intelligence"
                       className="inline-flex h-10 items-center gap-1 rounded-xl bg-secondary px-3 text-xs font-semibold"
                     >
-                      Ajouter un voyage <ChevronRight className="h-4 w-4" />
+                      Préparer avec l’IA <Sparkles className="h-4 w-4" />
                     </Link>
                   )}
-                  <Link
-                    to="/destinations"
-                    className="inline-flex h-10 items-center gap-1 rounded-xl bg-secondary px-3 text-xs font-semibold"
-                  >
-                    Destinations <MapPin className="h-4 w-4" />
-                  </Link>
-                  <Link
-                    to="/match"
-                    className="inline-flex h-10 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"
-                  >
-                    Travel Match <Users className="h-4 w-4" />
-                  </Link>
                 </div>
               </div>
             </div>
@@ -884,7 +806,9 @@ function FeedPage() {
           {feed.isFetchingNextPage && <PostCardSkeleton />}
         </section>
 
-        <section className="catalog-after-feed border-y border-border/60 bg-card/25 py-8 sm:py-12">
+        <div ref={secondaryContentRef} className="h-px" aria-hidden="true" />
+        {loadSecondaryContent && (
+          <section className="catalog-after-feed border-y border-border/60 bg-card/25 py-8 sm:py-12">
           <div className="mx-auto max-w-6xl space-y-10 px-3 sm:px-4">
             <CatalogSection
               title="Sélection du moment"
@@ -897,115 +821,16 @@ function FeedPage() {
             />
             <CatalogSection
               title="Activités populaires"
-              subtitle="Activités affichées seulement si GetYourGuide ou Tripadvisor les vérifie avec photo"
+              subtitle="Attractions et activités vérifiées par Google Places · événements vérifiés par Ticketmaster"
               icon={<Sparkles className="h-4 w-4" />}
               items={discoveryGroups.activity}
               loading={discoveriesLoading}
               kind="activity"
               cta={{ label: "Tous les pays", to: "/activities" }}
             />
-            <CatalogSection
-              title="Restaurants populaires"
-              subtitle="Restaurants affichés seulement avec source Google Maps ou restaurant vérifiée"
-              icon={<Utensils className="h-4 w-4" />}
-              items={discoveryGroups.restaurant}
-              loading={discoveriesLoading}
-              kind="restaurant"
-              cta={{ label: "Explorer", to: "/map" }}
-            />
-            <CatalogSection
-              title="Hôtels populaires"
-              subtitle="Hôtels affichés seulement avec source Booking.com vérifiée et photo fiable"
-              icon={<Hotel className="h-4 w-4" />}
-              items={discoveryGroups.hotel}
-              loading={discoveriesLoading}
-              kind="hotel"
-              cta={{ label: "Explorer", to: "/map" }}
-            />
           </div>
         </section>
 
-        {photos.length > 0 && (
-          <section className="border-y border-border/60 bg-card/35 py-8 sm:py-12">
-            <div className="mx-auto max-w-6xl px-3 sm:px-4">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
-                    <Camera className="h-4 w-4" /> Publications réelles
-                  </div>
-                  <h2 className="mt-1 font-display text-2xl font-semibold sm:text-3xl">
-                    Photos appréciées
-                  </h2>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                {photos.map((post: any) => (
-                  <Link
-                    key={post.id}
-                    to="/post/$id"
-                    params={{ id: post.id }}
-                    className="group relative aspect-square overflow-hidden rounded-xl bg-muted"
-                  >
-                    <img
-                      src={post.signedUrl ?? ""}
-                      alt="Publication GlobeLink"
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 p-2 pt-6 text-[11px] text-white">
-                      <span className="flex items-center gap-1">
-                        <Heart className="h-3 w-3 fill-current" /> {post.post_likes?.length ?? 0}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {recentMembers.length > 0 && (
-          <section className="mx-auto max-w-6xl px-3 py-8 sm:px-4 sm:py-12">
-            <div className="mb-4">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
-                <UserRound className="h-4 w-4" /> Nouveaux membres
-              </div>
-              <h2 className="mt-1 font-display text-2xl font-semibold sm:text-3xl">
-                Voyageurs récemment inscrits
-              </h2>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {recentMembers.map((profile) => (
-                <Link
-                  key={profile.id}
-                  to="/profile/$username"
-                  params={{ username: profile.username }}
-                  className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3 shadow-soft transition hover:border-primary/30"
-                >
-                  <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary font-semibold">
-                    {profile.signedAvatar ? (
-                      <img
-                        src={profile.signedAvatar}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      profile.username[0]?.toUpperCase()
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold">
-                      {profile.display_name ?? profile.username}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      @{profile.username}
-                      {profile.country ? ` · ${profile.country}` : ""}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Link>
-              ))}
-            </div>
-          </section>
         )}
       </main>
       <footer className="border-t border-border py-8 text-center text-xs text-muted-foreground">

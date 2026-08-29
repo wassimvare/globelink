@@ -191,6 +191,31 @@ function MemoryGallery({ day, tripId, entries }: { day: string; tripId: string; 
   );
 }
 
+// journal-memory-geocode-fix
+async function geocodeMemoryLocation(city?: string | null, country?: string | null) {
+  const rawCity = String(city ?? "").trim();
+  const query = rawCity.split(",")[0]?.trim() || String(country ?? "").trim();
+  if (!query) return null;
+  try {
+    const response = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=fr&format=json`,
+    );
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      results?: Array<{ latitude: number; longitude: number; country?: string }>;
+    };
+    const requestedCountry = String(country ?? "").trim().toLocaleLowerCase("fr");
+    const result =
+      payload.results?.find((item) =>
+        requestedCountry ? String(item.country ?? "").toLocaleLowerCase("fr").includes(requestedCountry) : true,
+      ) ?? payload.results?.[0];
+    if (!result || !Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) return null;
+    return { lat: Number(result.latitude), lng: Number(result.longitude) };
+  } catch {
+    return null;
+  }
+}
+
 function MemoryComposer({
   open,
   onOpenChange,
@@ -272,6 +297,8 @@ function MemoryComposer({
       const firstVideo = uploaded.find((path) => isVideoPath(path)) ?? null;
       const derivedTitle = title.trim() || story.trim().split("\n")[0]?.slice(0, 80) || `Souvenir · ${dayLabel(day)}`;
       const dbKind = kind === "memory" ? "photo" : kind;
+      setProgress(city.trim() || country.trim() ? "Localisation du souvenir…" : "Enregistrement…");
+      const coords = await geocodeMemoryLocation(city.trim(), country.trim());
       const { error } = await supabase.from("trip_entries").insert({
         trip_id: tripId,
         user_id: userId,
@@ -279,6 +306,8 @@ function MemoryComposer({
         title: derivedTitle,
         city: city.trim() || null,
         country: country.trim() || null,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
         notes: story.trim() || null,
         media_urls: uploaded,
         image_url: null,

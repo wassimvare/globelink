@@ -14,6 +14,10 @@ import {
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
+import { AIContextActions } from "@/components/AIContextActions";
+import { TripJourneyRail } from "@/components/TripJourneyRail";
+// AI_CONTEXT_LAYER_V1_TRIP
+// JOURNEY_CONTINUITY_V1_TRIP
 import { TripDaySectionPremium } from "@/components/TripDaySectionPremium";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +34,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { finalizeTrip } from "@/lib/trip-finalize.functions";
 import { resolvedDestinationCover } from "@/lib/destination-cover";
+import { getSignedMediaUrl } from "@/lib/storage";
+import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
 
 export const Route = createFileRoute("/_authenticated/trips/$id")({
   component: TripDetail,
@@ -227,6 +233,41 @@ function TripDetail() {
           )}
         </header>
 
+        <TripJourneyRail
+          tripId={id}
+          tripTitle={trip.title}
+          city={trip.city}
+          country={trip.country}
+          startsOn={trip.starts_on}
+          endsOn={trip.ends_on}
+          entryCount={entries?.length ?? 0}
+        />
+
+        {!finalized && (
+          <section className="mt-4 overflow-hidden rounded-3xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.08] via-card to-cyan-500/[0.06] p-4 shadow-soft sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-bold text-violet-500">
+                  <Sparkles className="h-4 w-4" /> GlobeLink IA dans ce voyage
+                </div>
+                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                  Demande un conseil rapide gratuitement, ou laisse IA+ lire ce carnet précis pour réorganiser tes journées, ton budget et tes étapes.
+                </p>
+              </div>
+              <AIContextActions
+                destination={[trip.city, trip.country].filter(Boolean).join(", ")}
+                freePrompt={`Donne-moi des conseils généraux pour un voyage à ${[trip.city, trip.country].filter(Boolean).join(", ") || trip.title}, notamment pour organiser mes journées efficacement.`}
+                proPrompt={`Analyse le voyage "${trip.title}" dans mon carnet GlobeLink et organise ou réorganise mes journées de façon réaliste, en réduisant les trajets et en respectant mon budget.`}
+                proMode="plan"
+                tripId={id}
+                freeLabel="Conseil rapide"
+                proLabel="Organiser ce voyage avec IA+"
+                compact
+              />
+            </div>
+          </section>
+        )}
+
         {(entries ?? []).some((entry) => entry.lat != null && entry.lng != null) && (
           <section className="mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <div className="flex items-center justify-between px-4 py-3">
@@ -336,6 +377,7 @@ function TripDetail() {
                   userId={user!.id}
                   meta={days?.find((item) => item.day_date === date)}
                   entries={(entries ?? []).filter((entry) => entry.visited_on === date)}
+                  allEntries={entries ?? []}
                   expenses={(expenses ?? []).filter((expense) => expense.spent_on === date)}
                 />
               ))}
@@ -569,7 +611,7 @@ function TripRouteMap({ entries, zoomLevel = 4 }: { entries: any[]; zoomLevel?: 
   if (!Mod || !L || geo.length === 0) {
     return (
       <div className="grid h-full place-items-center bg-secondary text-sm text-muted-foreground">
-        Aucun lieu géolocalisé
+        Ajoute un lieu à un souvenir pour afficher ton parcours
       </div>
     );
   }
@@ -595,6 +637,30 @@ function TripRouteMap({ entries, zoomLevel = 4 }: { entries: any[]; zoomLevel?: 
   );
 }
 
+// recap-media-map-fix
+async function geocodeRecapLocation(city?: string | null, country?: string | null) {
+  const query = [city, country].filter(Boolean).join(", ").trim();
+  if (!query) return null;
+  try {
+    const response = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=fr&format=json`,
+    );
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      results?: Array<{ latitude: number; longitude: number; country?: string; name?: string }>;
+    };
+    const requestedCountry = String(country ?? "").trim().toLocaleLowerCase("fr");
+    const result =
+      payload.results?.find((item) =>
+        requestedCountry ? String(item.country ?? "").toLocaleLowerCase("fr").includes(requestedCountry) : true,
+      ) ?? payload.results?.[0];
+    if (!result || !Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) return null;
+    return { lat: Number(result.latitude), lng: Number(result.longitude) };
+  } catch {
+    return null;
+  }
+}
+
 function RecapDialog({
   open,
   onOpenChange,
@@ -611,6 +677,29 @@ function RecapDialog({
   days: any[];
 }) {
   const stats = (trip?.stats as any) ?? {};
+  const recapGeocode = useServerFn(geocodePlaceLocation);
+  const resolveRecapCoords = async (city?: string | null, country?: string | null) => {
+    const rawCity = String(city ?? "").trim();
+    const parts = rawCity.split(",").map((part) => part.trim()).filter(Boolean);
+    const normalizedCity = parts[0] || String(trip?.city ?? "").trim();
+    const normalizedCountry =
+      String(country ?? "").trim() ||
+      (parts.length > 1 ? parts[parts.length - 1] : "") ||
+      String(trip?.country ?? "").trim();
+
+    if (normalizedCity && normalizedCountry) {
+      try {
+        const result = await recapGeocode({ data: { city: normalizedCity, country: normalizedCountry } });
+        if (Number.isFinite(result?.lat) && Number.isFinite(result?.lng)) {
+          return { lat: Number(result.lat), lng: Number(result.lng) };
+        }
+      } catch {
+        // Fall back to the lightweight browser geocoder below.
+      }
+    }
+
+    return geocodeRecapLocation(normalizedCity || city, normalizedCountry || country);
+  };
   const actualExpenseTotal = useMemo(
     () =>
       expenses
@@ -621,37 +710,98 @@ function RecapDialog({
   const photos = useMemo(() => {
     const all: string[] = [];
     entries.forEach((entry) => {
-      (entry.media_urls ?? []).forEach((media: string) => all.push(media));
+      (entry.media_urls ?? []).forEach((media: string) => {
+        if (!/\.(mp4|webm|mov)(?:$|\?)/i.test(media) && !all.includes(media)) all.push(media);
+      });
       if (entry.image_url && !all.includes(entry.image_url)) all.push(entry.image_url);
     });
     return all.slice(0, 12);
   }, [entries]);
+  const [resolvedPhotos, setResolvedPhotos] = useState<string[]>([]);
+  const [mapEntries, setMapEntries] = useState<any[]>(entries);
+  const coverFallback = useMemo(
+    () => resolvedDestinationCover(trip?.cover_url, trip?.country, trip?.city),
+    [trip?.cover_url, trip?.country, trip?.city],
+  );
+  const heroImages = resolvedPhotos.length > 0 ? resolvedPhotos : coverFallback ? [coverFallback] : [];
+
+  useEffect(() => {
+    let active = true;
+    if (!open || photos.length === 0) {
+      setResolvedPhotos([]);
+      return () => { active = false; };
+    }
+    void Promise.all(photos.map((photo) => getSignedMediaUrl(photo))).then((urls) => {
+      if (!active) return;
+      setResolvedPhotos(urls.filter((url): url is string => Boolean(url)));
+    });
+    return () => { active = false; };
+  }, [open, photos]);
+
+  useEffect(() => {
+    let active = true;
+    if (!open) return () => { active = false; };
+
+    void (async () => {
+      const enriched = await Promise.all(
+        entries.map(async (entry) => {
+          if (entry.lat != null && entry.lng != null) return entry;
+          if (!entry.city && !entry.country) return entry;
+          const coords = await resolveRecapCoords(entry.city, entry.country);
+          if (!coords) return entry;
+          void supabase
+            .from("trip_entries")
+            .update(coords)
+            .eq("id", entry.id)
+            .eq("trip_id", trip.id)
+            .then(() => undefined);
+          return { ...entry, ...coords };
+        }),
+      );
+
+      if (!enriched.some((entry) => entry.lat != null && entry.lng != null)) {
+        const fallback = await resolveRecapCoords(trip.city, trip.country);
+        if (fallback) {
+          enriched.push({
+            id: `trip-destination-${trip.id}`,
+            title: trip.title,
+            city: trip.city,
+            country: trip.country,
+            ...fallback,
+          });
+        }
+      }
+
+      if (active) setMapEntries(enriched);
+    })();
+
+    return () => { active = false; };
+  }, [open, entries, trip.id, trip.title, trip.city, trip.country]);
 
   const [slideIdx, setSlideIdx] = useState(0);
   useEffect(() => {
-    if (!open || photos.length === 0) return;
-    const timer = setInterval(() => setSlideIdx((index) => (index + 1) % photos.length), 2500);
+    setSlideIdx(0);
+    if (!open || heroImages.length <= 1) return;
+    const timer = setInterval(() => setSlideIdx((index) => (index + 1) % heroImages.length), 2500);
     return () => clearInterval(timer);
-  }, [open, photos.length]);
+  }, [open, heroImages.length]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto p-0">
         <div className="relative aspect-[16/9] overflow-hidden bg-black">
-          {photos.length > 0 ? (
-            photos.map((photo, index) => (
-              <img
-                key={photo}
-                src={photo}
-                alt=""
-                className={`absolute inset-0 h-full w-full object-cover transition-all duration-1000 ${
-                  index === slideIdx ? "scale-105 opacity-100" : "scale-100 opacity-0"
-                }`}
-              />
-            ))
-          ) : (
-            <div className="grid h-full place-items-center gradient-hero text-6xl text-white">🎞️</div>
-          )}
+          <div className="absolute inset-0 grid place-items-center gradient-hero text-6xl text-white">🌍</div>
+          {heroImages.map((photo, index) => (
+            <img
+              key={`recap-hero-${photo}-${index}`}
+              src={photo}
+              alt=""
+              onError={(event) => { event.currentTarget.style.display = "none"; }}
+              className={`absolute inset-0 h-full w-full object-cover transition-all duration-1000 ${
+                index === slideIdx ? "scale-105 opacity-100" : "scale-100 opacity-0"
+              }`}
+            />
+          ))}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-6 text-white">
             <div className="text-xs uppercase tracking-[0.3em] opacity-80">Ton souvenir</div>
@@ -677,7 +827,7 @@ function RecapDialog({
 
         <div className="mx-6 h-64 overflow-hidden rounded-2xl border border-border">
           <ClientOnly fallback={<div className="h-full bg-secondary" />}>
-            <TripRouteMap entries={entries} zoomLevel={4} />
+            <TripRouteMap entries={mapEntries} zoomLevel={4} />
           </ClientOnly>
         </div>
 
