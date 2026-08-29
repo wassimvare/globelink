@@ -34,6 +34,9 @@ jobs:
       - name: Validate Phase 2 critical surfaces
         run: npm run check:phase2
 
+      - name: Validate Phase 3 authenticated journey contract
+        run: npm run check:phase3
+
       - name: Build GlobeLink
         run: npm run build
 
@@ -41,7 +44,7 @@ jobs:
     name: Browser E2E
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,8 +64,16 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run critical browser journeys
-        run: npx playwright test
+      - name: Run public and access-control journeys
+        run: npx playwright test e2e/core.smoke.spec.ts e2e/critical-surfaces.spec.ts
+
+      - name: Run live authenticated journeys when test accounts are configured
+        env:
+          E2E_USER_A_EMAIL: ${{ secrets.E2E_USER_A_EMAIL }}
+          E2E_USER_A_PASSWORD: ${{ secrets.E2E_USER_A_PASSWORD }}
+          E2E_USER_B_EMAIL: ${{ secrets.E2E_USER_B_EMAIL }}
+          E2E_USER_B_PASSWORD: ${{ secrets.E2E_USER_B_PASSWORD }}
+        run: npx playwright test e2e/authenticated-live.spec.ts
 
       - name: Upload Playwright report on failure
         if: failure()
