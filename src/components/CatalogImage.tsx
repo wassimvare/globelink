@@ -12,11 +12,6 @@ import {
   publicPlaceMediaQueryKey,
   resolvePublicPlaceMedia,
 } from "@/lib/public-place-media.functions";
-import {
-  placeLogoQueryKey,
-  resolvePlaceLogo,
-  type PlaceLogoInput,
-} from "@/lib/place-logo.functions";
 
 type CatalogImageLookup = {
   latitude?: number | null;
@@ -105,32 +100,6 @@ function hostMatches(hostname: string, domain: string) {
   return host === expected || host.endsWith(`.${expected}`);
 }
 
-function safeOfficialLogoWebsite(value: unknown): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(String(value).trim());
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    const hostname = url.hostname.toLowerCase();
-    if (!hostname) return null;
-    if (THIRD_PARTY_LOGO_HOSTS.some((domain) => hostMatches(hostname, domain))) return null;
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function faviconUrl(value: unknown): string | null {
-  const website = safeOfficialLogoWebsite(value);
-  if (!website) return null;
-  try {
-    const url = new URL(website);
-    if (url.protocol !== "https:") return null;
-    return new URL("/favicon.ico", url.origin).toString();
-  } catch {
-    return null;
-  }
-}
-
 function safeResolvedLogoUrl(value: unknown): string | null {
   const candidate = safeExactHttps(value);
   if (!candidate) return null;
@@ -145,24 +114,14 @@ function safeResolvedLogoUrl(value: unknown): string | null {
 
 function knownPlaceLogo(
   item: Pick<LiveCatalogItem, "tags">,
-  lookup: CatalogImageLookup | null,
 ): { url: string; label: string } | null {
   const tags = asRecord(item.tags);
   const direct =
-    safeExactHttps(tags.official_logo_url) ??
-    safeExactHttps(tags.logo_url) ??
-    safeExactHttps(tags.logo);
-  if (direct) return { url: direct, label: "Logo officiel du lieu" };
+    safeResolvedLogoUrl(tags.official_logo_url) ??
+    safeResolvedLogoUrl(tags.logo_url) ??
+    safeResolvedLogoUrl(tags.logo);
 
-  const website = [
-    tagString(tags, "official_website"),
-    lookup?.website ?? null,
-    tagString(tags, "website"),
-  ]
-    .map((candidate) => safeOfficialLogoWebsite(candidate))
-    .find((candidate): candidate is string => !!candidate);
-  const favicon = faviconUrl(website);
-  return favicon ? { url: favicon, label: "Logo du site officiel" } : null;
+  return direct ? { url: direct, label: "Logo officiel du lieu" } : null;
 }
 
 export function catalogPlaceMediaInput(
@@ -212,7 +171,6 @@ export function CatalogImage({
   const exactDirect = useMemo(() => directImage(item), [item]);
   const resolveMedia = useServerFn(resolveVerifiedPlaceMedia);
   const resolvePublicMedia = useServerFn(resolvePublicPlaceMedia);
-  const resolveLogo = useServerFn(resolvePlaceLogo);
   const primaryInput = useMemo(
     () => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false }),
     [item, lookup],
@@ -232,27 +190,7 @@ export function CatalogImage({
     }),
     [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude],
   );
-  const logoInput = useMemo<PlaceLogoInput>(
-    () => ({
-      title: item.title,
-      kind: item.kind,
-      latitude: primaryInput.latitude,
-      longitude: primaryInput.longitude,
-      city: primaryInput.city ?? null,
-      country: primaryInput.country ?? null,
-      website: primaryInput.website ?? null,
-    }),
-    [
-      item.kind,
-      item.title,
-      primaryInput.city,
-      primaryInput.country,
-      primaryInput.latitude,
-      primaryInput.longitude,
-      primaryInput.website,
-    ],
-  );
-  const knownLogo = useMemo(() => knownPlaceLogo(item, lookup), [item, lookup]);
+  const knownLogo = useMemo(() => knownPlaceLogo(item), [item]);
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   useEffect(() => setFailedUrls(new Set()), [item.id]);
 
@@ -296,15 +234,6 @@ export function CatalogImage({
     enabled: canResolveSource && (primaryFailed || publicFailed),
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
-    retry: 1,
-  });
-
-  const { data: resolvedLogo } = useQuery({
-    queryKey: placeLogoQueryKey(logoInput),
-    queryFn: async () => resolveLogo({ data: logoInput }),
-    enabled: priority && primaryExhausted,
-    staleTime: 12 * 60 * 60_000,
-    gcTime: 24 * 60 * 60_000,
     retry: 1,
   });
 
@@ -373,16 +302,7 @@ export function CatalogImage({
     );
   }
 
-  const resolvedLogoUrl = safeResolvedLogoUrl(resolvedLogo?.url);
-  const logoCandidates = [
-    knownLogo,
-    resolvedLogoUrl
-      ? { url: resolvedLogoUrl, label: resolvedLogo?.label ?? "Logo du site officiel" }
-      : null,
-  ].filter(
-    (entry): entry is { url: string; label: string } => !!entry && !failedUrls.has(entry.url),
-  );
-  const logo = logoCandidates[0] ?? null;
+  const logo = knownLogo && !failedUrls.has(knownLogo.url) ? knownLogo : null;
 
   if (logo) {
     return (
