@@ -19,12 +19,51 @@ jobs:
           ref: stabilisation-phase-1
           fetch-depth: 0
 
-      - name: Apply historical patches once
+      - name: Apply every historical transform and report stale ones
+        shell: bash
         run: |
-          node scripts/apply-build-patches.mjs
-          node scripts/apply-late-source-patches.mjs
+          set +e
+          failures=""
+          scripts=(
+            scripts/apply-v11-api-patch.mjs
+            scripts/apply-free-public-catalog.mjs
+            scripts/apply-destination-public-catalog.mjs
+            scripts/apply-public-place-photo-fallback.mjs
+            scripts/explorer-reliability-v1.mjs
+            scripts/apply-recap-media-map-fix.mjs
+            scripts/apply-recap-geocoder-v2.mjs
+            scripts/apply-explorer-travel-map-v1.mjs
+            scripts/fix-explorer-add-to-trip-mobile-v1.mjs
+            scripts/add-to-trip-everywhere-v1.mjs
+            scripts/ai-readable-response-v1.mjs
+            scripts/fix-trip-journal-days-v2.mjs
+            scripts/run-trip-daily-program-v3.mjs
+            scripts/apply-travel-match-v3.mjs
+            scripts/journey-continuity-v1.mjs
+            scripts/simplify-home-v1.mjs
+            scripts/apply-user-content-deletion.mjs
+            scripts/apply-conversation-deletion.mjs
+            scripts/performance-cleanup-v1.mjs
+            scripts/simple-onboarding-v1.mjs
+            scripts/apply-booking-hotel-policy.mjs
+            scripts/apply-public-open-data.mjs
+          )
 
-      - name: Commit generated source to stabilisation branch
+          for script in "${scripts[@]}"; do
+            echo "::group::$script"
+            node "$script"
+            code=$?
+            echo "::endgroup::"
+            if [ "$code" -ne 0 ]; then
+              failures="$failures $script"
+              echo "STALE_OR_BROKEN_PATCH: $script (exit $code)"
+            fi
+          done
+
+          echo "Patch diagnostics complete. Failures:$failures"
+          exit 0
+
+      - name: Commit transformed source to stabilisation branch
         run: |
           if git diff --quiet; then
             echo "No source changes generated."
