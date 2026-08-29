@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/drawer";
 import { supabase } from "@/integrations/supabase/client";
 
+const db = supabase as any;
+
 type ProfileActionsProps = {
   currentUserId?: string | null;
   targetUserId: string;
@@ -32,7 +34,7 @@ export function ProfileActions({
   if (!currentUserId || isOwnProfile) return null;
 
   const saveRelationshipControl = async (mode: "restricted" | "blocked") => {
-    const { error } = await supabase.from("user_relationship_controls").upsert(
+    const { error } = await db.from("user_relationship_controls").upsert(
       {
         owner_id: currentUserId,
         target_id: targetUserId,
@@ -80,7 +82,7 @@ export function ProfileActions({
     setLoading("report");
 
     try {
-      const { error } = await supabase.from("reports").insert({
+      const { error } = await db.from("reports").insert({
         reporter_id: currentUserId,
         target_type: "profile",
         target_id: targetUserId,
