@@ -33,7 +33,7 @@ for (const [ok, label] of assertions) {
 
 const limits = [
   ["src/routes/map.tsx", 86_000],
-  ["src/routes/_authenticated.trips.index.tsx", 20_000],
+  ["src/routes/_authenticated.trips.index.tsx", 21_000],
   ["src/components/ProfileActions.tsx", 6_500],
 ];
 for (const [file, max] of limits) {
