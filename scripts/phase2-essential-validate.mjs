@@ -18,6 +18,9 @@ const messages = read("src/routes/_authenticated.messages.index.tsx");
 const notifications = read("src/routes/_authenticated.notifications.tsx");
 const trips = read("src/routes/_authenticated.trips.$id.tsx");
 const tripDay = read("src/components/TripDaySectionPremium.tsx");
+const dayProgram = fs.existsSync(path.join(root, "src/features/travel/day-program.ts"))
+  ? read("src/features/travel/day-program.ts")
+  : "";
 const aiPro = read("src/lib/ai-pro.functions.ts");
 const settings = read("src/components/SettingsHub.tsx");
 const profileActions = read("src/components/ProfileActions.tsx");
@@ -79,7 +82,10 @@ check(
 );
 check(
   "Carnet extrait le programme IA par journée",
-  tripDay.includes("extractProgramForDay") && tripDay.includes("programSource"),
+  (tripDay.includes("extractProgramForDay") && tripDay.includes("programSource")) ||
+    (tripDay.includes("buildDayProgramForDate") &&
+      dayProgram.includes("extractDayProgramBlock") &&
+      dayProgram.includes("buildDayProgramForDate")),
 );
 check(
   "IA+ impose une séparation quotidienne",
