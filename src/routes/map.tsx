@@ -43,6 +43,11 @@ import {
 import { isTrustedVisibleCatalogItem } from "@/lib/catalog-source-routing";
 import { CatalogImage, catalogPlaceMediaInput } from "@/components/CatalogImage";
 import {
+  placeLogoQueryKey,
+  resolvePlaceLogo,
+  type PlaceLogoInput,
+} from "@/lib/place-logo.functions";
+import {
   resolveVerifiedPlaceMedia,
   verifiedPlaceMediaQueryKey,
   type ResolvedPlaceMedia,
@@ -1497,8 +1502,53 @@ function placeOpenState(place: AnyPlace | null) {
   return null;
 }
 
+const NON_OFFICIAL_SITE_HOSTS = [
+  "google.com",
+  "google.fr",
+  "goo.gl",
+  "openstreetmap.org",
+  "booking.com",
+  "tripadvisor.com",
+  "tripadvisor.fr",
+  "getyourguide.com",
+  "ticketmaster.com",
+  "thefork.com",
+  "thefork.fr",
+  "opentable.com",
+  "yelp.com",
+  "ubereats.com",
+] as const;
+
+function hostMatchesWebsite(hostname: string, domain: string) {
+  const host = hostname.replace(/^www\./i, "").toLowerCase();
+  const expected = domain.replace(/^www\./i, "").toLowerCase();
+  return host === expected || host.endsWith(`.${expected}`);
+}
+
+function safeOfficialPlaceWebsite(value: unknown) {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value).trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    const host = url.hostname.toLowerCase();
+    if (NON_OFFICIAL_SITE_HOSTS.some((domain) => hostMatchesWebsite(host, domain))) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function placeWebsite(place: AnyPlace | null) {
-  return catalogTagText(place, "official_website") || catalogTagText(place, "website");
+  const candidates = [
+    catalogTagText(place, "official_website"),
+    catalogTagText(place, "website"),
+    place?.booking_url ?? null,
+  ];
+  for (const candidate of candidates) {
+    const website = safeOfficialPlaceWebsite(candidate);
+    if (website) return website;
+  }
+  return null;
 }
 
 function placePhone(place: AnyPlace | null) {
@@ -1524,6 +1574,7 @@ function PlaceSheet({
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const resolveOfficialSite = useServerFn(resolvePlaceLogo);
   const [saved, setSaved] = useState(false);
   const [tripPickerOpen, setTripPickerOpen] = useState(false);
   const [addingTripId, setAddingTripId] = useState<string | null>(null);
@@ -1531,6 +1582,32 @@ function PlaceSheet({
     setSaved(false);
     setTripPickerOpen(false);
   }, [place?.id]);
+
+  const officialSiteInput = useMemo<PlaceLogoInput | null>(
+    () =>
+      place
+        ? {
+            title: place.name,
+            kind: placeMediaKind(place),
+            latitude: place.lat,
+            longitude: place.lng,
+            city: place.city || null,
+            country: place.country || null,
+            website: placeWebsite(place),
+          }
+        : null,
+    [place],
+  );
+  const { data: officialSiteResolution } = useQuery({
+    queryKey: officialSiteInput
+      ? [...placeLogoQueryKey(officialSiteInput), "official-site"]
+      : ["place-logo-v1", "official-site", null],
+    queryFn: async () => resolveOfficialSite({ data: officialSiteInput! }),
+    enabled: !!officialSiteInput,
+    staleTime: 12 * 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
+    retry: 1,
+  });
 
   const { data: trips = [], isLoading: tripsLoading, isError: tripsError, refetch: refetchTrips } = useQuery({
     queryKey: ["explorer-trips", user?.id],
@@ -1629,7 +1706,8 @@ function PlaceSheet({
   const cat = place ? mapCategoryMeta(place.marker_category || place.category) : null;
   const offer = place ? isOfferPlace(place) : false;
   const approximateExternalPosition = place?.catalog_tags?.location_precision === "search-area";
-  const website = placeWebsite(place);
+  const website =
+    safeOfficialPlaceWebsite(officialSiteResolution?.website) ?? placeWebsite(place);
   const phone = placePhone(place);
   const address = placeAddress(place);
   const cuisine = catalogTagText(place, "cuisine");

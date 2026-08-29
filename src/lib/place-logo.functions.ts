@@ -44,6 +44,7 @@ const GENERIC_WORDS = new Set([
 const THIRD_PARTY_HOSTS = [
   "google.com",
   "google.fr",
+  "goo.gl",
   "maps.google.com",
   "openstreetmap.org",
   "booking.com",
