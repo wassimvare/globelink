@@ -9,9 +9,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { supabase } from "@/integrations/supabase/client";
-
-const db = supabase as any;
+import { reportProfile, saveRelationshipControl } from "@/features/social/profile-moderation";
 
 type ProfileActionsProps = {
   currentUserId?: string | null;
@@ -33,26 +31,16 @@ export function ProfileActions({
 
   if (!currentUserId || isOwnProfile) return null;
 
-  const saveRelationshipControl = async (mode: "restricted" | "blocked") => {
-    const { error } = await db.from("user_relationship_controls").upsert(
-      {
-        owner_id: currentUserId,
-        target_id: targetUserId,
-        mode,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "owner_id,target_id" },
-    );
-
-    if (error) throw error;
-  };
-
   const handleRestrict = async () => {
     if (loading) return;
     setLoading("restrict");
 
     try {
-      await saveRelationshipControl("restricted");
+      await saveRelationshipControl({
+        ownerId: currentUserId,
+        targetId: targetUserId,
+        mode: "restricted",
+      });
       toast.success(`@${username} a été restreint`);
       setOpen(false);
     } catch {
@@ -67,7 +55,11 @@ export function ProfileActions({
     setLoading("block");
 
     try {
-      await saveRelationshipControl("blocked");
+      await saveRelationshipControl({
+        ownerId: currentUserId,
+        targetId: targetUserId,
+        mode: "blocked",
+      });
       toast.success(`@${username} a été bloqué`);
       setOpen(false);
     } catch {
@@ -82,15 +74,7 @@ export function ProfileActions({
     setLoading("report");
 
     try {
-      const { error } = await db.from("reports").insert({
-        reporter_id: currentUserId,
-        target_type: "profile",
-        target_id: targetUserId,
-        reason: "Profil signalé",
-      });
-
-      if (error) throw error;
-
+      await reportProfile({ reporterId: currentUserId, targetId: targetUserId });
       toast.success("Compte signalé");
       setOpen(false);
     } catch {
