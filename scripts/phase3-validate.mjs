@@ -1,13 +1,14 @@
-import "./apply-hotel-logo-fallback.mjs";
-import "./apply-hotel-identity-fallback.mjs";
-import "./apply-place-media-instant-no-street.mjs";
 import fs from "node:fs";
 
+// Validation only: source transformations were frozen into src/ during Phase 1.
+// A check must never mutate the repository before dev/build/test.
 const checks = [
   ["src/routes/_authenticated.intelligence.tsx", ["GlobeLink IA", "Ton assistant voyage", "Gratuit", "IA+"]],
   ["src/lib/phase3-intelligence.functions.ts", ["organizeSmartDay", "getPhase3Context", "fetchWeather", "fetchTicketmasterEvents", "reserve_free_ai_usage"]],
   ["src/lib/phase3-intelligence.ts", ["calculatePhase3Compatibility", "weatherCodeLabel", "overlapDays"]],
   ["src/lib/phase3-intelligence.test.ts", ["score élevé", "codes météo"]],
+  ["src/components/CatalogImage.tsx", ["Place identity", "Aucune photo officielle vérifiée"]],
+  ["src/lib/public-place-media.functions.ts", ["logo", "verified"]],
 ];
 
 let passed = 0;
@@ -26,4 +27,4 @@ for (const [file, markers] of checks) {
   }
 }
 
-console.log(`[Phase 3] ${passed}/${checks.reduce((sum, [, markers]) => sum + markers.length, 0)} invariants validés.`);
+console.log(`[Phase 3] ${passed}/${checks.reduce((sum, [, markers]) => sum + markers.length, 0)} invariants validés sans mutation de source.`);
