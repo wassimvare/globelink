@@ -45,6 +45,30 @@ const PLACEHOLDER_META: Record<LiveCatalogItem["kind"], { emoji: string; label: 
   deal: { emoji: "🔥", label: "Offre" },
 };
 
+const THIRD_PARTY_LOGO_HOSTS = [
+  "google.com",
+  "google.fr",
+  "googleapis.com",
+  "gstatic.com",
+  "openstreetmap.org",
+  "booking.com",
+  "tripadvisor.com",
+  "tripadvisor.fr",
+  "thefork.com",
+  "thefork.fr",
+  "opentable.com",
+  "yelp.com",
+  "getyourguide.com",
+  "ticketmaster.com",
+  "expedia.com",
+  "expedia.fr",
+  "hotels.com",
+  "agoda.com",
+  "airbnb.com",
+  "kayak.com",
+  "trivago.com",
+] as const;
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -84,15 +108,30 @@ function tagString(tags: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function faviconUrl(value: unknown): string | null {
+function hostMatches(hostname: string, domain: string) {
+  const host = hostname.replace(/^www\./i, "").toLowerCase();
+  const expected = domain.replace(/^www\./i, "").toLowerCase();
+  return host === expected || host.endsWith(`.${expected}`);
+}
+
+function safeOfficialLogoWebsite(value: unknown): string | null {
   if (!value) return null;
   try {
     const url = new URL(String(value).trim());
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url.toString())}&sz=256`;
+    const hostname = url.hostname.toLowerCase();
+    if (!hostname) return null;
+    if (THIRD_PARTY_LOGO_HOSTS.some((domain) => hostMatches(hostname, domain))) return null;
+    return url.toString();
   } catch {
     return null;
   }
+}
+
+function faviconUrl(value: unknown): string | null {
+  const website = safeOfficialLogoWebsite(value);
+  if (!website) return null;
+  return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(website)}&sz=256`;
 }
 
 function knownPlaceLogo(
@@ -106,49 +145,17 @@ function knownPlaceLogo(
     safeExactHttps(tags.logo);
   if (direct) return { url: direct, label: "Logo officiel du lieu" };
 
-  const website =
-    tagString(tags, "official_website") ?? lookup?.website ?? tagString(tags, "website") ?? null;
+  // A source page (Google Maps, Booking, Tripadvisor, etc.) is not the place's
+  // official website. Never turn its favicon into the establishment logo.
+  const website = [
+    tagString(tags, "official_website"),
+    lookup?.website ?? null,
+    tagString(tags, "website"),
+  ]
+    .map((candidate) => safeOfficialLogoWebsite(candidate))
+    .find((candidate): candidate is string => !!candidate);
   const favicon = faviconUrl(website);
   return favicon ? { url: favicon, label: "Logo du site officiel" } : null;
-}
-
-function providerLogoFallback(item: Pick<LiveCatalogItem, "tags">) {
-  const tags = asRecord(item.tags);
-  const provider = [
-    "official_source_provider",
-    "primary_source_provider",
-    "source_api_provider",
-    "reservation_source_provider",
-  ]
-    .map((key) => tagString(tags, key)?.toLowerCase() ?? "")
-    .find(Boolean);
-  if (!provider) return null;
-
-  const domain = provider.includes("google")
-    ? "https://www.google.com"
-    : provider.includes("openstreetmap") || provider === "osm"
-      ? "https://www.openstreetmap.org"
-      : provider.includes("booking")
-        ? "https://www.booking.com"
-        : provider.includes("tripadvisor")
-          ? "https://www.tripadvisor.com"
-          : provider.includes("getyourguide")
-            ? "https://www.getyourguide.com"
-            : provider.includes("ticketmaster")
-              ? "https://www.ticketmaster.com"
-              : provider.includes("uber")
-                ? "https://www.ubereats.com"
-                : provider.includes("yelp")
-                  ? "https://www.yelp.com"
-                  : provider.includes("thefork")
-                    ? "https://www.thefork.fr"
-                    : provider.includes("opentable")
-                      ? "https://www.opentable.com"
-                      : provider.includes("amadeus")
-                        ? "https://www.amadeus.com"
-                        : null;
-  const url = faviconUrl(domain);
-  return url ? { url, label: "Logo de la source vérifiée" } : null;
 }
 
 export function catalogPlaceMediaInput(
@@ -239,7 +246,6 @@ export function CatalogImage({
     ],
   );
   const knownLogo = useMemo(() => knownPlaceLogo(item, lookup), [item, lookup]);
-  const providerLogo = useMemo(() => providerLogoFallback(item), [item]);
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   useEffect(() => setFailedUrls(new Set()), [item.id]);
 
@@ -373,7 +379,6 @@ export function CatalogImage({
   const logoCandidates = [
     knownLogo,
     resolvedLogoUrl ? { url: resolvedLogoUrl, label: resolvedLogo?.label ?? "Logo du site officiel" } : null,
-    providerLogo,
   ].filter((entry): entry is { url: string; label: string } => !!entry && !failedUrls.has(entry.url));
   const logo = logoCandidates[0] ?? null;
 
@@ -398,7 +403,7 @@ export function CatalogImage({
         </div>
         <span className="text-xs font-semibold text-foreground/80">{logo.label}</span>
         <span className="text-[10px] text-muted-foreground">
-          Photo officielle indisponible · logo utilisé
+          Photo officielle indisponible · logo du lieu utilisé
         </span>
       </div>
     );
@@ -420,8 +425,8 @@ export function CatalogImage({
       </span>
       <span className="px-4 text-[10px]">
         {lookingForPhoto
-          ? "Photo Google Places · site officiel · logo"
-          : `${placeholder.label} · aucune image générique utilisée`}
+          ? "Photo Google Places · site officiel · logo du lieu"
+          : `${placeholder.label} · aucun logo de plateforme utilisé`}
       </span>
     </div>
   );
