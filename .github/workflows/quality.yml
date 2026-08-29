@@ -43,6 +43,9 @@ jobs:
       - name: Validate Phase 5 travel data reliability
         run: npm run check:phase5
 
+      - name: Validate Phase 6 daily journal
+        run: npm run check:phase6
+
       - name: Build GlobeLink
         run: npm run build
 
