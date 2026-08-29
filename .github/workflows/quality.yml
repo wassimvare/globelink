@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
+      - name: Validate Phase 2 critical surfaces
+        run: npm run check:phase2
+
       - name: Build GlobeLink
         run: npm run build
 
