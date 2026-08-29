@@ -1,0 +1,39 @@
+name: Stabilise GlobeLink source (Phase 1)
+
+on:
+  push:
+    branches:
+      - stabilisation-phase-1
+    paths:
+      - '.github/workflows/stabilise-source-phase1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  freeze-generated-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout stabilisation branch
+        uses: actions/checkout@v4
+        with:
+          ref: stabilisation-phase-1
+          fetch-depth: 0
+
+      - name: Apply historical source transformations once
+        run: |
+          node scripts/apply-build-patches.mjs
+          node scripts/apply-late-source-patches.mjs
+
+      - name: Commit transformed source
+        run: |
+          if git diff --quiet; then
+            echo "Source already stable; no generated changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: freeze historical patches into source [skip ci]"
+          git push origin HEAD:stabilisation-phase-1
