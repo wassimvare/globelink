@@ -31,6 +31,45 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data?.json?.() ?? {};
+  } catch {
+    payload = { body: event.data?.text?.() ?? "Nouvelle notification GlobeLink" };
+  }
+
+  const title = payload.title || "GlobeLink";
+  const options = {
+    body: payload.body || "Tu as une nouvelle notification",
+    icon: payload.icon || "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
+    badge: payload.badge || "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
+    tag: payload.tag || undefined,
+    renotify: Boolean(payload.renotify),
+    requireInteraction: Boolean(payload.requireInteraction),
+    data: payload.data || {},
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          await client.focus();
+          if ("navigate" in client) await client.navigate(target);
+          return;
+        }
+      }
+      if (self.clients.openWindow) await self.clients.openWindow(target);
+    }),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
