@@ -21,7 +21,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Apply focused codemod
-        run: python3 scripts/ai-program-budget-sync-codemod.py
+        run: |
+          python3 scripts/ai-program-budget-sync-codemod.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("src/lib/ai-pro.functions.ts")
+          source = path.read_text()
+          source = source.replace("(selectionRows ?? []).flatMap((row) =>", "(selectionRows ?? []).flatMap((row: any) =>")
+          path.write_text(source)
+          PY
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
