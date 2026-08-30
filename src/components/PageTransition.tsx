@@ -1,23 +1,14 @@
-import { motion, useReducedMotion } from "framer-motion";
-import { useRouterState } from "@tanstack/react-router";
 import { type ReactNode } from "react";
 
-// Transition deliberately avoids transforms on the page container: fixed/sticky
-// elements keep their positioning and navigation feels immediate.
+/**
+ * Keep route content fully visible during navigation.
+ *
+ * The previous Framer Motion opacity transition could leave the current screen
+ * almost transparent while TanStack Router was waiting for the next protected
+ * route to resolve on iOS/PWA. That produced the washed-out/white screen seen
+ * when opening the travel notebook. Route transitions now stay visually stable;
+ * NavigationProgress still provides lightweight feedback at the top of the app.
+ */
 export function PageTransition({ children }: { children: ReactNode }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const reduced = useReducedMotion();
-
-  if (reduced) return <>{children}</>;
-
-  return (
-    <motion.div
-      key={pathname}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.12, ease: "easeOut" }}
-    >
-      {children}
-    </motion.div>
-  );
+  return <>{children}</>;
 }
