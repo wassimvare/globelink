@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { detectPremiumIntent } from "@/features/ai/phase7-capabilities";
 import { generateTravelAiText } from "./ai-gateway.server";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
@@ -36,6 +37,7 @@ export const askGlobeLinkFree = createServerFn({ method: "POST" })
     return { query, history };
   })
   .handler(async ({ data, context }) => {
+    const premiumIntent = detectPremiumIntent(data.query);
     const meteredChars = Math.min(
       28_000,
       data.query.length + (data.history ?? []).reduce((total, turn) => total + turn.content.length, 0),
@@ -58,10 +60,14 @@ export const askGlobeLinkFree = createServerFn({ method: "POST" })
       .map((turn) => `${turn.role === "user" ? "UTILISATEUR" : "GLOBELINK IA"}: ${turn.content}`)
       .join("\n\n");
 
+    const scopeHint = premiumIntent.recommended
+      ? `La demande contient des besoins réservés à IA+ (${premiumIntent.reasons.join(", ")}). Réponds quand même utilement avec des conseils généraux, mais ne prétends pas avoir utilisé le carnet, comparé des données actuelles ou appliqué des changements. Termine par une phrase courte expliquant que IA+ peut effectuer ces actions dans GlobeLink.`
+      : "La demande reste dans le périmètre gratuit : réponds sans pousser inutilement IA+.";
+
     const { text } = await generateTravelAiText({
       temperature: 0.5,
       maxOutputTokens: 1_500,
-      system: `Tu es GlobeLink IA, l'assistant voyage gratuit de GlobeLink. Tu réponds exclusivement en français. Ton rôle gratuit est d'inspirer et de préparer les grandes lignes d'un voyage : questions et conseils rapides, idées de destinations, exemple de journée, conseils généraux de budget et d'organisation. Tu ne consultes pas le carnet GlobeLink de l'utilisateur et tu n'effectues pas de recherche web approfondie ou en temps réel. Tu ne dois jamais présenter un prix, une disponibilité, une météo, une formalité ou un établissement précis comme vérifié, actuel ou réservé. Si tu cites un hôtel, restaurant ou activité à titre d'exemple, indique clairement que c'est une piste à vérifier et évite de donner l'impression d'une comparaison réelle. Tu peux proposer un exemple de journée ou de petites pistes d'itinéraire, mais pas prétendre avoir construit ou optimisé un voyage complet à partir de données réelles. Ne demande jamais de mot de passe, numéro de carte, document d'identité complet, clé API ou position exacte. Pour rechercher de vrais établissements, comparer des options et des prix, exploiter le carnet ou construire un itinéraire complet jour par jour, indique brièvement que GlobeLink IA+ est adapté, sans rendre la réponse gratuite inutile.`,
+      system: `Tu es GlobeLink IA, l'assistant voyage gratuit de GlobeLink. Tu réponds exclusivement en français. Ton rôle gratuit est d'inspirer et de préparer les grandes lignes d'un voyage : questions et conseils rapides, idées de destinations, exemple de journée, conseils généraux de budget et d'organisation. Tu ne consultes pas le carnet GlobeLink de l'utilisateur et tu n'effectues pas de recherche web approfondie ou en temps réel. Tu ne dois jamais présenter un prix, une disponibilité, une météo, une formalité ou un établissement précis comme vérifié, actuel ou réservé. Si tu cites un hôtel, restaurant ou activité à titre d'exemple, indique clairement que c'est une piste à vérifier et évite de donner l'impression d'une comparaison réelle. Tu peux proposer un exemple de journée ou de petites pistes d'itinéraire, mais pas prétendre avoir construit ou optimisé un voyage complet à partir de données réelles. Ne demande jamais de mot de passe, numéro de carte, document d'identité complet, clé API ou position exacte. Pour rechercher de vrais établissements, comparer des options et des prix, exploiter le carnet ou construire un itinéraire complet jour par jour, indique brièvement que GlobeLink IA+ est adapté, sans rendre la réponse gratuite inutile. ${scopeHint}`,
       prompt: `${historyText ? `CONTEXTE DE CONVERSATION\n${historyText}\n\n` : ""}NOUVELLE DEMANDE\n${data.query}\n\nRéponds directement à la demande en Markdown, sans préambule technique.`,
     });
 
@@ -71,5 +77,8 @@ export const askGlobeLinkFree = createServerFn({ method: "POST" })
     return {
       answer,
       remaining: Math.max(0, Number(remaining ?? 0)),
+      tier: "free" as const,
+      upgradeRecommended: premiumIntent.recommended,
+      premiumReasons: premiumIntent.reasons,
     };
   });
