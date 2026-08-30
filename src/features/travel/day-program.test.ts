@@ -90,13 +90,47 @@ describe("Phase 6 — carnet quotidien", () => {
     expect(selections.lunch?.text).toBe("Bistro du Lac");
   });
 
-  it("n’affiche pas une copie exacte d’un programme d’un jour précédent", () => {
+  it("ne vide jamais une journée valide uniquement parce que son programme ressemble à une autre journée", () => {
     const duplicate = `### 2026-09-01\n**Matin**\n09:00 · Même activité\n### 2026-09-02\n**Matin**\n09:00 · Même activité`;
     const allEntries = [
-      { kind: "note", title: "IA+ · Programme", notes: duplicate, visited_on: "2026-09-01" },
-      { kind: "note", title: "IA+ · Programme", notes: duplicate, visited_on: "2026-09-02" },
+      { id: "day-1", kind: "note", title: "IA+ · Programme", notes: duplicate, visited_on: "2026-09-01" },
+      { id: "day-2", kind: "note", title: "IA+ · Programme", notes: duplicate, visited_on: "2026-09-02" },
     ];
     expect(buildDayProgramForDate({ day: "2026-09-01", entries: [allEntries[0]], allEntries })).toHaveLength(1);
-    expect(buildDayProgramForDate({ day: "2026-09-02", entries: [allEntries[1]], allEntries })).toHaveLength(0);
+    expect(buildDayProgramForDate({ day: "2026-09-02", entries: [allEntries[1]], allEntries })).toHaveLength(1);
+  });
+
+  it("n'utilise pas un programme sans date appartenant à une autre journée", () => {
+    const day2Only = {
+      id: "day-2-only",
+      kind: "note",
+      title: "IA+ · Jour 2",
+      notes: "**Matin**\n09:00 · Activité du jour 2",
+      visited_on: "2026-09-02",
+    };
+    expect(buildDayProgramForDate({ day: "2026-09-01", entries: [], allEntries: [day2Only] })).toEqual([]);
+  });
+
+  it("retombe sur une source multi-jours valide si l'entrée directe du jour ne contient pas ce jour", () => {
+    const brokenDirect = {
+      id: "broken-day-1",
+      kind: "note",
+      title: "IA+ · Jour 1",
+      notes: "### 2026-09-02\n**Matin**\n09:00 · Mauvais jour",
+      visited_on: "2026-09-01",
+    };
+    const shared = {
+      id: "shared-plan",
+      kind: "note",
+      title: "IA+ · Programme",
+      notes: multiDay,
+      visited_on: "2026-09-02",
+    };
+    const program = buildDayProgramForDate({
+      day: "2026-09-01",
+      entries: [brokenDirect],
+      allEntries: [brokenDirect, shared],
+    });
+    expect(program.some((section) => section.items.some((item) => item.includes("Vieille ville")))).toBe(true);
   });
 });
