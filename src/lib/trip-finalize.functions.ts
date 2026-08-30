@@ -102,7 +102,7 @@ export const finalizeTrip = createServerFn({ method: "POST" })
       /* soft-fail summary */
     }
 
-    await supabase
+    const { error: finalizeError } = await supabase
       .from("trips")
       .update({
         status: "past",
@@ -110,7 +110,10 @@ export const finalizeTrip = createServerFn({ method: "POST" })
         summary,
         finalized_at: new Date().toISOString(),
       })
-      .eq("id", data.tripId);
+      .eq("id", data.tripId)
+      .eq("user_id", userId);
+
+    if (finalizeError) throw finalizeError;
 
     return { ok: true, stats, summary };
   });
