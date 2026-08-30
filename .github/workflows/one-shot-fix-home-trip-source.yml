@@ -1,0 +1,111 @@
+name: One-shot home trip source fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/one-shot-fix-home-trip-source.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  fix-home-trip-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch home next-trip source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/routes/index.tsx")
+          text = path.read_text()
+
+          old_query = '''  const { data: nextTravelIntent } = useQuery({
+            queryKey: ["phase2-next-travel-intent", user?.id],
+            enabled: !!user,
+            queryFn: async () => {
+              const today = new Date().toISOString().slice(0, 10);
+              const { data } = await supabase
+                .from("travel_intents")
+                .select("id,destination_city,destination_country,starts_on,ends_on,interests")
+                .eq("user_id", user!.id)
+                .gte("ends_on", today)
+                .order("starts_on", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+              return data ?? null;
+            },
+            staleTime: 5 * 60_000,
+          });'''
+
+          new_query = '''  const { data: nextTrip } = useQuery({
+            // Keep the home card on the exact same source as the Carnet.
+            // Prefixing with `trips` also means create/delete invalidations refresh this card immediately.
+            queryKey: ["trips", user?.id, "home-next"],
+            enabled: !!user,
+            queryFn: async () => {
+              const today = new Date().toISOString().slice(0, 10);
+              const { data, error } = await supabase
+                .from("trips")
+                .select("id,title,country,city,starts_on,ends_on")
+                .eq("user_id", user!.id)
+                .is("finalized_at", null)
+                .gte("ends_on", today)
+                .order("starts_on", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+              if (error) throw error;
+              return data ?? null;
+            },
+            staleTime: 5 * 60_000,
+          });'''
+
+          if old_query not in text:
+              raise SystemExit("Expected nextTravelIntent query block not found; refusing an unsafe patch")
+          text = text.replace(old_query, new_query, 1)
+          text = text.replace("nextTravelIntent", "nextTrip")
+          text = text.replace("nextTrip.destination_city", "nextTrip.city")
+          text = text.replace("nextTrip.destination_country", "nextTrip.country")
+          text = text.replace("new Date(nextTrip.starts_on)", "new Date(`${nextTrip.starts_on}T12:00:00`)")
+          text = text.replace("new Date(nextTrip.ends_on)", "new Date(`${nextTrip.ends_on}T12:00:00`)")
+
+          old_meta = '''                          {nextTrip.interests?.length
+                            ? ` · ${nextTrip.interests.slice(0, 3).join(" · ")}`
+                            : ""}'''
+          new_meta = '''                          {nextTrip.title ? ` · ${nextTrip.title}` : ""}'''
+          if old_meta not in text:
+              raise SystemExit("Expected travel-intent interests block not found; refusing an unsafe patch")
+          text = text.replace(old_meta, new_meta, 1)
+
+          if "travel_intents" in text or "nextTravelIntent" in text:
+              raise SystemExit("Old home travel-intent source still present after patch")
+
+          path.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Commit verified fix and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/one-shot-fix-home-trip-source.yml
+          git config user.name "GlobeLink Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/routes/index.tsx .github/workflows/one-shot-fix-home-trip-source.yml
+          git commit -m "fix: source home next trip from carnet"
+          git push origin HEAD:main
