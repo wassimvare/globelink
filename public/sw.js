@@ -1,5 +1,5 @@
 /* GlobeLink production service worker: static assets only, never auth/API data. */
-const CACHE = "globelink-static-icon-v20260825-rgb2";
+const CACHE = "globelink-static-v20260830-ui-refresh";
 const OFFLINE = "/offline.html";
 const PRECACHE = [
   OFFLINE,
@@ -10,6 +10,7 @@ const PRECACHE = [
   "/icons/globelink-app-icon-512-v20260824.jpg?v=20260825-rgb2",
 ];
 const STATIC_EXT = /\.(?:css|js|mjs|woff2?|png|jpe?g|webp|avif|svg|ico)$/i;
+const APP_CODE_EXT = /\.(?:css|js|mjs)$/i;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -27,7 +28,24 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
       )
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(async () => {
+        // A home screen that was already open can still be running the previous JS bundle.
+        // Refresh only safe/home views once when this service-worker version takes control.
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        await Promise.all(
+          clients.map(async (client) => {
+            try {
+              const url = new URL(client.url);
+              if (url.origin === self.location.origin && (url.pathname === "/" || url.pathname === "/dashboard")) {
+                await client.navigate(client.url);
+              }
+            } catch {
+              // Ignore a client that cannot be navigated.
+            }
+          }),
+        );
+      }),
   );
 });
 
@@ -86,6 +104,23 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (!STATIC_EXT.test(url.pathname)) return;
+
+  // Application code must be network-first so a production deployment cannot
+  // stay stuck on an older interface. Images/fonts remain cache-first for speed.
+  if (APP_CODE_EXT.test(url.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok && response.type === "basic") {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((cached) => {
