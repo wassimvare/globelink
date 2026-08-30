@@ -124,7 +124,6 @@ export async function notifyIncomingCall(args: IncomingCallPush) {
       icon: args.callerAvatar || "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
       badge: "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
       tag: `globelink-call-${args.callId}`,
-      renotify: false,
       requireInteraction: true,
       data: {
         url: `/messages/${args.conversationId}`,
