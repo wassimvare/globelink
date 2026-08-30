@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ensurePushSubscription } from "@/lib/push-notifications";
 
 /** Enregistre le cache hors ligne sans forcer de rechargement d'écran. */
 export function PwaBootstrap() {
@@ -11,8 +12,9 @@ export function PwaBootstrap() {
           updateViaCache: "none",
         });
         await registration.update();
+        void ensurePushSubscription();
       } catch {
-        // L'application reste utilisable même si le cache hors ligne échoue.
+        // L'application reste utilisable même si le cache hors ligne ou le push échoue.
       }
     };
 
