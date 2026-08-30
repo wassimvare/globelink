@@ -33,6 +33,7 @@ import {
   type DayProgramSectionKey,
 } from "@/features/travel/day-program";
 import { refreshTripDayWeather } from "@/lib/trip-weather.functions";
+import { setTripProgramSelection } from "@/lib/trip-program-selection.functions";
 // TRIP_JOURNAL_DAYS_V2
 // TRIP_DAILY_PROGRAM_V3
 import { Button } from "@/components/ui/button";
@@ -343,6 +344,7 @@ function normalizeBudgetCategory(value: string) {
   const cleaned = cleanMarkdownLine(value)
     .replace(/[.:;–—-]+$/g, "")
     .trim();
+  if (/hébergement|hebergement|hôtel|hotel|nuit|logement/i.test(cleaned)) return "Hébergement";
   if (/restauration|restaurant|repas/i.test(cleaned)) return "Restauration";
   if (/transport|trajet|déplacement/i.test(cleaned)) return "Transports";
   if (/activité|activite|extra|divers|achat|shopping|souvenir/i.test(cleaned)) {
@@ -356,8 +358,23 @@ function parseForecastBreakdown(
   day: string,
   dayIndex: number,
   total: number,
+  storedDetails?: any,
 ): ForecastBreakdown {
   const safeTotal = Math.max(0, Number(total || 0));
+  const storedItems = Array.isArray(storedDetails?.items)
+    ? storedDetails.items
+        .map((item: any) => ({
+          label: normalizeBudgetCategory(String(item?.category ?? item?.label ?? "Autres")),
+          amount: Math.max(0, Number(item?.amount || 0)),
+        }))
+        .filter((item: ForecastBreakdownItem) => Number.isFinite(item.amount) && item.amount >= 0)
+    : [];
+  if (storedItems.length > 0) {
+    return {
+      items: storedItems,
+      note: "Budget IA+ synchronisé avec les choix enregistrés dans ce programme.",
+    };
+  }
   const raw = String(notes ?? "").replace(/\r/g, "");
   const latestBlock = raw.split(/\n\n---\n## ✨ IA\+\s*·\s*/).at(-1) ?? raw;
   const [, month = "", date = ""] = day.split("-");
@@ -445,6 +462,7 @@ function parseForecastBreakdown(
 export function TripDaySectionPremium({ index, day, tripId, userId, meta, entries, allEntries = entries, expenses }: Props) {
   const qc = useQueryClient();
   const weatherFn = useServerFn(refreshTripDayWeather);
+  const setProgramSelectionFn = useServerFn(setTripProgramSelection);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const actualExpenses = useMemo(
     () => expenses.filter((expense) => expense.category !== "Prévision IA+"),
@@ -474,40 +492,28 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
   const saveProgramSelection = async (
     sectionKey: DayProgramSectionKey,
     optionLabel: string,
-    text: string,
   ) => {
-    const title = `${JOURNAL_SELECTION_TITLE_PREFIX}${sectionKey}`;
-    const { error: deleteError } = await supabase
-      .from("trip_entries")
-      .delete()
-      .eq("trip_id", tripId)
-      .eq("visited_on", day)
-      .eq("title", title);
-    if (deleteError) throw deleteError;
-    const { error } = await supabase.from("trip_entries").insert({
-      trip_id: tripId,
-      user_id: userId,
-      kind: "note",
-      title,
-      notes: JSON.stringify({ sectionKey, optionLabel, text }),
-      visited_on: day,
-      position: Math.floor(Date.now() % 2_000_000_000),
+    await setProgramSelectionFn({
+      data: { tripId, day, sectionKey, optionLabel, action: "select" },
     });
-    if (error) throw error;
-    await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
-    toast.success("Choix enregistré dans cette journée");
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["trip-entries", tripId] }),
+      qc.invalidateQueries({ queryKey: ["trip-expenses", tripId] }),
+      qc.invalidateQueries({ queryKey: ["trip", tripId] }),
+    ]);
+    toast.success("Programme et budget IA+ mis à jour");
   };
 
   const clearProgramSelection = async (sectionKey: DayProgramSectionKey) => {
-    const title = `${JOURNAL_SELECTION_TITLE_PREFIX}${sectionKey}`;
-    const { error } = await supabase
-      .from("trip_entries")
-      .delete()
-      .eq("trip_id", tripId)
-      .eq("visited_on", day)
-      .eq("title", title);
-    if (error) throw error;
-    await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+    await setProgramSelectionFn({
+      data: { tripId, day, sectionKey, action: "clear" },
+    });
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["trip-entries", tripId] }),
+      qc.invalidateQueries({ queryKey: ["trip-expenses", tripId] }),
+      qc.invalidateQueries({ queryKey: ["trip", tripId] }),
+    ]);
+    toast.success("Choix retiré et budget IA+ recalculé");
   };
 
   const noteCount = entries.filter((entry) => entry.kind === "note" && !isInternalJournalEntry(entry)).length + (meta?.notes ? 1 : 0);
@@ -704,7 +710,7 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                                     const parsedOption = parseProgramOption(item);
                                     if (!parsedOption) return;
                                     try {
-                                      await saveProgramSelection(section.key, parsedOption.label, parsedOption.text);
+                                      await saveProgramSelection(section.key, parsedOption.label);
                                     } catch (error: any) {
                                       toast.error(error?.message ?? "Impossible d’enregistrer ce choix.");
                                     }
@@ -851,6 +857,7 @@ function ForecastExpenseRow({
     day,
     dayIndex,
     Number(expense.amount || 0),
+    expense.details,
   );
 
   return (

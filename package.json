@@ -26,7 +26,7 @@
     "check:phase3": "node scripts/phase3-validate.mjs && node scripts/phase3-e2e-contract.mjs",
     "check:phase4": "node scripts/phase4-architecture.mjs",
     "check:phase5": "node scripts/phase5-catalog-validate.mjs && vitest run src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts",
-    "check:phase6": "node scripts/phase6-journal-validate.mjs && vitest run src/features/travel/day-program.test.ts",
+    "check:phase6": "node scripts/phase6-journal-validate.mjs && vitest run src/features/travel/day-program.test.ts src/features/travel/program-selection-budget.test.ts",
     "check:phase7": "node scripts/phase7-ai-validate.mjs && vitest run src/features/ai/phase7-actions.test.ts"
   },
   "dependencies": {
