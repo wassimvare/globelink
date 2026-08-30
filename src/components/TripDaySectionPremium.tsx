@@ -106,6 +106,7 @@ type ProgramSection = {
 type ForecastBreakdownItem = {
   label: string;
   amount: number;
+  detail?: string;
 };
 
 type ForecastBreakdown = {
@@ -366,6 +367,7 @@ function parseForecastBreakdown(
         .map((item: any) => ({
           label: normalizeBudgetCategory(String(item?.category ?? item?.label ?? "Autres")),
           amount: Math.max(0, Number(item?.amount || 0)),
+          detail: String(item?.detail ?? "").trim() || undefined,
         }))
         .filter((item: ForecastBreakdownItem) => Number.isFinite(item.amount) && item.amount >= 0)
     : [];
@@ -922,10 +924,15 @@ function ForecastExpenseRow({
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
                           <DetailIcon className="h-4 w-4" />
                         </span>
-                        <span className="min-w-0 flex-1 text-sm font-medium sm:text-base">
-                          {item.label}
-                        </span>
-                        <span className="tabular-nums text-sm font-bold sm:text-base">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold sm:text-base">{item.label}</p>
+                          {item.detail && (
+                            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                              {item.detail}
+                            </p>
+                          )}
+                        </div>
+                        <span className="shrink-0 tabular-nums text-sm font-bold sm:text-base">
                           {item.amount.toFixed(2)} €
                         </span>
                       </div>
