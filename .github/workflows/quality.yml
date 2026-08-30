@@ -46,6 +46,9 @@ jobs:
       - name: Validate Phase 6 daily journal
         run: npm run check:phase6
 
+      - name: Validate Phase 7 AI actions
+        run: npm run check:phase7
+
       - name: Build GlobeLink
         run: npm run build
 
