@@ -64,6 +64,7 @@ type ThreadTurn = {
   sources?: Source[];
   liveSearch?: boolean;
   remaining?: number;
+  applicationPreview?: { dayCount: number; budgetDayCount: number; days: string[]; totalForecast: number; actionable: boolean };
 };
 
 const PREMIUM_FEATURES = [
@@ -193,6 +194,7 @@ function AiPlusPage() {
             sources: data.sources,
             liveSearch: data.liveSearch,
             remaining: data.remaining,
+            applicationPreview: data.applicationPreview,
           } satisfies ThreadTurn,
         ].slice(-12),
       );
@@ -212,7 +214,13 @@ function AiPlusPage() {
         },
       });
     },
-    onSuccess: () => toast.success("Conseil IA+ enregistré dans ton carnet ✨"),
+    onSuccess: (result) => {
+      const details = [
+        result.appliedDays ? `${result.appliedDays} journée${result.appliedDays > 1 ? "s" : ""}` : null,
+        result.appliedBudgetDays ? `${result.appliedBudgetDays} budget${result.appliedBudgetDays > 1 ? "s" : ""}` : null,
+      ].filter(Boolean).join(" + ");
+      toast.success(details ? `IA+ a appliqué ${details} au carnet ✨` : "Conseil IA+ enregistré dans ton carnet ✨");
+    },
     onError: (error: Error) => toast.error(friendlyAiError(error)),
   });
 
@@ -611,10 +619,19 @@ function PremiumWorkspace({
                           {turn.remaining != null ? `${turn.remaining} demandes IA+ restantes aujourd'hui` : "Réponse premium"}
                         </span>
                         {trip?.id && (
-                          <Button type="button" variant="outline" size="sm" disabled={savePending} onClick={() => saveTurn(turn)} className="rounded-xl">
-                            {savePending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <BookmarkPlus className="mr-2 h-3.5 w-3.5" />}
-                            Enregistrer dans mon carnet
-                          </Button>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            {turn.applicationPreview?.actionable && (
+                              <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-[10px] font-semibold text-violet-400">
+                                {turn.applicationPreview.dayCount > 0 ? turn.applicationPreview.dayCount + " jour" + (turn.applicationPreview.dayCount > 1 ? "s" : "") : ""}
+                                {turn.applicationPreview.dayCount > 0 && turn.applicationPreview.budgetDayCount > 0 ? " · " : ""}
+                                {turn.applicationPreview.budgetDayCount > 0 ? "budget " + turn.applicationPreview.totalForecast.toFixed(2) + " €" : ""}
+                              </span>
+                            )}
+                            <Button type="button" variant={turn.applicationPreview?.actionable ? "default" : "outline"} size="sm" disabled={savePending} onClick={() => saveTurn(turn)} className="rounded-xl">
+                              {savePending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <BookmarkPlus className="mr-2 h-3.5 w-3.5" />}
+                              {turn.applicationPreview?.actionable ? "Appliquer au carnet" : "Enregistrer le conseil"}
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </article>
@@ -683,7 +700,7 @@ function PremiumWorkspace({
               <li>• tient compte de tes dépenses déjà enregistrées ;</li>
               <li>• peut rechercher et citer des sources récentes ;</li>
               <li>• compare plusieurs options au lieu de donner une seule idée ;</li>
-              <li>• te permet d’enregistrer ses recommandations dans le carnet.</li>
+              <li>• peut appliquer son programme et ses budgets directement dans les bonnes journées du carnet.</li>
             </ul>
           </div>
         </aside>
