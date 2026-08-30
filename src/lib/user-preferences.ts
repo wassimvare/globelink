@@ -49,7 +49,7 @@ function metadataScope(metadata: unknown) {
 export function notificationCategory(notification: NotificationLike): "social" | "messages" | "travel" {
   const scope = metadataScope(notification.metadata);
   if (scope === "travel_match") return "messages";
-  if (notification.type === "message") return "messages";
+  if (notification.type === "message" || notification.type === "call") return "messages";
   if (
     ["nearby_spot", "price_drop", "badge", "place_approved", "place_rejected"].includes(
       notification.type,
