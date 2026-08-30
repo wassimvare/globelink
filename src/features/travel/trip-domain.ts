@@ -49,21 +49,21 @@ export function selectFocusTrip<T extends {
 }>(trips: T[] | null | undefined, today: string): T | null {
   if (!trips?.length) return null;
 
-  const active = trips.find(
+  // A finalized trip belongs to the history only. It must never be reused as
+  // the current/next trip card, even if its dates still include today.
+  const openTrips = trips.filter((trip) => !trip.finalized_at);
+  if (!openTrips.length) return null;
+
+  const active = openTrips.find(
     (trip) =>
-      !trip.finalized_at &&
       !!trip.starts_on &&
       trip.starts_on <= today &&
       (!trip.ends_on || trip.ends_on >= today),
   );
   if (active) return active;
 
-  const upcoming = trips
-    .filter(
-      (trip) =>
-        !trip.finalized_at &&
-        (!trip.starts_on || trip.starts_on >= today),
-    )
+  const upcoming = openTrips
+    .filter((trip) => !trip.starts_on || trip.starts_on >= today)
     .sort((a, b) => {
       if (!a.starts_on && !b.starts_on) return 0;
       if (!a.starts_on) return 1;
@@ -71,15 +71,20 @@ export function selectFocusTrip<T extends {
       return a.starts_on.localeCompare(b.starts_on);
     });
 
-  return upcoming[0] ?? trips[0];
+  return upcoming[0] ?? openTrips[0] ?? null;
 }
 
 export function isTripActive(
-  trip: { starts_on?: string | null; ends_on?: string | null } | null | undefined,
+  trip:
+    | { finalized_at?: string | null; starts_on?: string | null; ends_on?: string | null }
+    | null
+    | undefined,
   today: string,
 ) {
   return Boolean(
-    trip?.starts_on &&
+    trip &&
+      !trip.finalized_at &&
+      trip.starts_on &&
       trip.starts_on <= today &&
       (!trip.ends_on || trip.ends_on >= today),
   );
@@ -95,6 +100,6 @@ export function formatTripDate(value: string) {
 
 export function tripStatusLabel(status: string | null) {
   if (status === "active") return "En cours";
-  if (status === "completed") return "Terminé";
+  if (status === "completed" || status === "past") return "Terminé";
   return "Prévu";
 }
