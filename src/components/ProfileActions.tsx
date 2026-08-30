@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, ChevronLeft, MoreHorizontal, ShieldAlert, UserX } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -36,6 +37,7 @@ export function ProfileActions({
   targetUserId,
   username,
 }: ProfileActionsProps) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState<ProfileAction | null>(null);
   const [reportMode, setReportMode] = useState(false);
@@ -66,6 +68,23 @@ export function ProfileActions({
     if (!nextOpen) resetReportFlow();
   };
 
+  const syncRelationshipVisibilityCaches = () => {
+    queryClient.setQueriesData({ queryKey: ["search"] }, (cached: unknown) => {
+      if (!cached || typeof cached !== "object") return cached;
+
+      const searchResults = cached as { user?: Array<{ id?: string }> };
+      if (!Array.isArray(searchResults.user)) return cached;
+
+      const visibleUsers = searchResults.user.filter((result) => result.id !== targetUserId);
+      if (visibleUsers.length === searchResults.user.length) return cached;
+
+      return { ...searchResults, user: visibleUsers };
+    });
+
+    void queryClient.invalidateQueries({ queryKey: ["search"] });
+    void queryClient.invalidateQueries({ queryKey: ["relationship-controls"] });
+  };
+
   const handleRestrict = async () => {
     if (loading) return;
     setLoading("restrict");
@@ -76,6 +95,7 @@ export function ProfileActions({
         targetId: targetUserId,
         mode: "restricted",
       });
+      syncRelationshipVisibilityCaches();
       toast.success(`@${username} a été restreint`);
       closeDrawer();
     } catch {
@@ -95,6 +115,7 @@ export function ProfileActions({
         targetId: targetUserId,
         mode: "blocked",
       });
+      syncRelationshipVisibilityCaches();
       toast.success(`@${username} a été bloqué`);
       closeDrawer();
     } catch {
