@@ -77,7 +77,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run public and access-control journeys
-        run: npx playwright test e2e/core.smoke.spec.ts e2e/critical-surfaces.spec.ts
+        run: npx playwright test e2e/core.smoke.spec.ts e2e/critical-surfaces.spec.ts e2e/ai-surfaces.spec.ts
 
       - name: Run live authenticated journeys when test accounts are configured
         env:
