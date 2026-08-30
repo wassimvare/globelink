@@ -102,6 +102,14 @@ function isoDayFromHeading(line: string, fallbackYear: number) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+function hasDatedProgramHeadings(raw: string, targetDay: string) {
+  const year = Number(targetDay.slice(0, 4)) || new Date().getUTCFullYear();
+  return raw
+    .replace(/\r/g, "")
+    .split("\n")
+    .some((line) => /^\s*#{1,6}\s+/.test(line) && !!isoDayFromHeading(line, year));
+}
+
 export function extractDayProgramBlock(raw: string | null | undefined, targetDay: string) {
   if (!raw) return "";
   const lines = String(raw).replace(/\r/g, "").split("\n");
@@ -229,16 +237,16 @@ export function isInternalJournalEntry(entry: JournalEntry) {
   return isAiProgramEntry(entry) || isJournalSelectionEntry(entry);
 }
 
-function sourceForDay(day: string, entries: JournalEntry[], allEntries: JournalEntry[]) {
-  const exact = entries.find(
-    (entry) => entry.kind === "note" && /^IA\+\s*·\s*Jour/i.test(String(entry.title ?? "")) && !!entry.notes,
-  );
-  if (exact?.notes) return String(exact.notes);
-  const legacy = allEntries.find((entry) => {
-    if (!isAiProgramEntry(entry) || !entry?.notes) return false;
-    return !!extractDayProgramBlock(String(entry.notes), day);
-  });
-  return legacy?.notes ? String(legacy.notes) : "";
+function entryKey(entry: JournalEntry) {
+  if (entry.id) return `id:${entry.id}`;
+  return [entry.visited_on ?? "", entry.title ?? "", entry.notes ?? ""].join("|");
+}
+
+function programFromEntryForDay(entry: JournalEntry, day: string, allowUndated: boolean) {
+  if (!isAiProgramEntry(entry) || !entry.notes) return [];
+  const raw = String(entry.notes);
+  if (!allowUndated && !hasDatedProgramHeadings(raw, day)) return [];
+  return parseDayProgram(extractDayProgramBlock(raw, day));
 }
 
 export function buildDayProgramForDate(args: {
@@ -246,17 +254,32 @@ export function buildDayProgramForDate(args: {
   entries: JournalEntry[];
   allEntries: JournalEntry[];
 }) {
-  const raw = sourceForDay(args.day, args.entries, args.allEntries);
-  const parsed = parseDayProgram(extractDayProgramBlock(raw, args.day));
-  const signature = dayProgramSignature(parsed);
-  if (!signature) return parsed;
+  const direct = args.entries
+    .filter((entry) => isAiProgramEntry(entry) && !!entry.notes)
+    .sort((left, right) => {
+      const leftExact = /^IA\+\s*·\s*Jour/i.test(String(left.title ?? "")) ? 1 : 0;
+      const rightExact = /^IA\+\s*·\s*Jour/i.test(String(right.title ?? "")) ? 1 : 0;
+      return rightExact - leftExact;
+    });
 
-  const duplicatedEarlier = args.allEntries.some((entry) => {
-    if (!isAiProgramEntry(entry) || !entry.notes || !entry.visited_on || entry.visited_on >= args.day) return false;
-    const previous = parseDayProgram(extractDayProgramBlock(String(entry.notes), String(entry.visited_on)));
-    return dayProgramSignature(previous) === signature;
-  });
-  return duplicatedEarlier ? [] : parsed;
+  const seen = new Set(direct.map(entryKey));
+  const sameDayFallback = args.allEntries.filter(
+    (entry) => entry.visited_on === args.day && !seen.has(entryKey(entry)),
+  );
+
+  for (const entry of [...direct, ...sameDayFallback]) {
+    const program = programFromEntryForDay(entry, args.day, true);
+    if (program.length > 0) return program;
+    seen.add(entryKey(entry));
+  }
+
+  for (const entry of args.allEntries) {
+    if (seen.has(entryKey(entry))) continue;
+    const program = programFromEntryForDay(entry, args.day, false);
+    if (program.length > 0) return program;
+  }
+
+  return [];
 }
 
 export function parseProgramOption(item: string) {
