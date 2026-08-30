@@ -1,7 +1,51 @@
-/* Mobile containment for the travel journal.
+/* Global mobile viewport containment.
+   Some mobile browsers (notably Safari/PWA) can keep the visual page offset horizontally
+   after a wide child, drawer, carousel or browser chrome resize. styles.css already clips
+   body overflow, but the root scrolling element can still be html. Lock both root elements
+   to the layout viewport and remove the old 320px minimum width on narrow/zoomed displays. */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+body {
+  min-width: 0 !important;
+}
+
+.mobile-app-content {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+.mobile-app-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Mobile containment for the travel journal and the rest of the authenticated shell.
    Safari can let a flex/grid item's min-content width push long IA+ labels past the viewport.
    Keep every compact journal entry inside its day card and let the main title wrap so it stays fully readable. */
 @media (max-width: 639px) {
+  html,
+  body {
+    min-width: 0 !important;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .app-page,
+  .app-page > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .app-page > div[class~="mx-auto"][class~="max-w-5xl"] {
     width: 100%;
     min-width: 0;
