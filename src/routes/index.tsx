@@ -507,19 +507,23 @@ function FeedPage() {
     staleTime: 5 * 60_000,
   });
 
-  const { data: nextTravelIntent } = useQuery({
-    queryKey: ["phase2-next-travel-intent", user?.id],
+  const { data: nextTrip } = useQuery({
+    // The home card must use the same persisted trips as the Carnet.
+    // The `trips` prefix also lets Carnet create/delete invalidations refresh it immediately.
+    queryKey: ["trips", user?.id, "home-next"],
     enabled: !!user,
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const { data } = await supabase
-        .from("travel_intents")
-        .select("id,destination_city,destination_country,starts_on,ends_on,interests")
+      const { data, error } = await supabase
+        .from("trips")
+        .select("id,title,country,city,starts_on,ends_on")
         .eq("user_id", user!.id)
+        .is("finalized_at", null)
         .gte("ends_on", today)
         .order("starts_on", { ascending: true })
         .limit(1)
         .maybeSingle();
+      if (error) throw error;
       return data ?? null;
     },
     staleTime: 5 * 60_000,
@@ -679,27 +683,25 @@ function FeedPage() {
                     <p className="text-xs font-semibold uppercase tracking-wider text-primary">
                       Ton espace Voyage
                     </p>
-                    {nextTravelIntent ? (
+                    {nextTrip ? (
                       <>
                         <h2 className="truncate font-display text-xl font-semibold">
                           Prochain voyage ·{" "}
-                          {[nextTravelIntent.destination_city, nextTravelIntent.destination_country]
+                          {[nextTrip.city, nextTrip.country]
                             .filter(Boolean)
                             .join(", ")}
                         </h2>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {new Date(nextTravelIntent.starts_on).toLocaleDateString("fr-FR", {
+                          {new Date(`${nextTrip.starts_on}T12:00:00`).toLocaleDateString("fr-FR", {
                             day: "numeric",
                             month: "short",
                           })}{" "}
                           →{" "}
-                          {new Date(nextTravelIntent.ends_on).toLocaleDateString("fr-FR", {
+                          {new Date(`${nextTrip.ends_on}T12:00:00`).toLocaleDateString("fr-FR", {
                             day: "numeric",
                             month: "short",
                           })}
-                          {nextTravelIntent.interests?.length
-                            ? ` · ${nextTravelIntent.interests.slice(0, 3).join(" · ")}`
-                            : ""}
+                          {nextTrip.title ? ` · ${nextTrip.title}` : ""}
                         </p>
                       </>
                     ) : (
@@ -723,13 +725,13 @@ function FeedPage() {
                     to="/trips"
                     className="inline-flex h-10 items-center gap-1 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground"
                   >
-                    {nextTravelIntent ? "Ouvrir Voyage" : "Créer mon voyage"}
+                    {nextTrip ? "Ouvrir Voyage" : "Créer mon voyage"}
                     <ChevronRight className="h-4 w-4" />
                   </Link>
-                  {nextTravelIntent ? (
+                  {nextTrip ? (
                     <Link
                       to="/destinations/$slug"
-                      params={{ slug: slugifyDestination(nextTravelIntent.destination_country) }}
+                      params={{ slug: slugifyDestination(nextTrip.country) }}
                       className="inline-flex h-10 items-center gap-1 rounded-xl bg-secondary px-3 text-xs font-semibold"
                     >
                       Explorer la destination <MapPin className="h-4 w-4" />
