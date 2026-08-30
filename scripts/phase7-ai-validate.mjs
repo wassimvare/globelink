@@ -49,7 +49,9 @@ check(
   proServer.includes("splitAiPlusProgramByDay") &&
     proServer.includes('.from("trip_days")') &&
     proServer.includes('.from("trip_entries")') &&
-    proServer.includes('title: `IA+ · Jour ${index + 1}`'),
+    ((proServer.includes("const dayNumber =") &&
+      proServer.includes('title: `IA+ · Jour ${dayNumber}`')) ||
+      proServer.includes('title: `IA+ · Jour ${index + 1}`')),
 );
 check(
   "IA+ applique les budgets comme prévisions séparées",
