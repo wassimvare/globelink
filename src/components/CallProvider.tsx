@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { isUuid } from "@/lib/security";
 import { getRtcIceConfiguration } from "@/lib/rtc-config.functions";
+import { notifyIncomingCall, sendCallPush } from "@/lib/push-notifications";
 
 type CallKind = "audio" | "video";
 type CallDirection = "incoming" | "outgoing";
@@ -583,6 +584,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
         };
         incomingRef.current = session;
         setIncoming(session);
+        void notifyIncomingCall({
+          callId,
+          conversationId,
+          kind,
+          callerName: session.peer.name,
+          callerAvatar: session.peer.avatar,
+        });
         incomingTimeoutRef.current = window.setTimeout(() => {
           if (incomingRef.current?.callId === callId) resetCall(session, "missed", false);
         }, CALL_TIMEOUT_MS + 5_000);
@@ -727,7 +735,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
       });
 
+    const recoveryTimer = window.setInterval(() => {
+      if (document.visibilityState !== "visible" || activeRef.current || incomingRef.current) return;
+      const recentSince = new Date(Date.now() - 15_000).toISOString();
+      supabase
+        .from("messages")
+        .select("id, conversation_id, sender_id, attachment_type, attachment_meta, created_at")
+        .eq("attachment_type", RTC_ATTACHMENT_TYPE)
+        .gte("created_at", recentSince)
+        .order("created_at", { ascending: true })
+        .limit(60)
+        .then(({ data }) => {
+          for (const rawRow of data ?? []) {
+            const row = rawRow as unknown as RtcMessageRow;
+            const meta = row.attachment_meta;
+            if (!meta) continue;
+            signalQueueRef.current = signalQueueRef.current
+              .then(() => processSignal(row.id, row.conversation_id, row.sender_id, meta))
+              .catch((error) => console.error("Call polling recovery error", error));
+          }
+        });
+    }, 3_000);
+
     return () => {
+      window.clearInterval(recoveryTimer);
       void supabase.removeChannel(broadcastChannel);
       void supabase.removeChannel(databaseChannel);
     };
@@ -794,6 +825,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
       try {
         const pc = createPeerConnection(session, stream);
         await insertRtcMessage(session, "invite");
+        void sendCallPush({
+          recipientId: session.peer.id,
+          callId: session.callId,
+          conversationId: session.conversationId,
+          kind: session.kind,
+          callerName:
+            user.user_metadata?.display_name ||
+            user.user_metadata?.full_name ||
+            user.email?.split("@")[0] ||
+            "Un voyageur",
+          callerAvatar: user.user_metadata?.avatar_url ?? null,
+        });
         const offer = await pc.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: args.kind === "video",
