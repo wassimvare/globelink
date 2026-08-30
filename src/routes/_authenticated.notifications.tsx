@@ -11,6 +11,7 @@ import {
   MessageCircle,
   UserPlus,
   MessageSquare,
+  PhoneIncoming,
   Sparkles,
   CheckCheck,
   CheckCircle2,
@@ -134,7 +135,10 @@ function NotificationsPage() {
     if (filter === "all") return rows;
     if (filter === "messages")
       return rows.filter(
-        (n) => n.type === "message" || String(n.metadata?.scope ?? "") === "travel_match",
+        (n) =>
+          n.type === "message" ||
+          n.type === "call" ||
+          String(n.metadata?.scope ?? "") === "travel_match",
       );
     if (filter === "travel")
       return rows.filter((n) =>
@@ -248,6 +252,7 @@ function NotificationsPage() {
                 scope?: string;
                 event?: string;
                 conversation_id?: string;
+                kind?: string;
               };
               const isPlaceModeration = n.type === "place_approved" || n.type === "place_rejected";
               const actorName = isPlaceModeration
@@ -267,7 +272,7 @@ function NotificationsPage() {
                           to: "/profile/$username",
                           params: { username: n.actor!.username },
                         })
-                    : n.type === "message"
+                    : n.type === "message" || n.type === "call"
                       ? () => openMessage(n)
                       : n.type === "review" && meta.product_id
                         ? () => navigate({ to: "/marketplace/$id", params: { id: meta.product_id! } })
@@ -343,6 +348,7 @@ function describe(
     place_name?: string;
     scope?: string;
     event?: string;
+    kind?: string;
   },
 ) {
   if (meta.scope === "travel_match") {
@@ -362,6 +368,8 @@ function describe(
       return "s'est abonné à toi";
     case "message":
       return "t'a envoyé un message";
+    case "call":
+      return meta.kind === "video" ? "t'appelle en vidéo" : "t'appelle";
     case "mention":
       return "t'a mentionné";
     case "review":
@@ -394,6 +402,8 @@ function iconFor(type: string, meta?: { scope?: string; event?: string }) {
       return UserPlus;
     case "message":
       return MessageSquare;
+    case "call":
+      return PhoneIncoming;
     case "review":
       return Star;
     case "nearby_spot":
