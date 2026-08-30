@@ -200,10 +200,10 @@ export function BetaFeedbackWidget() {
             <button
               type="button"
               className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-3 z-40 inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/25 bg-card/95 px-3 text-xs font-bold text-primary shadow-elevated backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/45 sm:bottom-5 sm:right-5"
-              aria-label="Envoyer un retour sur la bêta GlobeLink"
+              aria-label="Ouvrir l’aide et envoyer un retour GlobeLink"
             >
-              <TestTube2 className="h-4 w-4" />
-              Bêta
+              <MessageCircleQuestion className="h-4 w-4" />
+              Aide
             </button>
           </DialogTrigger>
 
