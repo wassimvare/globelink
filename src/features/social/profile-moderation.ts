@@ -22,12 +22,22 @@ export async function saveRelationshipControl(input: {
   if (error) throw error;
 }
 
-export async function reportProfile(input: { reporterId: string; targetId: string }) {
+export async function reportProfile(input: {
+  reporterId: string;
+  targetId: string;
+  reason: string;
+}) {
+  const reason = input.reason.trim();
+
+  if (!reason) {
+    throw new Error("Une raison de signalement est requise.");
+  }
+
   const { error } = await db.from("reports").insert({
     reporter_id: input.reporterId,
     target_type: "profile",
     target_id: input.targetId,
-    reason: "Profil signalé",
+    reason,
   });
 
   if (error) throw error;
