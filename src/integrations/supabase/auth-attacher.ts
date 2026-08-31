@@ -2,12 +2,61 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { supabase } from "./client";
 
+// Keep the latest browser session token in memory. On mobile Safari, calling
+// getSession() from several places during hydration can contend on Supabase's
+// auth lock and make serverFn calls appear stuck for many seconds.
+let cachedAccessToken: string | null | undefined;
+let authStateReadyResolved = false;
+let resolveAuthStateReady: (() => void) | undefined;
+const authStateReady = new Promise<void>((resolve) => {
+  resolveAuthStateReady = resolve;
+});
+
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    cachedAccessToken = session?.access_token ?? null;
+    if (!authStateReadyResolved) {
+      authStateReadyResolved = true;
+      resolveAuthStateReady?.();
+    }
+  });
+} else {
+  authStateReadyResolved = true;
+  resolveAuthStateReady?.();
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function accessTokenForServerFn() {
+  if (cachedAccessToken !== undefined) return cachedAccessToken ?? undefined;
+
+  // Give Supabase's INITIAL_SESSION event a short chance to populate the cache
+  // instead of immediately starting another getSession() during hydration.
+  if (typeof window !== "undefined" && !authStateReadyResolved) {
+    await Promise.race([authStateReady, wait(1_200)]);
+    if (cachedAccessToken !== undefined) return cachedAccessToken ?? undefined;
+  }
+
+  // Never let token resolution block the whole UI indefinitely. If Safari is
+  // holding the auth lock, a retry can use the token as soon as the auth event
+  // updates the in-memory cache.
+  const sessionResult = await Promise.race([
+    supabase.auth.getSession(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+  ]);
+
+  if (!sessionResult) return cachedAccessToken ?? undefined;
+  cachedAccessToken = sessionResult.data.session?.access_token ?? null;
+  return cachedAccessToken ?? undefined;
+}
+
 // Must be registered as a global `functionMiddleware` in `src/start.ts`; otherwise
 // the browser never attaches the bearer token to serverFn RPCs.
 export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
   async ({ next }) => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const token = await accessTokenForServerFn();
     return next({
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
