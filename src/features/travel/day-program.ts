@@ -39,12 +39,15 @@ const FRENCH_MONTHS: Record<string, number> = {
   décembre: 11,
 };
 
+const PROGRAM_HEADING_RE =
+  /^(Arrivée(?:\s*\/\s*Installation)?|Arrivee(?:\s*\/\s*Installation)?|Installation|Check-in|Départ(?:\s*\/\s*Transfert)?|Depart(?:\s*\/\s*Transfert)?|Transfert|Check-out|Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel(?:\s*\/\s*Nuit)?|Hotel(?:\s*\/\s*Nuit)?|Hébergement(?:\s*\/\s*Nuit)?|Hebergement(?:\s*\/\s*Nuit)?|Nuit)(?:\s*[·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i;
+
 export const JOURNAL_SELECTION_TITLE_PREFIX = "Carnet · Choix · ";
 
 function cleanMarkdownLine(value: string) {
   return value
-    .replace(/^\s*#{1,6}\s*/, "")
     .replace(/^\s*[-*•]+\s*/, "")
+    .replace(/^\s*#{1,6}\s*/, "")
     .replace(/\*\*/g, "")
     .replace(/__+/g, "")
     .replace(/`/g, "")
@@ -52,38 +55,39 @@ function cleanMarkdownLine(value: string) {
     .trim();
 }
 
-function normalizeProgramTitle(value: string): DayProgramSectionKey {
-  const text = value
+function normalizedText(value: string) {
+  return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  if (text.includes("apres-midi") || text.includes("fin d'apres-midi")) return "afternoon";
-  if (text.includes("petit-dejeuner") || text.includes("petit dejeuner") || text === "matin")
-    return "morning";
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeProgramTitle(value: string): DayProgramSectionKey {
+  const text = normalizedText(value);
+  if (text.includes("apres midi") || text.includes("fin d apres midi")) return "afternoon";
+  if (text.includes("petit dejeuner") || text === "matin") return "morning";
   if (text.includes("dejeuner") || text === "midi") return "lunch";
   if (text.includes("diner") || text.includes("repas du soir")) return "dinner";
-  if (text.includes("hotel") || text.includes("hebergement") || text.includes("nuit"))
-    return "hotel";
+  if (text.includes("hotel") || text.includes("hebergement") || text.includes("nuit")) return "hotel";
   if (text.includes("soir")) return "evening";
   if (text.includes("matin")) return "morning";
   return "other";
 }
 
 function prettyProgramTitle(value: string) {
-  const text = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-  if (text.includes("arrivee") || text.includes("installation") || text.includes("check-in"))
+  const text = normalizedText(value);
+  if (text.includes("arrivee") || text.includes("installation") || text.includes("check in"))
     return "Arrivée / Installation";
-  if (text.includes("depart") || text.includes("transfert") || text.includes("check-out"))
+  if (text.includes("depart") || text.includes("transfert") || text.includes("check out"))
     return "Départ / Transfert";
-  if (text.includes("petit-dejeuner") || text.includes("petit dejeuner")) return "Petit-déjeuner";
+  if (text.includes("petit dejeuner")) return "Petit-déjeuner";
   if (text.includes("dejeuner") || text === "midi") return "Déjeuner";
-  if (text.includes("apres-midi") || text.includes("fin d'apres-midi")) return "Après-midi";
+  if (text.includes("apres midi") || text.includes("fin d apres midi")) return "Après-midi";
   if (text.includes("diner") || text.includes("repas du soir")) return "Dîner";
-  if (text.includes("hotel") || text.includes("hebergement") || text.includes("nuit"))
-    return "Hôtel / Nuit";
+  if (text.includes("hotel") || text.includes("hebergement") || text.includes("nuit")) return "Hôtel / Nuit";
   if (text.includes("soir")) return "Soir";
   if (text.includes("matin")) return "Matin";
   return value.trim();
@@ -105,12 +109,22 @@ function isoDayFromHeading(line: string, fallbackYear: number) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+function markdownHeadingText(line: string) {
+  const direct = line.match(/^\s*#{1,6}\s+(.+)$/);
+  if (direct) return direct[1];
+  const malformed = line.match(/^\s*[-*•]+\s*#{1,6}\s+(.+)$/);
+  return malformed?.[1] ?? null;
+}
+
 function hasDatedProgramHeadings(raw: string, targetDay: string) {
   const year = Number(targetDay.slice(0, 4)) || new Date().getUTCFullYear();
   return raw
     .replace(/\r/g, "")
     .split("\n")
-    .some((line) => /^\s*#{1,6}\s+/.test(line) && !!isoDayFromHeading(line, year));
+    .some((line) => {
+      const heading = markdownHeadingText(line);
+      return !!heading && !!isoDayFromHeading(heading, year);
+    });
 }
 
 export function extractDayProgramBlock(raw: string | null | undefined, targetDay: string) {
@@ -118,8 +132,9 @@ export function extractDayProgramBlock(raw: string | null | undefined, targetDay
   const lines = String(raw).replace(/\r/g, "").split("\n");
   const year = Number(targetDay.slice(0, 4)) || new Date().getUTCFullYear();
   const datedHeadings = lines.flatMap((line, index) => {
-    if (!/^\s*#{1,6}\s+/.test(line)) return [];
-    const day = isoDayFromHeading(line, year);
+    const heading = markdownHeadingText(line);
+    if (!heading) return [];
+    const day = isoDayFromHeading(heading, year);
     return day ? [{ index, day }] : [];
   });
   if (!datedHeadings.length) return raw;
@@ -129,31 +144,70 @@ export function extractDayProgramBlock(raw: string | null | undefined, targetDay
   const next = datedHeadings[currentIndex + 1]?.index ?? lines.length;
   const selected = lines.slice(start, next);
   const majorCut = selected.findIndex((line) =>
-    /^\s*##\s+(Budget|Impact sur ton carnet|Alternatives|À vérifier|A vérifier|Sources)/i.test(
-      line,
-    ),
+    /^\s*##\s+(Budget|Impact sur ton carnet|Alternatives|À vérifier|A vérifier|Sources)/i.test(line),
   );
   return (majorCut >= 0 ? selected.slice(0, majorCut) : selected).join("\n").trim();
 }
 
 function isProgramNoise(value: string) {
-  const text = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = normalizedText(value);
   return (
     !text ||
-    /^recommandation ia\+\s*:?$/.test(text) ||
-    /^note\s*:\s*la recherche web/.test(text) ||
-    /^la recherche web en direct n['’]a pas retourne de source/.test(text) ||
-    /^les informations ci-dessous sont basees sur des donnees generales/.test(text) ||
-    /^programme\s*:?$/.test(text) ||
-    /^plan d['’]action\s*:?$/.test(text) ||
-    /^impact sur ton carnet\s*:?$/.test(text) ||
-    /^a verifier avant d['’]agir\s*:?$/.test(text)
+    /^recommandation ia\s*$/.test(text) ||
+    /^note la recherche web/.test(text) ||
+    /^la recherche web en direct n a pas retourne de source/.test(text) ||
+    /^les informations ci dessous sont basees sur des donnees generales/.test(text) ||
+    /^programme$/.test(text) ||
+    /^plan d action$/.test(text) ||
+    /^impact sur ton carnet$/.test(text) ||
+    /^a verifier avant d agir$/.test(text)
   );
+}
+
+function isGenericFallback(title: string, item: string) {
+  const heading = normalizedText(title);
+  const text = normalizedText(item);
+  if (heading.includes("arrivee") || heading.includes("installation")) {
+    return text.startsWith("arrivee a destination transfert vers l hebergement") ||
+      text.includes("installation selon ton heure d arrivee");
+  }
+  if (heading.includes("diner")) {
+    return text.startsWith("repas a proximite de l hebergement") && text.includes("heure d arrivee");
+  }
+  if (heading.includes("hotel") || heading.includes("nuit")) {
+    return text.startsWith("hebergement a confirmer pour cette nuit");
+  }
+  return false;
+}
+
+function mergeAndCleanSections(sections: DayProgramSection[]) {
+  const merged = new Map<string, DayProgramSection>();
+  for (const section of sections) {
+    const mergeKey = section.key === "other" ? `other:${normalizedText(section.title)}` : section.key;
+    const existing = merged.get(mergeKey);
+    if (existing) existing.items.push(...section.items);
+    else merged.set(mergeKey, { ...section, items: [...section.items] });
+  }
+
+  const seenItems = new Set<string>();
+  return [...merged.values()]
+    .map((section) => {
+      const cleaned = section.items
+        .map((item) => cleanMarkdownLine(item).replace(/^[:;,.\-–—]+\s*/, "").trim())
+        .filter((item) => item && !isProgramNoise(item));
+      const withoutFallbacks =
+        cleaned.length > 1 ? cleaned.filter((item) => !isGenericFallback(section.title, item)) : cleaned;
+      return {
+        ...section,
+        items: withoutFallbacks.filter((item) => {
+          const signature = normalizedText(item);
+          if (!signature || seenItems.has(signature)) return false;
+          seenItems.add(signature);
+          return true;
+        }),
+      };
+    })
+    .filter((section) => section.items.length > 0);
 }
 
 export function parseDayProgram(raw: string | null | undefined): DayProgramSection[] {
@@ -171,14 +225,13 @@ export function parseDayProgram(raw: string | null | undefined): DayProgramSecti
       )
     )
       break;
+
     const isListItem = /^\s*[-*•]+\s+/.test(original);
+    const malformedHeading = /^\s*[-*•]+\s*#{1,6}\s+/.test(original);
     const line = cleanMarkdownLine(original);
     if (!line) continue;
-    const heading = isListItem
-      ? null
-      : line.match(
-          /^(Arrivée(?:\s*\/\s*Installation)?|Arrivee(?:\s*\/\s*Installation)?|Installation|Check-in|Départ(?:\s*\/\s*Transfert)?|Depart(?:\s*\/\s*Transfert)?|Transfert|Check-out|Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel(?:\s*\/\s*Nuit)?|Hotel(?:\s*\/\s*Nuit)?|Hébergement(?:\s*\/\s*Nuit)?|Hebergement(?:\s*\/\s*Nuit)?|Nuit)(?:\s*[·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i,
-        );
+    const heading = !isListItem || malformedHeading ? line.match(PROGRAM_HEADING_RE) : null;
+
     if (heading) {
       const title = prettyProgramTitle(heading[1]);
       current = { key: normalizeProgramTitle(title), title, items: [] };
@@ -191,6 +244,7 @@ export function parseDayProgram(raw: string | null | undefined): DayProgramSecti
       if (tail) current.items.push(tail);
       continue;
     }
+
     if (!current) {
       const timed = line.match(/^(\d{1,2}(?::|h)\d{0,2})\s*[·:–—-]\s*(.+)$/i);
       if (!timed || isProgramNoise(line)) continue;
@@ -198,40 +252,17 @@ export function parseDayProgram(raw: string | null | undefined): DayProgramSecti
       sections.push(current);
       continue;
     }
+
     if (!isProgramNoise(line)) current.items.push(line);
   }
 
-  const seenItems = new Set<string>();
-  return sections
-    .map((section) => ({
-      ...section,
-      items: section.items
-        .map((item) => item.replace(/^[:;,.\-–—]+\s*/, "").trim())
-        .filter((item) => {
-          if (!item || isProgramNoise(item)) return false;
-          const signature = item
-            .normalize("NFKC")
-            .toLowerCase()
-            .replace(/[^a-z0-9à-ÿ]+/gi, " ")
-            .trim();
-          if (!signature || seenItems.has(signature)) return false;
-          seenItems.add(signature);
-          return true;
-        }),
-    }))
-    .filter((section) => section.items.length > 0);
+  return mergeAndCleanSections(sections);
 }
 
 export function dayProgramSignature(program: DayProgramSection[]) {
   return program
     .flatMap((section) => section.items)
-    .map((item) =>
-      item
-        .normalize("NFKC")
-        .toLowerCase()
-        .replace(/[^a-z0-9à-ÿ]+/gi, " ")
-        .trim(),
-    )
+    .map((item) => normalizedText(item))
     .filter(Boolean)
     .join("|");
 }
@@ -243,9 +274,7 @@ export function isAiProgramEntry(entry: JournalEntry) {
   return (
     /^IA\+\s*·/i.test(title) ||
     /##\s*Recommandation IA\+/i.test(notes) ||
-    /###\s*(?:20\d{2}-\d{2}-\d{2}|(?:Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche)\b)/i.test(
-      notes,
-    ) ||
+    /###\s*(?:20\d{2}-\d{2}-\d{2}|(?:Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche)\b)/i.test(notes) ||
     /\*\*(?:Matin|Après-midi|Apres-midi|Soir)/i.test(notes)
   );
 }
