@@ -1,3 +1,8 @@
+import {
+  enrichAiPlusPricePlaceholders,
+  type TravelPriceEstimateContext,
+} from "@/lib/travel-price-estimates";
+
 export type AiPlusDayPlan = { day: string; headline: string | null; notes: string };
 export type AiPlusBudgetForecast = {
   day: string;
@@ -6,9 +11,21 @@ export type AiPlusBudgetForecast = {
 };
 
 const FRENCH_MONTHS: Record<string, number> = {
-  janvier: 0, fevrier: 1, février: 1, mars: 2, avril: 3, mai: 4, juin: 5,
-  juillet: 6, aout: 7, août: 7, septembre: 8, octobre: 9, novembre: 10,
-  decembre: 11, décembre: 11,
+  janvier: 0,
+  fevrier: 1,
+  février: 1,
+  mars: 2,
+  avril: 3,
+  mai: 4,
+  juin: 5,
+  juillet: 6,
+  aout: 7,
+  août: 7,
+  septembre: 8,
+  octobre: 9,
+  novembre: 10,
+  decembre: 11,
+  décembre: 11,
 };
 
 const FRENCH_MONTH_PATTERN =
@@ -32,7 +49,9 @@ export function dayFromAiHeading(line: string, startsOn?: string | null) {
   if (!french) return null;
   const month = FRENCH_MONTHS[french[2].toLocaleLowerCase("fr-FR")];
   if (month == null) return null;
-  return new Date(Date.UTC(Number(french[3] || year), month, Number(french[1]))).toISOString().slice(0, 10);
+  return new Date(Date.UTC(Number(french[3] || year), month, Number(french[1])))
+    .toISOString()
+    .slice(0, 10);
 }
 
 function headlineFromAiHeading(line: string) {
@@ -59,11 +78,7 @@ function normalizedHeading(line: string) {
 }
 
 function sectionHeadings(notes: string) {
-  return notes
-    .replace(/\r/g, "")
-    .split("\n")
-    .map(normalizedHeading)
-    .filter(Boolean);
+  return notes.replace(/\r/g, "").split("\n").map(normalizedHeading).filter(Boolean);
 }
 
 function hasAnyHeading(headings: string[], terms: string[]) {
@@ -74,7 +89,13 @@ function hotelItems(notes: string) {
   const lines = notes.replace(/\r/g, "").split("\n");
   const start = lines.findIndex((line) => {
     const heading = normalizedHeading(line);
-    return !!heading && (heading.includes("hotel") || heading.includes("hebergement") || heading === "nuit" || heading.includes("nuit"));
+    return (
+      !!heading &&
+      (heading.includes("hotel") ||
+        heading.includes("hebergement") ||
+        heading === "nuit" ||
+        heading.includes("nuit"))
+    );
   });
   if (start < 0) return null;
   const items: string[] = [];
@@ -89,6 +110,7 @@ function ensureUsefulDayPlans(
   days: AiPlusDayPlan[],
   startsOn?: string | null,
   endsOn?: string | null,
+  estimateContext?: TravelPriceEstimateContext,
 ) {
   let lastHotelItems: string[] | null = null;
 
@@ -102,11 +124,13 @@ function ensureUsefulDayPlans(
 
     if (first && headings.length < 3) {
       if (!hasAnyHeading(headings, ["arrivee", "installation", "matin", "apres-midi", "soir"])) {
-        notes = `### Arrivée / Installation\n- Arrivée à destination, transfert vers l’hébergement et installation selon ton heure d’arrivée.\n${notes}`.trim();
+        notes =
+          `### Arrivée / Installation\n- Arrivée à destination, transfert vers l’hébergement et installation selon ton heure d’arrivée.\n${notes}`.trim();
       }
       headings = sectionHeadings(notes);
       if (!hasAnyHeading(headings, ["dejeuner", "diner", "repas"])) {
-        notes = `${notes}\n### Dîner\n- Repas à proximité de l’hébergement si ton heure d’arrivée le permet · prix à confirmer.`.trim();
+        notes =
+          `${notes}\n### Dîner\n- Repas à proximité de l’hébergement si ton heure d’arrivée le permet · prix à confirmer.`.trim();
       }
     }
 
@@ -124,22 +148,34 @@ function ensureUsefulDayPlans(
 
     headings = sectionHeadings(notes);
     if (last && !hasAnyHeading(headings, ["depart", "transfert", "check-out"])) {
-      notes = `${notes}\n### Départ / Transfert\n- Préparer le check-out et le transfert selon l’horaire réel de ton transport.`.trim();
+      notes =
+        `${notes}\n### Départ / Transfert\n- Préparer le check-out et le transfert selon l’horaire réel de ton transport.`.trim();
     }
 
-    return { ...item, notes: notes.slice(0, 4_000) };
+    const pricedNotes = estimateContext
+      ? enrichAiPlusPricePlaceholders(notes, estimateContext)
+      : notes;
+    return { ...item, notes: pricedNotes.slice(0, 4_000) };
   });
 }
 
-export function splitAiPlusProgramByDay(content: string, startsOn?: string | null, endsOn?: string | null) {
-  const lines = String(content || "").replace(/\r/g, "").split("\n");
+export function splitAiPlusProgramByDay(
+  content: string,
+  startsOn?: string | null,
+  endsOn?: string | null,
+  estimateContext?: TravelPriceEstimateContext,
+) {
+  const lines = String(content || "")
+    .replace(/\r/g, "")
+    .split("\n");
   const result: AiPlusDayPlan[] = [];
   let current: { day: string; headline: string | null; lines: string[] } | null = null;
 
   const flush = () => {
     if (!current) return;
     const notes = current.lines.join("\n").trim();
-    if (notes) result.push({ day: current.day, headline: current.headline, notes: notes.slice(0, 4_000) });
+    if (notes)
+      result.push({ day: current.day, headline: current.headline, notes: notes.slice(0, 4_000) });
   };
 
   for (const line of lines) {
@@ -150,7 +186,12 @@ export function splitAiPlusProgramByDay(content: string, startsOn?: string | nul
         current = { day, headline: headlineFromAiHeading(line), lines: [] };
         continue;
       }
-      if (current && /^\s*##\s+(Budget|Impact sur ton carnet|Alternatives|À vérifier|A vérifier|Sources)/i.test(line)) {
+      if (
+        current &&
+        /^\s*##\s+(Budget|Impact sur ton carnet|Alternatives|À vérifier|A vérifier|Sources)/i.test(
+          line,
+        )
+      ) {
         flush();
         current = null;
         continue;
@@ -168,7 +209,7 @@ export function splitAiPlusProgramByDay(content: string, startsOn?: string | nul
     seen.add(item.day);
     return true;
   });
-  return ensureUsefulDayPlans(filtered, startsOn, endsOn);
+  return ensureUsefulDayPlans(filtered, startsOn, endsOn, estimateContext);
 }
 
 function money(value: string) {
@@ -180,11 +221,20 @@ function money(value: string) {
   return Math.round(Math.max(...matches) * 100) / 100;
 }
 
-export function parseAiPlusBudgetForecasts(content: string, startsOn?: string | null, endsOn?: string | null) {
+export function parseAiPlusBudgetForecasts(
+  content: string,
+  startsOn?: string | null,
+  endsOn?: string | null,
+) {
   const grouped = new Map<string, AiPlusBudgetForecast["items"]>();
-  for (const raw of String(content || "").replace(/\r/g, "").split("\n")) {
+  for (const raw of String(content || "")
+    .replace(/\r/g, "")
+    .split("\n")) {
     if (!raw.includes("|") || !/20\d{2}-\d{2}-\d{2}/.test(raw)) continue;
-    const cells = raw.split("|").map((cell) => cell.trim()).filter(Boolean);
+    const cells = raw
+      .split("|")
+      .map((cell) => cell.trim())
+      .filter(Boolean);
     if (cells.length < 3 || /catégorie|montant prévu/i.test(raw)) continue;
     const day = cells.find((cell) => /^20\d{2}-\d{2}-\d{2}$/.test(cell));
     if (!day || (startsOn && day < startsOn) || (endsOn && day > endsOn)) continue;
@@ -205,7 +255,11 @@ export function parseAiPlusBudgetForecasts(content: string, startsOn?: string | 
   }));
 }
 
-export function buildAiPlusApplicationPreview(content: string, startsOn?: string | null, endsOn?: string | null) {
+export function buildAiPlusApplicationPreview(
+  content: string,
+  startsOn?: string | null,
+  endsOn?: string | null,
+) {
   const days = splitAiPlusProgramByDay(content, startsOn, endsOn);
   const budgets = parseAiPlusBudgetForecasts(content, startsOn, endsOn);
   return {

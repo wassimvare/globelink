@@ -585,7 +585,7 @@ async function fetchGoogleHotelSources(context: TravelPriceSearchContext, stay: 
             `Établissement vérifié par Google Places à ${[context.city, context.country].filter(Boolean).join(", ")}`,
             rating !== null ? `note ${rating.toFixed(1)}/5` : "",
             reviewsCount > 0 ? `${reviewsCount.toLocaleString("fr-FR")} avis` : "",
-            "aucun prix daté fourni : prix à confirmer",
+            "aucun prix daté fourni : utiliser une estimation IA+ si nécessaire",
           ]
             .filter(Boolean)
             .join(" · "),
@@ -635,7 +635,7 @@ async function fetchCatalogHotelSources(
           `Hôtel vérifié dans le catalogue GlobeLink pour ${[context.city, context.country].filter(Boolean).join(", ")}`,
           rating !== null ? `note ${rating.toFixed(1)}` : "",
           reviewsCount > 0 ? `${reviewsCount.toLocaleString("fr-FR")} avis` : "",
-          "le catalogue ne confirme pas un tarif pour ces dates : prix à confirmer",
+          "le catalogue ne confirme pas un tarif pour ces dates : utiliser une estimation IA+ si nécessaire",
         ]
           .filter(Boolean)
           .join(" · "),
