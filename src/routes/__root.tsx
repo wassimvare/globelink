@@ -27,6 +27,7 @@ import { CallProvider } from "@/components/CallProvider";
 import { OnboardingGate } from "@/components/OnboardingGate";
 import { TravelJournalEnhancer } from "@/components/TravelJournalEnhancer";
 import { BetaFeedbackWidget } from "@/components/BetaFeedbackWidget";
+import { MapBackToTopButton } from "@/components/MapBackToTopButton";
 
 function NotFoundComponent() {
   return (
@@ -202,6 +203,7 @@ function RootComponent() {
               </div>
             </OnboardingGate>
             <BetaFeedbackWidget />
+            <MapBackToTopButton />
             <BottomNav />
             <NetworkStatus />
             <Toaster position="top-center" richColors closeButton />
