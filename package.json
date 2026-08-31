@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "generate-routes": "npx --yes @tanstack/router-cli@1.167.30 generate",
-    "build": "node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts && npm run generate-routes && tsc --noEmit && vite build",
+    "build": "node scripts/phase3-validate.mjs && vitest run src/lib/phase3-intelligence.test.ts src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts src/lib/travel-price-sources.server.test.ts && npm run generate-routes && tsc --noEmit && vite build",
     "build:dev": "node scripts/phase3-validate.mjs && npm run generate-routes && tsc --noEmit && vite build --mode development",
     "patch:legacy": "node scripts/apply-build-patches.mjs && node scripts/apply-late-source-patches.mjs",
     "preview": "vite preview",
@@ -27,7 +27,7 @@
     "check:phase4": "node scripts/phase4-architecture.mjs",
     "check:phase5": "node scripts/phase5-catalog-validate.mjs && vitest run src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts",
     "check:phase6": "node scripts/phase6-journal-validate.mjs && vitest run src/features/travel/day-program.test.ts src/features/travel/program-selection-budget.test.ts",
-    "check:phase7": "node scripts/phase7-ai-validate.mjs && vitest run src/features/ai/phase7-actions.test.ts"
+    "check:phase7": "node scripts/phase7-ai-validate.mjs && vitest run src/features/ai/phase7-actions.test.ts src/lib/travel-price-sources.server.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",
