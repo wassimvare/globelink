@@ -58,10 +58,24 @@ describe("Phase 6 — carnet quotidien", () => {
     ]);
   });
 
-  it("reconnaît les options de comparaison", () => {
+  it("comprend aussi les blocs arrivée et départ ajoutés par IA+", () => {
+    const program = parseDayProgram(`### Arrivée / Installation\n- Transfert puis installation\n### Dîner\n- Repas léger\n### Hôtel / Nuit\n- Hôtel Centre\n### Départ / Transfert\n- Check-out`);
+    expect(program.map((section) => section.title)).toEqual([
+      "Arrivée / Installation",
+      "Dîner",
+      "Hôtel / Nuit",
+      "Départ / Transfert",
+    ]);
+  });
+
+  it("reconnaît les options de comparaison et normalise une variante mal orthographiée", () => {
     expect(parseProgramOption("Option A · Bistro du Lac")).toEqual({
       label: "Option A",
       text: "Bistro du Lac",
+    });
+    expect(parseProgramOption("Optionen B · La Terrasse")).toEqual({
+      label: "Option B",
+      text: "La Terrasse",
     });
     expect(parseProgramOption("09:30 · Vieille ville")).toBeNull();
   });

@@ -78,6 +78,8 @@ function prettyProgramTitle(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+  if (text.includes("arrivee") || text.includes("installation") || text.includes("check-in")) return "Arrivée / Installation";
+  if (text.includes("depart") || text.includes("transfert") || text.includes("check-out")) return "Départ / Transfert";
   if (text.includes("petit-dejeuner") || text.includes("petit dejeuner")) return "Petit-déjeuner";
   if (text.includes("dejeuner") || text === "midi") return "Déjeuner";
   if (text.includes("apres-midi") || text.includes("fin d'apres-midi")) return "Après-midi";
@@ -164,7 +166,7 @@ export function parseDayProgram(raw: string | null | undefined): DayProgramSecti
     const line = cleanMarkdownLine(original);
     if (!line) continue;
     const heading = line.match(
-      /^(Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel|Hotel|Hébergement|Hebergement|Nuit)(?:\s*[\/·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i,
+      /^(Arrivée(?:\s*\/\s*Installation)?|Arrivee(?:\s*\/\s*Installation)?|Installation|Check-in|Départ(?:\s*\/\s*Transfert)?|Depart(?:\s*\/\s*Transfert)?|Transfert|Check-out|Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel|Hotel|Hébergement|Hebergement|Nuit)(?:\s*[·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i,
     );
     if (heading) {
       const title = prettyProgramTitle(heading[1]);
@@ -283,9 +285,10 @@ export function buildDayProgramForDate(args: {
 }
 
 export function parseProgramOption(item: string) {
-  const match = item.match(/^(Option\s+[A-Z]|Choix\s+\d+)\s*(?:[·:–—-]\s*)?(.*)$/i);
+  const match = item.match(/^(Option(?:en)?s?\s+([A-Z])|Choix\s+(\d+))\s*(?:[·:–—-]\s*)?(.*)$/i);
   if (!match) return null;
-  return { label: match[1], text: (match[2] || item).trim() };
+  const label = match[2] ? `Option ${match[2].toUpperCase()}` : `Choix ${match[3]}`;
+  return { label, text: (match[4] || item).trim() };
 }
 
 export function journalSelectionsFromEntries(entries: JournalEntry[]) {
