@@ -123,7 +123,7 @@ function ensureUsefulDayPlans(
     }
 
     headings = sectionHeadings(notes);
-    if (last && headings.length < 2 && !hasAnyHeading(headings, ["depart", "transfert"])) {
+    if (last && !hasAnyHeading(headings, ["depart", "transfert", "check-out"])) {
       notes = `${notes}\n### Départ / Transfert\n- Préparer le check-out et le transfert selon l’horaire réel de ton transport.`.trim();
     }
 
@@ -173,7 +173,7 @@ export function splitAiPlusProgramByDay(content: string, startsOn?: string | nul
 
 function money(value: string) {
   if (/prix\s+(?:à|a)\s+confirmer|à\s+confirmer|a\s+confirmer/i.test(value)) return null;
-  const matches = Array.from(value.replace(/\s/g, "").matchAll(/-?\d+(?:[.,]\d{1,2})?/g))
+  const matches = Array.from(value.replace(/\s/g, "").matchAll(/\d+(?:[.,]\d{1,2})?/g))
     .map((match) => Number(match[0].replace(",", ".")))
     .filter((amount) => Number.isFinite(amount) && amount >= 0);
   if (!matches.length) return null;
