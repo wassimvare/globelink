@@ -11,9 +11,10 @@ import { assertSafeSupabasePublishableKey, isOpaqueSupabaseApiKey } from "./key-
 // deployment is missing the public environment variables.
 const FALLBACK_SUPABASE_URL = "https://hzsfocphpynxoykfkfaj.supabase.co";
 const FALLBACK_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9Vrha4s7e7HJTQ3euKQyAA_lGjAaSh7";
+const SUPABASE_SERVER_REQUEST_TIMEOUT_MS = 12_000;
 
 function createSupabaseFetch(supabaseKey: string): typeof fetch {
-  return (input, init) => {
+  return async (input, init) => {
     const headers = new Headers(
       typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
     );
@@ -31,7 +32,26 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
     }
 
     headers.set("apikey", supabaseKey);
-    return fetch(input, { ...init, headers });
+
+    // A stalled Supabase request must never keep a serverFn (and therefore an
+    // IA+ button) spinning until Vercel's 300 s hard timeout. Keep the caller's
+    // abort signal while enforcing a short server-side deadline as a safety net.
+    const controller = new AbortController();
+    const upstreamSignal =
+      init?.signal ??
+      (typeof Request !== "undefined" && input instanceof Request ? input.signal : undefined);
+    const abortFromUpstream = () => controller.abort();
+
+    if (upstreamSignal?.aborted) controller.abort();
+    else upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+
+    const timeout = setTimeout(() => controller.abort(), SUPABASE_SERVER_REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(input, { ...init, headers, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+      upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+    }
   };
 }
 
