@@ -119,7 +119,9 @@ export function classifyTravelSource(
 
 export function priceSearchCategories(context: SearchContext): TravelPriceCategory[] {
   const text = `${context.mode || ""} ${context.query}`.normalize("NFKD").toLowerCase();
-  const planner = /\b(plan|compare|itineraire|itinéraire|programme|voyage|sejour|séjour)\b/.test(text);
+  const planner =
+    context.mode === "plan" ||
+    /\b(itineraire|itinéraire|programme|voyage complet|sejour complet|séjour complet)\b/.test(text);
   const categories: TravelPriceCategory[] = [];
 
   if (planner || /\b(hotel|hôtel|hebergement|hébergement|logement|nuit)\b/.test(text)) {
