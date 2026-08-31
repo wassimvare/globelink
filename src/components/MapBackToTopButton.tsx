@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouterState } from "@tanstack/react-router";
-import { ChevronsLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 
 export function MapBackToTopButton() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (pathname !== "/map") {
       setScroller(null);
+      setPortalTarget(null);
+      setVisible(false);
       return;
     }
 
@@ -21,6 +25,11 @@ export function MapBackToTopButton() {
         mobileExplorerSection?.querySelector<HTMLElement>(
           '[class*="snap-x"][class*="overflow-x-auto"]',
         ) ?? null;
+
+      if (mobileExplorerSection) mobileExplorerSection.classList.add("relative");
+      setPortalTarget((current) =>
+        current === mobileExplorerSection ? current : mobileExplorerSection ?? null,
+      );
       setScroller((current) => (current === nextScroller ? current : nextScroller));
     };
 
@@ -30,7 +39,19 @@ export function MapBackToTopButton() {
     return () => observer.disconnect();
   }, [pathname]);
 
-  if (pathname !== "/map" || !scroller) return null;
+  useEffect(() => {
+    if (!scroller) {
+      setVisible(false);
+      return;
+    }
+
+    const updateVisibility = () => setVisible(scroller.scrollLeft > 24);
+    updateVisibility();
+    scroller.addEventListener("scroll", updateVisibility, { passive: true });
+    return () => scroller.removeEventListener("scroll", updateVisibility);
+  }, [scroller]);
+
+  if (pathname !== "/map" || !scroller || !portalTarget || !visible) return null;
 
   const returnToStart = () => {
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -41,16 +62,11 @@ export function MapBackToTopButton() {
     <button
       type="button"
       onClick={returnToStart}
-      aria-label="Retourner au début de la liste À découvrir"
-      className="group grid min-h-[118px] w-[132px] shrink-0 snap-start place-items-center rounded-2xl border border-primary/25 bg-primary/5 px-3 py-4 text-center shadow-sm transition hover:border-primary/40 hover:bg-primary/10 active:scale-[0.98] lg:hidden"
+      aria-label="Revenir au début de la liste À découvrir"
+      className="absolute left-2 top-1/2 z-30 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-border/70 bg-background/95 text-primary shadow-elevated backdrop-blur-xl transition hover:bg-background active:scale-95 lg:hidden"
     >
-      <span className="flex flex-col items-center gap-2 text-sm font-semibold text-primary">
-        <span className="grid h-10 w-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition group-active:scale-95">
-          <ChevronsLeft className="h-5 w-5" />
-        </span>
-        Retour au début
-      </span>
+      <ChevronLeft className="h-5 w-5" />
     </button>,
-    scroller,
+    portalTarget,
   );
 }
