@@ -31,6 +31,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { sendMatchLike } from "@/lib/match.functions";
+import { getLightweightMediaUrl } from "@/lib/media-url";
 import {
   DEFAULT_ACCOUNT_SETTINGS,
   getAccountSettings,
@@ -95,15 +96,17 @@ type MyPrefs = {
   endsOn: string;
 };
 
+type ScorePart = { label: string; got: number; max: number };
+
 const DEFAULT_PREFS: MyPrefs = {
   destination: "",
-  budget: 1500,
-  languages: ["Français", "Anglais"],
-  interests: ["Randonnée", "Photo", "Culture"],
+  budget: 0,
+  languages: [],
+  interests: [],
   ageMin: 18,
   ageMax: 99,
-  startsOn: new Date().toISOString().slice(0, 10),
-  endsOn: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+  startsOn: "",
+  endsOn: "",
 };
 
 const ALL_LANGS = [
@@ -135,39 +138,83 @@ const ALL_INTERESTS = [
   "Design",
 ];
 
+function isValidDate(value: string) {
+  return value.trim().length > 0 && Number.isFinite(Date.parse(value));
+}
+
 function daysOverlap(aS: string, aE: string, bS: string, bE: string) {
+  if (![aS, aE, bS, bE].every(isValidDate)) return 0;
   const s = Math.max(Date.parse(aS), Date.parse(bS));
   const e = Math.min(Date.parse(aE), Date.parse(bE));
   return Math.max(0, Math.floor((e - s) / 86_400_000) + 1);
 }
 
+function normalizeMatchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function destinationMatches(t: MapTraveler, destination: string) {
+  const wanted = normalizeMatchText(destination)
+    .split(/[,/|–—-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (wanted.length === 0) return false;
+  const candidate = normalizeMatchText(`${t.city} ${t.country}`);
+  return wanted.some((part) => candidate.includes(part));
+}
+
 function scoreTraveler(t: MapTraveler, p: MyPrefs) {
-  const parts: { label: string; got: number; max: number }[] = [];
-  const destMatch =
-    p.destination.trim().length === 0
-      ? 25
-      : t.country.toLowerCase().includes(p.destination.toLowerCase()) ||
-          t.city.toLowerCase().includes(p.destination.toLowerCase())
-        ? 30
-        : 0;
-  parts.push({ label: "Destination", got: destMatch, max: 30 });
-  const overlap = daysOverlap(p.startsOn, p.endsOn, t.starts_on, t.ends_on);
-  const datePts = overlap > 0 ? Math.min(20, 5 + overlap * 2) : 0;
-  parts.push({ label: "Dates", got: datePts, max: 20 });
-  const ratio =
-    t.budget_eur && p.budget > 0
-      ? Math.abs(p.budget - t.budget_eur) / Math.max(p.budget, t.budget_eur)
-      : 1;
-  const budgetPts = ratio < 0.15 ? 15 : ratio < 0.35 ? 10 : ratio < 0.6 ? 5 : 0;
-  parts.push({ label: "Budget", got: budgetPts, max: 15 });
-  const sharedLangs = t.languages.filter((l) => p.languages.includes(l));
-  parts.push({ label: "Langues", got: Math.min(10, sharedLangs.length * 5), max: 10 });
-  const sharedInts = t.interests.filter((i) => p.interests.includes(i));
-  parts.push({ label: "Affinités", got: Math.min(15, sharedInts.length * 5), max: 15 });
+  const parts: ScorePart[] = [];
+
+  const hasDestination = p.destination.trim().length > 0 && (t.city.trim().length > 0 || t.country.trim().length > 0);
+  parts.push({
+    label: "Destination",
+    got: hasDestination && destinationMatches(t, p.destination) ? 30 : 0,
+    max: hasDestination ? 30 : 0,
+  });
+
+  const hasDates = [p.startsOn, p.endsOn, t.starts_on, t.ends_on].every(isValidDate);
+  const overlap = hasDates ? daysOverlap(p.startsOn, p.endsOn, t.starts_on, t.ends_on) : 0;
+  const datePts = hasDates && overlap > 0 ? Math.min(20, 5 + overlap * 2) : 0;
+  parts.push({ label: "Dates", got: datePts, max: hasDates ? 20 : 0 });
+
+  const hasBudget = t.budget_eur !== null && t.budget_eur > 0 && p.budget > 0;
+  const ratio = hasBudget
+    ? Math.abs(p.budget - t.budget_eur!) / Math.max(p.budget, t.budget_eur!)
+    : null;
+  const budgetPts =
+    ratio === null ? 0 : ratio < 0.15 ? 15 : ratio < 0.35 ? 10 : ratio < 0.6 ? 5 : 0;
+  parts.push({ label: "Budget", got: budgetPts, max: hasBudget ? 15 : 0 });
+
+  const sharedLangs = t.languages.filter((language) => p.languages.includes(language));
+  const hasLanguages = t.languages.length > 0 && p.languages.length > 0;
+  parts.push({
+    label: "Langues",
+    got: hasLanguages ? Math.min(10, sharedLangs.length * 5) : 0,
+    max: hasLanguages ? 10 : 0,
+  });
+
+  const sharedInts = t.interests.filter((interest) => p.interests.includes(interest));
+  const hasInterests = t.interests.length > 0 && p.interests.length > 0;
+  const unionSize = new Set([...t.interests, ...p.interests]).size;
+  const affinityRatio = unionSize > 0 ? sharedInts.length / unionSize : 0;
+  const affinityPts = hasInterests
+    ? Math.min(15, Math.round(affinityRatio * 10 + Math.min(sharedInts.length, 5)))
+    : 0;
+  parts.push({ label: "Affinités", got: affinityPts, max: hasInterests ? 15 : 0 });
+
   const age = t.age;
-  const agePts = age !== null && age >= p.ageMin && age <= p.ageMax ? 10 : 0;
-  parts.push({ label: "Âge", got: agePts, max: 10 });
-  const score = parts.reduce((total, part) => total + part.got, 0);
+  const hasAge = age !== null;
+  const agePts = hasAge && age >= p.ageMin && age <= p.ageMax ? 10 : 0;
+  parts.push({ label: "Âge", got: agePts, max: hasAge ? 10 : 0 });
+
+  const knownMax = parts.reduce((total, part) => total + part.max, 0);
+  const knownPoints = parts.reduce((total, part) => total + part.got, 0);
+  const score = knownMax > 0 ? Math.round((knownPoints / knownMax) * 100) : 0;
   return { score, parts, sharedLangs, sharedInts, overlap, age };
 }
 
@@ -178,10 +225,16 @@ type MatchIntent = {
   draft: string;
 };
 
-function matchQuality(score: number) {
-  if (score >= 80) return "Excellent match";
-  if (score >= 65) return "Très compatible";
-  if (score >= 50) return "Bon potentiel";
+function matchQuality(score: number, parts: ScorePart[]) {
+  const travelParts = parts.filter((part) => ["Destination", "Dates"].includes(part.label));
+  const missingTravelContext = travelParts.some((part) => part.max === 0);
+  const incompatibleTravel = travelParts.some((part) => part.max > 0 && part.got === 0);
+
+  if (incompatibleTravel) return "Voyage différent";
+  if (missingTravelContext) return score >= 70 ? "Affinités fortes" : "Voyage à confirmer";
+  if (score >= 85) return "Excellent match";
+  if (score >= 70) return "Très compatible";
+  if (score >= 55) return "Bon potentiel";
   return "À découvrir";
 }
 
@@ -465,11 +518,19 @@ function MatchPage() {
   const sendLike = useServerFn(sendMatchLike);
 
   useEffect(() => {
+    let cancelled = false;
     deck.slice(0, 4).forEach(({ c }) => {
-      const image = new Image();
-      image.decoding = "async";
-      if (c.t.avatar) image.src = c.t.avatar;
+      if (!c.t.avatar) return;
+      void getLightweightMediaUrl(c.t.avatar).then((url) => {
+        if (cancelled || !url) return;
+        const image = new Image();
+        image.decoding = "async";
+        image.src = url;
+      });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [deck]);
 
   function animateOut(direction: "left" | "right") {
@@ -610,7 +671,7 @@ function MatchPage() {
           <div className="min-w-0">
             <h1 className="font-display text-2xl font-semibold">Travel Match</h1>
             <p className="text-xs text-muted-foreground">
-              Compatibilité calculée avec destination, dates, budget, langues et affinités.
+              Compatibilité calculée seulement avec les informations réellement renseignées.
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -662,7 +723,8 @@ function MatchPage() {
                     Budget max (€)
                     <Input
                       type="number"
-                      value={prefs.budget}
+                      value={prefs.budget || ""}
+                      placeholder="Non indiqué"
                       onChange={(event) =>
                         setPrefs({ ...prefs, budget: Number(event.target.value) || 0 })
                       }
@@ -888,6 +950,25 @@ function MatchPage() {
   );
 }
 
+function mediaPathFromUrl(value: string | null) {
+  if (!value || !/^https:\/\//i.test(value)) return null;
+  try {
+    const pathname = new URL(value).pathname;
+    const markers = [
+      "/storage/v1/object/sign/media/",
+      "/storage/v1/object/public/media/",
+      "/storage/v1/object/authenticated/media/",
+    ];
+    for (const marker of markers) {
+      const index = pathname.indexOf(marker);
+      if (index >= 0) return decodeURIComponent(pathname.slice(index + marker.length));
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function SwipeCard({
   t,
   score,
@@ -903,7 +984,7 @@ function SwipeCard({
 }: {
   t: MapTraveler;
   score: number;
-  parts: { label: string; got: number; max: number }[];
+  parts: ScorePart[];
   sharedInts: string[];
   sharedLangs: string[];
   overlap: number;
@@ -913,8 +994,50 @@ function SwipeCard({
   likeOpacity?: number;
   nopeOpacity?: number;
 }) {
-  const strongParts = parts.filter((part) => part.max > 0 && part.got / part.max >= 0.6);
-  const cautionParts = parts.filter((part) => ["Destination", "Dates", "Budget"].includes(part.label) && part.got === 0);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() =>
+    t.avatar && /^https:\/\//i.test(t.avatar) ? t.avatar : null,
+  );
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAvatarFailed(false);
+    setAvatarUrl(t.avatar && /^https:\/\//i.test(t.avatar) ? t.avatar : null);
+    if (!t.avatar) return () => {
+      cancelled = true;
+    };
+
+    void getLightweightMediaUrl(t.avatar).then((url) => {
+      if (!cancelled) setAvatarUrl(url);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t.avatar]);
+
+  async function handleAvatarError() {
+    const storagePath = mediaPathFromUrl(t.avatar);
+    if (storagePath) {
+      const refreshed = await getLightweightMediaUrl(storagePath);
+      if (refreshed && refreshed !== avatarUrl) {
+        setAvatarUrl(refreshed);
+        setAvatarFailed(false);
+        return;
+      }
+    }
+    setAvatarFailed(true);
+  }
+
+  const cautionParts = parts.filter(
+    (part) =>
+      ["Destination", "Dates", "Budget"].includes(part.label) &&
+      part.max > 0 &&
+      part.got === 0,
+  );
+  const unknownParts = parts.filter(
+    (part) => ["Destination", "Dates", "Budget", "Âge"].includes(part.label) && part.max === 0,
+  );
   const signals = [
     overlap > 0 ? `${overlap} jour${overlap > 1 ? "s" : ""} de voyage en commun` : null,
     sharedInts.length ? `${sharedInts.length} centre${sharedInts.length > 1 ? "s" : ""} d’intérêt commun${sharedInts.length > 1 ? "s" : ""}` : null,
@@ -927,8 +1050,13 @@ function SwipeCard({
       style={stacked ? { transform: "translateY(12px) scale(0.95)" } : undefined}
     >
       <div className="relative h-72 w-full">
-        {t.avatar ? (
-          <img src={t.avatar} alt={t.name} className="h-full w-full object-cover" />
+        {avatarUrl && !avatarFailed ? (
+          <img
+            src={avatarUrl}
+            alt=""
+            className="h-full w-full object-cover"
+            onError={() => void handleAvatarError()}
+          />
         ) : (
           <div className="grid h-full place-items-center bg-secondary text-7xl font-bold text-muted-foreground">
             {t.name.slice(0, 1).toUpperCase()}
@@ -1001,7 +1129,7 @@ function SwipeCard({
               <CheckCircle2 className="h-4 w-4" /> Pourquoi ce match ?
             </div>
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
-              {matchQuality(score)}
+              {matchQuality(score, parts)}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1025,17 +1153,23 @@ function SwipeCard({
           )}
           {cautionParts.length > 0 && (
             <p className="mt-2 text-[10px] text-muted-foreground">
-              À vérifier : {cautionParts.map((part) => part.label.toLowerCase()).join(", ")}.
+              Peu compatible sur : {cautionParts.map((part) => part.label.toLowerCase()).join(", ")}.
+            </p>
+          )}
+          {unknownParts.length > 0 && (
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              À compléter : {unknownParts.map((part) => part.label.toLowerCase()).join(", ")}.
             </p>
           )}
         </div>
         <div className="grid grid-cols-3 gap-1.5 pt-1">
           {parts.slice(0, 6).map((part) => {
-            const pct = part.max ? Math.round((part.got / part.max) * 100) : 0;
+            const known = part.max > 0;
+            const pct = known ? Math.round((part.got / part.max) * 100) : 0;
             return (
               <div key={part.label} className="rounded-xl bg-secondary/55 p-2">
                 <div className="flex items-center justify-between gap-1 text-[9px] text-muted-foreground">
-                  <span>{part.label}</span><span>{pct}%</span>
+                  <span>{part.label}</span><span>{known ? `${pct}%` : "—"}</span>
                 </div>
                 <div className="mt-1 h-1 overflow-hidden rounded-full bg-background">
                   <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
