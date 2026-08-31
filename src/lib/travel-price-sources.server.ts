@@ -3,10 +3,31 @@ const MAX_TRUSTED_SOURCES = 14;
 
 export type TravelPriceCategory = "hotel" | "activity" | "restaurant" | "transport" | "general";
 export type TravelSourceAuthority =
+  | "booking_api"
+  | "google_places"
+  | "verified_catalog"
   | "official_candidate"
   | "booking"
   | "getyourguide"
   | "fallback";
+
+export type VerifiedHotelEvidence = {
+  name: string;
+  livePrice: boolean;
+  checkin: string | null;
+  checkout: string | null;
+  nights: number | null;
+  travelers: number;
+  rooms: number;
+  occupancyAssumed: boolean;
+  totalPrice: number | null;
+  pricePerNight: number | null;
+  currency: string | null;
+  rating: number | null;
+  reviewsCount: number | null;
+  stars: number | null;
+  checkedAt: string | null;
+};
 
 export type TravelPriceSource = {
   title: string;
@@ -15,9 +36,10 @@ export type TravelPriceSource = {
   category: TravelPriceCategory;
   authority: TravelSourceAuthority;
   priceUsable: boolean;
+  hotel?: VerifiedHotelEvidence;
 };
 
-type SearchContext = {
+export type TravelPriceSearchContext = {
   query: string;
   city?: string | null;
   country?: string | null;
@@ -58,13 +80,15 @@ const LOW_TRUST_DOMAINS = [
 ];
 
 function cleanText(value: unknown, max: number) {
-  return String(value ?? "")
-    .normalize("NFKC")
-    // eslint-disable-next-line no-control-regex -- search snippets are external untrusted input
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
+  return (
+    String(value ?? "")
+      .normalize("NFKC")
+      // eslint-disable-next-line no-control-regex -- search snippets are external untrusted input
+      .replace(/[\u0000-\u001F\u007F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, max)
+  );
 }
 
 function normalizeQuery(value: unknown) {
@@ -95,6 +119,22 @@ function isLowTrustHost(host: string) {
   return LOW_TRUST_DOMAINS.some((domain) => hostMatches(host, domain));
 }
 
+export function hasExplicitPriceEvidence(value: unknown) {
+  const text = cleanText(value, 1_500);
+  return /(?:€|\bEUR\b|\bCHF\b|\bUSD\b|\bGBP\b|\bCAD\b|\bAUD\b|\bJPY\b|\bMAD\b|\bTND\b|\bIDR\b)\s*[0-9]|[0-9](?:[0-9\s.,]*[0-9])?\s*(?:€|\bEUR\b|\bCHF\b|\bUSD\b|\bGBP\b|\bCAD\b|\bAUD\b|\bJPY\b|\bMAD\b|\bTND\b|\bIDR\b)/i.test(
+    text,
+  );
+}
+
+function isExactProviderPage(url: URL, authority: TravelSourceAuthority) {
+  const path = url.pathname.toLowerCase();
+  if (authority === "booking") return /^\/hotel\//.test(path);
+  if (authority === "getyourguide") {
+    return !/^\/(?:s|search)(?:\/|$)/.test(path) && path.split("/").filter(Boolean).length >= 2;
+  }
+  return false;
+}
+
 export function classifyTravelSource(
   rawUrl: string,
   category: TravelPriceCategory,
@@ -119,12 +159,15 @@ export function classifyTravelSource(
   if (isLowTrustHost(host)) return { authority: "fallback", priceUsable: false };
 
   if (requestedAuthority === "official_candidate") {
-    return { authority: "official_candidate", priceUsable: true };
+    // A search engine result cannot prove that an arbitrary domain is the
+    // establishment's official website. It remains useful for discovery, but
+    // its price must not be presented as verified without a provider match.
+    return { authority: "official_candidate", priceUsable: false };
   }
   return { authority: requestedAuthority, priceUsable: false };
 }
 
-export function priceSearchCategories(context: SearchContext): TravelPriceCategory[] {
+export function priceSearchCategories(context: TravelPriceSearchContext): TravelPriceCategory[] {
   const text = normalizeQuery(`${context.mode || ""} ${context.query}`);
   const planner =
     context.mode === "plan" ||
@@ -140,13 +183,20 @@ export function priceSearchCategories(context: SearchContext): TravelPriceCatego
   if (planner || /\b(restaurants?|repas|dejeuners?|diners?|manger|food)\b/.test(text)) {
     categories.push("restaurant");
   }
-  if (planner || /\b(transports?|metros?|bus|trams?|trains?|taxis?|pass|trajets?|navettes?)\b/.test(text)) {
+  if (
+    planner ||
+    /\b(transports?|metros?|bus|trams?|trains?|taxis?|pass|trajets?|navettes?)\b/.test(text)
+  ) {
     categories.push("transport");
   }
   return categories.length ? categories : ["general"];
 }
 
 function sourcePriority(source: TravelPriceSource) {
+  if (source.authority === "booking_api") return 100;
+  if (source.authority === "google_places") return 80;
+  if (source.authority === "verified_catalog") return 70;
+  if (source.priceUsable) return 50;
   if (source.authority === "booking" || source.authority === "getyourguide") return 40;
   if (source.authority === "official_candidate") return 30;
   return 10;
@@ -177,14 +227,19 @@ async function tavilySearch(apiKey: string, spec: TavilySpec): Promise<TravelPri
       const url = safeHttpsUrl(result.url);
       if (!url) return [];
       const trust = classifyTravelSource(url.toString(), spec.category, spec.authority);
+      const snippet = cleanText(result.content, 700);
+      const exactProviderPrice =
+        trust.priceUsable &&
+        isExactProviderPage(url, trust.authority) &&
+        hasExplicitPriceEvidence(`${result.title ?? ""} ${snippet}`);
       return [
         {
           title: cleanText(result.title, 180) || url.hostname,
           url: url.toString(),
-          snippet: cleanText(result.content, 700),
+          snippet,
           category: spec.category,
           authority: trust.authority,
-          priceUsable: trust.priceUsable,
+          priceUsable: exactProviderPrice,
         },
       ];
     });
@@ -195,17 +250,17 @@ async function tavilySearch(apiKey: string, spec: TavilySpec): Promise<TravelPri
   }
 }
 
-function dateLabel(context: SearchContext) {
+function dateLabel(context: TravelPriceSearchContext) {
   if (context.startsOn && context.endsOn) return `${context.startsOn} au ${context.endsOn}`;
   if (context.startsOn) return context.startsOn;
   return String(new Date().getUTCFullYear());
 }
 
-function destinationLabel(context: SearchContext) {
+function destinationLabel(context: TravelPriceSearchContext) {
   return [context.city, context.country].filter(Boolean).join(", ") || "destination";
 }
 
-function buildSpecs(context: SearchContext): TavilySpec[] {
+function buildSpecs(context: TravelPriceSearchContext): TavilySpec[] {
   const destination = destinationLabel(context);
   const dates = dateLabel(context);
   const travelers = Math.min(50, Math.max(1, Math.round(Number(context.travelers) || 1)));
@@ -281,29 +336,38 @@ function buildSpecs(context: SearchContext): TavilySpec[] {
   return specs;
 }
 
-function dedupeAndRank(sources: TravelPriceSource[]) {
+export function mergeTravelPriceSources(sources: TravelPriceSource[], limit = MAX_TRUSTED_SOURCES) {
   const seen = new Set<string>();
   return sources
     .sort((a, b) => sourcePriority(b) - sourcePriority(a))
     .filter((source) => {
       const url = safeHttpsUrl(source.url);
       if (!url) return false;
-      const key = `${normalizedHost(url)}${url.pathname.replace(/\/$/, "")}`;
+      const hotelName =
+        source.category === "hotel"
+          ? normalizeQuery(source.hotel?.name || source.title).trim()
+          : "";
+      const key = hotelName
+        ? `hotel:${hotelName}`
+        : `${normalizedHost(url)}${url.pathname.replace(/\/$/, "")}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     })
-    .slice(0, MAX_TRUSTED_SOURCES);
+    .slice(0, Math.max(1, Math.min(30, Math.trunc(limit))));
 }
 
 export async function searchPriorityTravelPriceSources(
-  context: SearchContext,
+  context: TravelPriceSearchContext,
 ): Promise<TravelPriceSource[]> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) return [];
 
-  const primary = dedupeAndRank((await Promise.all(buildSpecs(context).map((spec) => tavilySearch(apiKey, spec)))).flat());
-  if (primary.filter((source) => source.priceUsable).length >= 4 || primary.length >= 8) return primary;
+  const primary = mergeTravelPriceSources(
+    (await Promise.all(buildSpecs(context).map((spec) => tavilySearch(apiKey, spec)))).flat(),
+  );
+  if (primary.filter((source) => source.priceUsable).length >= 4 || primary.length >= 8)
+    return primary;
 
   const fallback = await tavilySearch(apiKey, {
     category: "general",
@@ -312,7 +376,7 @@ export async function searchPriorityTravelPriceSources(
     maxResults: 6,
     searchDepth: "advanced",
   });
-  return dedupeAndRank([...primary, ...fallback]);
+  return mergeTravelPriceSources([...primary, ...fallback]);
 }
 
 export function travelSourcePromptLabel(source: TravelPriceSource) {
@@ -327,12 +391,24 @@ export function travelSourcePromptLabel(source: TravelPriceSource) {
             ? "TRANSPORT"
             : "GÉNÉRAL";
   const authority =
-    source.authority === "booking"
-      ? "BOOKING.COM"
-      : source.authority === "getyourguide"
-        ? "GETYOURGUIDE"
-        : source.authority === "official_candidate"
-          ? "SOURCE OFFICIELLE À CONFIRMER"
-          : "WEB SECONDAIRE";
-  return `${category} · ${authority} · ${source.priceUsable ? "PRIX UTILISABLE SI LE CONTENU LE CONFIRME" : "NE PAS UTILISER SEUL POUR UN PRIX"}`;
+    source.authority === "booking_api"
+      ? "BOOKING.COM DEMAND API — TARIF DATÉ VÉRIFIÉ"
+      : source.authority === "google_places"
+        ? "GOOGLE PLACES — ÉTABLISSEMENT VÉRIFIÉ, PRIX NON FOURNI"
+        : source.authority === "verified_catalog"
+          ? "CATALOGUE GLOBELINK VÉRIFIÉ — PRIX NON DATÉ"
+          : source.authority === "booking"
+            ? "BOOKING.COM"
+            : source.authority === "getyourguide"
+              ? "GETYOURGUIDE"
+              : source.authority === "official_candidate"
+                ? "SOURCE OFFICIELLE À CONFIRMER"
+                : "WEB SECONDAIRE";
+  const priceStatus =
+    source.authority === "booking_api" && source.priceUsable
+      ? "PRIX UTILISABLE POUR LES DATES ET L'OCCUPATION INDIQUÉES"
+      : source.priceUsable
+        ? "PRIX OBSERVÉ DANS L'EXTRAIT — À CONFIRMER"
+        : "NE PAS UTILISER SEUL POUR UN PRIX";
+  return `${category} · ${authority} · ${priceStatus}`;
 }
