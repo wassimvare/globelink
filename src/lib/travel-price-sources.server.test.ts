@@ -13,6 +13,10 @@ import {
   parseBookingHotelSource,
   selectBalancedHotelSources,
 } from "./verified-hotel-sources.server";
+import {
+  buildTravelPriceEstimateGuide,
+  enrichAiPlusPricePlaceholders,
+} from "./travel-price-estimates";
 
 describe("IA+ — hiérarchie des sources de prix", () => {
   it("autorise Booking.com pour les prix d'hôtel uniquement", () => {
@@ -156,6 +160,45 @@ describe("IA+ — hiérarchie des sources de prix", () => {
       },
     };
     expect(mergeTravelPriceSources([web, live])).toEqual([live]);
+  });
+});
+
+describe("IA+ — estimations de secours exploitables", () => {
+  const sousse = {
+    query: "Programme complet avec une chambre",
+    city: "Sousse",
+    country: "Tunisie",
+    startsOn: "2026-11-07",
+    endsOn: "2026-11-10",
+    travelers: 2,
+  };
+
+  it("fournit des repères adaptés à Sousse avec les bons totaux de groupe", () => {
+    const guide = buildTravelPriceEstimateGuide(sousse, [
+      "hotel",
+      "activity",
+      "restaurant",
+      "transport",
+    ]);
+    expect(guide).toContain("45–90 €/chambre/nuit");
+    expect(guide).toContain("135–270 € pour 3 nuits");
+    expect(guide).toContain("8–20 €/pers., soit 16–40 € total par repas");
+    expect(guide.toLowerCase()).toContain("estimations de planification");
+  });
+
+  it("remplace les prix à confirmer dans le programme sans toucher au bloc de vérification", () => {
+    const answer = `## Plan d'action\n### 2026-11-07 · Sousse\n### Dîner\n- Option A · Restaurant Le Lido · prix à confirmer\n### Hôtel / Nuit\n- Option A · Sousse Palace · prix à confirmer\n\n## À vérifier avant d'agir\n- Le tarif final reste un prix à confirmer auprès de l'hôtel.`;
+    const enriched = enrichAiPlusPricePlaceholders(answer, sousse);
+    expect(enriched).toContain("Restaurant Le Lido · estimation IA+ : env. 8–20 €/pers.");
+    expect(enriched).toContain("Sousse Palace · estimation IA+ : env. 45–90 €/chambre/nuit");
+    expect(enriched).toContain("Le tarif final reste un prix à confirmer auprès de l'hôtel.");
+  });
+
+  it("reconnaît un transfert dans un créneau générique et chiffre aussi le budget", () => {
+    const answer = `### Matin\n- Taxi vers la médina · prix à confirmer\n\n## Budget\n| 2026-11-07 | Hôtel | prix à confirmer | Nuit |`;
+    const enriched = enrichAiPlusPricePlaceholders(answer, sousse);
+    expect(enriched).toContain("10–35 €/véhicule");
+    expect(enriched).toContain("45–90 €/chambre/nuit");
   });
 });
 

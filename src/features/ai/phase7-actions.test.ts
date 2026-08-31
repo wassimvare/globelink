@@ -8,11 +8,15 @@ import {
 
 describe("Phase 7 — séparation gratuit / IA+", () => {
   it("garde une demande d'inspiration simple dans le gratuit", () => {
-    expect(detectPremiumIntent("Donne-moi des idées de destinations au soleil").recommended).toBe(false);
+    expect(detectPremiumIntent("Donne-moi des idées de destinations au soleil").recommended).toBe(
+      false,
+    );
   });
 
   it("repère les demandes qui ont besoin de IA+", () => {
-    const result = detectPremiumIntent("Compare les vrais hôtels et applique le meilleur choix dans mon carnet jour par jour");
+    const result = detectPremiumIntent(
+      "Compare les vrais hôtels et applique le meilleur choix dans mon carnet jour par jour",
+    );
     expect(result.recommended).toBe(true);
     expect(result.reasons).toContain("real_comparison");
     expect(result.reasons).toContain("apply_changes");
@@ -36,10 +40,19 @@ describe("Phase 7 — IA+ agit sur le carnet", () => {
 
   it("complète un premier jour trop vide sans inventer d'heure et propage l'hôtel sur les nuits suivantes", () => {
     const sparse = `## Plan d'action\n### 2026-11-07 · Arrivée à Sousse\n### Hôtel\n- Option A · Hôtel Centre\n\n### 2026-11-08 · Découverte\n### Matin\n- Balade en ville\n### Déjeuner\n- Repas à confirmer\n\n### 2026-11-09 · Départ\n### Matin\n- Derniers achats`;
-    const days = splitAiPlusProgramByDay(sparse, "2026-11-07", "2026-11-09");
+    const days = splitAiPlusProgramByDay(sparse, "2026-11-07", "2026-11-09", {
+      query: "Programme avec une chambre",
+      city: "Sousse",
+      country: "Tunisie",
+      startsOn: "2026-11-07",
+      endsOn: "2026-11-09",
+      travelers: 2,
+    });
     expect(days[0].notes).toContain("### Arrivée / Installation");
     expect(days[0].notes).toContain("### Dîner");
     expect(days[0].notes).toContain("Hôtel Centre");
+    expect(days[0].notes).toContain("estimation IA+ : env. 8–20 €/pers.");
+    expect(days[0].notes).not.toContain("prix à confirmer");
     expect(days[1].notes).toContain("### Hôtel / Nuit");
     expect(days[1].notes).toContain("Hôtel Centre");
     expect(days[2].notes).not.toContain("### Hôtel / Nuit");
