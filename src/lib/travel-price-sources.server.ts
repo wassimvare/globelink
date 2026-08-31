@@ -67,6 +67,13 @@ function cleanText(value: unknown, max: number) {
     .slice(0, max);
 }
 
+function normalizeQuery(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function safeHttpsUrl(value: unknown) {
   try {
     const url = new URL(String(value ?? ""));
@@ -118,22 +125,22 @@ export function classifyTravelSource(
 }
 
 export function priceSearchCategories(context: SearchContext): TravelPriceCategory[] {
-  const text = `${context.mode || ""} ${context.query}`.normalize("NFKD").toLowerCase();
+  const text = normalizeQuery(`${context.mode || ""} ${context.query}`);
   const planner =
     context.mode === "plan" ||
-    /\b(itineraire|itinéraire|programme|voyage complet|sejour complet|séjour complet)\b/.test(text);
+    /\b(itineraire|programme|voyage complet|sejour complet)\b/.test(text);
   const categories: TravelPriceCategory[] = [];
 
-  if (planner || /\b(hotel|hôtel|hebergement|hébergement|logement|nuit)\b/.test(text)) {
+  if (planner || /\b(hotels?|hebergements?|logements?|nuits?)\b/.test(text)) {
     categories.push("hotel");
   }
-  if (planner || /\b(activite|activité|visite|excursion|billet|attraction|tour)\b/.test(text)) {
+  if (planner || /\b(activites?|visites?|excursions?|billets?|attractions?|tours?)\b/.test(text)) {
     categories.push("activity");
   }
-  if (planner || /\b(restaurant|repas|dejeuner|déjeuner|diner|dîner|manger|food)\b/.test(text)) {
+  if (planner || /\b(restaurants?|repas|dejeuners?|diners?|manger|food)\b/.test(text)) {
     categories.push("restaurant");
   }
-  if (planner || /\b(transport|metro|métro|bus|tram|train|taxi|pass|trajet|navette)\b/.test(text)) {
+  if (planner || /\b(transports?|metros?|bus|trams?|trains?|taxis?|pass|trajets?|navettes?)\b/.test(text)) {
     categories.push("transport");
   }
   return categories.length ? categories : ["general"];
