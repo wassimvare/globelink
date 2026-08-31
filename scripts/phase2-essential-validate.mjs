@@ -89,7 +89,7 @@ check(
 );
 check(
   "IA+ impose une séparation quotidienne",
-  aiPro.includes("AI_DAY_SPLIT_V2") && aiPro.includes("YYYY-MM-DD"),
+  aiPro.includes("splitAiPlusProgramByDay") && aiPro.includes("YYYY-MM-DD"),
 );
 check(
   "Paramètres conservent confidentialité et contrôles de comptes",
