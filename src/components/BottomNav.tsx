@@ -61,7 +61,7 @@ export function BottomNav() {
     >
       <div className="mobile-bottom-nav-inner grid grid-cols-[1fr_1fr_56px_1fr_1fr] items-center border-t border-border/70 bg-card/96 px-1.5 pt-1 shadow-[0_-10px_35px_-24px_rgba(3,28,43,.45)] backdrop-blur-xl">
         <NavItem to="/" label="Accueil" Icon={Home} exact />
-        <MobileExplorer active={explorerActive} />
+        <MobileExplorer active={explorerActive} pathname={pathname} />
 
         <div className="relative -mt-4 flex justify-center">
           <QuickCreate compact />
@@ -80,7 +80,7 @@ export function BottomNav() {
   );
 }
 
-function MobileExplorer({ active }: { active: boolean }) {
+function MobileExplorer({ active, pathname }: { active: boolean; pathname: string }) {
   return (
     <Drawer>
       <DrawerTrigger asChild>
@@ -97,7 +97,7 @@ function MobileExplorer({ active }: { active: boolean }) {
         </button>
       </DrawerTrigger>
 
-      <DrawerContent className="rounded-t-3xl border-border/70 bg-card/98 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-elevated">
+      <DrawerContent className="rounded-t-3xl border-border/70 bg-card/95 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-elevated backdrop-blur-2xl">
         <DrawerHeader className="px-5 pb-2 text-left">
           <DrawerTitle>Explorer GlobeLink</DrawerTitle>
           <DrawerDescription>
@@ -111,45 +111,40 @@ function MobileExplorer({ active }: { active: boolean }) {
             Icon={Map}
             title="Carte"
             description="Hôtels, restaurants et lieux"
-            active={activePath("/map")}
+            active={pathname.startsWith("/map")}
           />
           <ExplorerLink
             to="/destinations"
             Icon={Compass}
             title="Destinations"
             description="Découvrir les destinations GlobeLink"
-            active={activePath("/destinations")}
+            active={pathname.startsWith("/destinations")}
           />
           <ExplorerLink
             to="/activities"
             Icon={Sparkles}
             title="Activités"
             description="Trouver des expériences et activités"
-            active={activePath("/activities")}
+            active={pathname.startsWith("/activities")}
           />
           <ExplorerLink
             to="/deals"
             Icon={Flame}
             title="Sélection du moment"
             description="Voir les lieux et activités sélectionnés"
-            active={activePath("/deals")}
+            active={pathname.startsWith("/deals")}
           />
           <ExplorerLink
             to="/marketplace"
             Icon={ShoppingBag}
             title="Marketplace"
             description="Guides, itinéraires et produits voyage"
-            active={activePath("/marketplace")}
+            active={pathname.startsWith("/marketplace")}
           />
         </div>
       </DrawerContent>
     </Drawer>
   );
-}
-
-function activePath(prefix: string) {
-  const pathname = window.location.pathname;
-  return pathname.startsWith(prefix);
 }
 
 function ExplorerLink({
