@@ -36,7 +36,8 @@ export function normalizeForecastCategory(value: string) {
   if (/hotel|hebergement|nuit|logement/.test(text)) return "accommodation";
   if (/restauration|restaurant|repas|dejeuner|diner|petit-dejeuner/.test(text)) return "food";
   if (/transport|trajet|deplacement|metro|bus|tram|train|taxi|tcl/.test(text)) return "transport";
-  if (/activite|entree|billet|visite|extra|loisir|musee|souvenir|shopping/.test(text)) return "activities";
+  if (/activite|entree|billet|visite|extra|loisir|musee|souvenir|shopping/.test(text))
+    return "activities";
   return text.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "other";
 }
 
@@ -62,14 +63,16 @@ function inferPriceUnit(text: string, index: number): ProgramPriceUnit {
 }
 
 export function parseProgramPrice(value: string | null | undefined): ProgramPrice | null {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  const text = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!text) return null;
 
   // Si IA+ fournit à la fois un prix unitaire et le total du groupe, le total
   // est prioritaire pour éviter de multiplier deux fois au moment du carnet.
   const explicitTotalPatterns = [
-    /(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|eur)\s*(?:au\s+)?total\b/i,
-    /\btotal\s*(?::|≈|~|-|–)?\s*(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|eur)\b/i,
+    /(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)(?=\s|[/),.;]|$)\s*(?:au\s+)?total\b/i,
+    /\btotal\s*(?::|≈|~|-|–)?\s*(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)(?=\s|[/),.;]|$)/i,
   ];
   for (const pattern of explicitTotalPatterns) {
     const match = text.match(pattern);
@@ -81,7 +84,7 @@ export function parseProgramPrice(value: string | null | undefined): ProgramPric
   // Pour une fourchette, on garde la borne haute : le budget ne doit pas être
   // artificiellement optimiste.
   const range = text.match(
-    /(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:-|–|—|à)\s*(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|eur)\b/i,
+    /(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:-|–|—|à)\s*(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)(?=\s|[/),.;]|$)/i,
   );
   if (range) {
     const low = parseAmount(range[1]);
@@ -95,7 +98,7 @@ export function parseProgramPrice(value: string | null | undefined): ProgramPric
   }
 
   const match = text.match(
-    /(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|eur)\b/i,
+    /(\d{1,5}(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)(?=\s|[/),.;]|$)/i,
   );
   if (!match) return null;
   const amount = parseAmount(match[1]);
@@ -199,11 +202,7 @@ export function recalculateForecastFromSelections(
         selection.priceUnit,
         travelers,
       );
-      const baseEffective = effectivePrice(
-        selection.basePrice,
-        selection.basePriceUnit,
-        travelers,
-      );
+      const baseEffective = effectivePrice(selection.basePrice, selection.basePriceUnit, travelers);
       if (selectedEffective != null) selectedFloor += selectedEffective;
       if (
         selectedEffective != null &&
@@ -219,7 +218,11 @@ export function recalculateForecastFromSelections(
     return {
       ...item,
       amount,
-      detail: `${item.detail} · ${related.map((selection) => compactSelection(selection, travelers)).join(" · ")}`.slice(0, 900),
+      detail:
+        `${item.detail} · ${related.map((selection) => compactSelection(selection, travelers)).join(" · ")}`.slice(
+          0,
+          900,
+        ),
     };
   });
 
