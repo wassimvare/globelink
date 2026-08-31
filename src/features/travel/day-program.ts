@@ -166,7 +166,7 @@ export function parseDayProgram(raw: string | null | undefined): DayProgramSecti
     const line = cleanMarkdownLine(original);
     if (!line) continue;
     const heading = line.match(
-      /^(Arrivée(?:\s*\/\s*Installation)?|Arrivee(?:\s*\/\s*Installation)?|Installation|Check-in|Départ(?:\s*\/\s*Transfert)?|Depart(?:\s*\/\s*Transfert)?|Transfert|Check-out|Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel|Hotel|Hébergement|Hebergement|Nuit)(?:\s*[·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i,
+      /^(Arrivée(?:\s*\/\s*Installation)?|Arrivee(?:\s*\/\s*Installation)?|Installation|Check-in|Départ(?:\s*\/\s*Transfert)?|Depart(?:\s*\/\s*Transfert)?|Transfert|Check-out|Matin|Petit-déjeuner|Petit dejeuner|Déjeuner|Dejeuner|Midi|Après-midi|Apres-midi|Fin d['’]après-midi|Fin d['’]apres-midi|Dîner|Diner|Repas du soir|Soir|Hôtel(?:\s*\/\s*Nuit)?|Hotel(?:\s*\/\s*Nuit)?|Hébergement(?:\s*\/\s*Nuit)?|Hebergement(?:\s*\/\s*Nuit)?|Nuit)(?:\s*[·–—-]\s*([^:]+))?(?:\s*:\s*(.*))?$/i,
     );
     if (heading) {
       const title = prettyProgramTitle(heading[1]);
