@@ -3,17 +3,22 @@ import { createPortal } from "react-dom";
 import { useRouterState } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 
+type ArrowPosition = {
+  left: number;
+  top: number;
+};
+
 export function MapBackToTopButton() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
-  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState<ArrowPosition | null>(null);
 
   useEffect(() => {
     if (pathname !== "/map") {
       setScroller(null);
-      setPortalTarget(null);
       setVisible(false);
+      setPosition(null);
       return;
     }
 
@@ -25,11 +30,6 @@ export function MapBackToTopButton() {
         mobileExplorerSection?.querySelector<HTMLElement>(
           '[class*="snap-x"][class*="overflow-x-auto"]',
         ) ?? null;
-
-      if (mobileExplorerSection) mobileExplorerSection.classList.add("relative");
-      setPortalTarget((current) =>
-        current === mobileExplorerSection ? current : mobileExplorerSection ?? null,
-      );
       setScroller((current) => (current === nextScroller ? current : nextScroller));
     };
 
@@ -42,16 +42,47 @@ export function MapBackToTopButton() {
   useEffect(() => {
     if (!scroller) {
       setVisible(false);
+      setPosition(null);
       return;
     }
 
-    const updateVisibility = () => setVisible(scroller.scrollLeft > 24);
-    updateVisibility();
-    scroller.addEventListener("scroll", updateVisibility, { passive: true });
-    return () => scroller.removeEventListener("scroll", updateVisibility);
+    const sync = () => {
+      const rect = scroller.getBoundingClientRect();
+      const hasStartedScrolling = scroller.scrollLeft > 4;
+      const isOnScreen = rect.bottom > 0 && rect.top < window.innerHeight;
+
+      setVisible(hasStartedScrolling && isOnScreen);
+      setPosition({
+        left: Math.max(12, rect.left + 8),
+        top: rect.top + rect.height / 2,
+      });
+    };
+
+    sync();
+    scroller.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("resize", sync);
+
+    const frame = window.requestAnimationFrame(sync);
+    const delayed = window.setTimeout(sync, 250);
+
+    return () => {
+      scroller.removeEventListener("scroll", sync);
+      window.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(delayed);
+    };
   }, [scroller]);
 
-  if (pathname !== "/map" || !scroller || !portalTarget || !visible) return null;
+  if (
+    pathname !== "/map" ||
+    !scroller ||
+    !visible ||
+    !position ||
+    typeof document === "undefined"
+  )
+    return null;
 
   const returnToStart = () => {
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -63,10 +94,11 @@ export function MapBackToTopButton() {
       type="button"
       onClick={returnToStart}
       aria-label="Revenir au début de la liste À découvrir"
-      className="absolute left-2 top-1/2 z-30 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-border/70 bg-background/95 text-primary shadow-elevated backdrop-blur-xl transition hover:bg-background active:scale-95 lg:hidden"
+      className="fixed z-[70] grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full border border-border/70 bg-background/95 text-primary shadow-elevated backdrop-blur-xl transition active:scale-95 lg:hidden"
+      style={{ left: position.left, top: position.top }}
     >
-      <ChevronLeft className="h-5 w-5" />
+      <ChevronLeft className="h-5 w-5" strokeWidth={2.6} />
     </button>,
-    portalTarget,
+    document.body,
   );
 }
