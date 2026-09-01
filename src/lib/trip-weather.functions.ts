@@ -1,139 +1,217 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getRequest } from "@tanstack/react-start/server";
+import { createServerClient } from "@/integrations/supabase/client.server";
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const weatherCache = new Map<string, { expiresAt: number; value: TripDayWeather }>();
+const FORECAST_PAST_DAYS = 5;
+const FORECAST_FUTURE_DAYS = 16;
+const SEASONAL_HISTORY_YEARS = 5;
 
-type TripDayWeather = {
-  icon: string;
-  label: string;
-  temperature: number;
-  temperatureMin: number | null;
-  temperatureMax: number;
+type RawWeather = {
+  code: number;
+  max: number;
+  min: number;
 };
 
-function weatherFromCode(code: number): Pick<TripDayWeather, "icon" | "label"> {
-  if (code === 0) return { icon: "☀️", label: "Ensoleillé" };
-  if ([1, 2].includes(code)) return { icon: "⛅️", label: "Éclaircies" };
-  if (code === 3) return { icon: "☁️", label: "Nuageux" };
-  if ([45, 48].includes(code)) return { icon: "🌫️", label: "Brume" };
-  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
-    return { icon: "🌧️", label: "Pluie" };
-  }
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return { icon: "❄️", label: "Neige" };
-  if ([95, 96, 99].includes(code)) return { icon: "⛈️", label: "Orage" };
-  return { icon: "⛅️", label: "Variable" };
+type StoredWeather = {
+  icon: string;
+  temp: number;
+  summary: string;
+  source: "forecast" | "historical" | "seasonal";
+};
+
+function weatherEmoji(code: number) {
+  if (code === 0) return "☀️";
+  if ([1, 2].includes(code)) return "⛅️";
+  if (code === 3) return "☁️";
+  if ([45, 48].includes(code)) return "🌫️";
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "🌧️";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "❄️";
+  if ([95, 96, 99].includes(code)) return "⛈️";
+  return "⛅️";
 }
 
-async function fetchJson(url: string, timeoutMs = 7_500) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-    });
-    if (!response.ok) throw new Error(`WEATHER_HTTP_${response.status}`);
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
+function utcDay(value = new Date()) {
+  return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+}
+
+function isoDayTimestamp(day: string) {
+  const parsed = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day) return null;
+  return parsed.getTime();
+}
+
+export function weatherModeForDay(day: string, now = new Date()) {
+  const target = isoDayTimestamp(day);
+  if (target == null) return "unavailable" as const;
+  const distance = Math.round((target - utcDay(now)) / 86_400_000);
+  if (distance < -FORECAST_PAST_DAYS) return "historical" as const;
+  if (distance <= FORECAST_FUTURE_DAYS) return "forecast" as const;
+  return "seasonal" as const;
+}
+
+async function geocode(city: string, country?: string | null) {
+  const query = [city, country].filter(Boolean).join(", ");
+  if (!query) return null;
+  const response = await fetch(
+    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=fr&format=json`,
+    { signal: AbortSignal.timeout(8_000) },
+  );
+  if (!response.ok) return null;
+  const json = await response.json();
+  const row = json?.results?.[0];
+  const lat = Number(row?.latitude);
+  const lng = Number(row?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+async function fetchDailyWeather(endpoint: string): Promise<RawWeather | null> {
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) return null;
+  const json = await response.json();
+  const code = Number(json?.daily?.weather_code?.[0]);
+  const max = Number(json?.daily?.temperature_2m_max?.[0]);
+  const min = Number(json?.daily?.temperature_2m_min?.[0]);
+  if (!Number.isFinite(code) || !Number.isFinite(max) || !Number.isFinite(min)) return null;
+  return { code, max, min };
+}
+
+async function fetchForecastWeather(lat: number, lng: number, day: string) {
+  const endpoint =
+    `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lng))}` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min` +
+    `&timezone=auto&start_date=${encodeURIComponent(day)}&end_date=${encodeURIComponent(day)}`;
+  return fetchDailyWeather(endpoint);
+}
+
+async function fetchHistoricalWeather(lat: number, lng: number, day: string) {
+  const endpoint =
+    `https://archive-api.open-meteo.com/v1/archive?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lng))}` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min` +
+    `&timezone=auto&start_date=${encodeURIComponent(day)}&end_date=${encodeURIComponent(day)}`;
+  return fetchDailyWeather(endpoint);
+}
+
+function equivalentHistoricalDay(targetDay: string, year: number) {
+  const monthDay = targetDay.slice(4);
+  const candidate = `${year}${monthDay}`;
+  return isoDayTimestamp(candidate) == null ? null : candidate;
+}
+
+function representativeEmoji(readings: RawWeather[]) {
+  const counts = new Map<string, number>();
+  for (const reading of readings) {
+    const icon = weatherEmoji(reading.code);
+    counts.set(icon, (counts.get(icon) ?? 0) + 1);
   }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? "⛅️";
+}
+
+function averageTemperature(readings: RawWeather[]) {
+  const average =
+    readings.reduce((sum, reading) => sum + (reading.max + reading.min) / 2, 0) / readings.length;
+  return Math.round(average * 10) / 10;
+}
+
+async function fetchSeasonalWeatherEstimate(lat: number, lng: number, day: string) {
+  const currentYear = new Date().getUTCFullYear();
+  const samples = Array.from({ length: SEASONAL_HISTORY_YEARS }, (_, index) => currentYear - index - 1)
+    .map((year) => ({ year, day: equivalentHistoricalDay(day, year) }))
+    .filter((item): item is { year: number; day: string } => !!item.day);
+
+  const results = await Promise.allSettled(
+    samples.map(async (sample) => ({ sample, weather: await fetchHistoricalWeather(lat, lng, sample.day) })),
+  );
+  const available = results.flatMap((result) => {
+    if (result.status !== "fulfilled" || !result.value.weather) return [];
+    return [result.value];
+  });
+  if (!available.length) return null;
+
+  const readings = available.map((item) => item.weather);
+  const years = available.map((item) => item.sample.year).sort((a, b) => a - b);
+  return {
+    icon: representativeEmoji(readings),
+    temp: averageTemperature(readings),
+    summary:
+      years.length > 1
+        ? `Tendance saisonnière estimée · moyenne historique ${years[0]}–${years[years.length - 1]}`
+        : `Tendance saisonnière estimée · référence historique ${years[0]}`,
+    source: "seasonal" as const,
+  };
+}
+
+async function fetchWeatherForDay(lat: number, lng: number, day: string): Promise<StoredWeather | null> {
+  const mode = weatherModeForDay(day);
+  if (mode === "unavailable") return null;
+
+  if (mode === "seasonal") {
+    return fetchSeasonalWeatherEstimate(lat, lng, day);
+  }
+
+  const raw =
+    mode === "historical"
+      ? await fetchHistoricalWeather(lat, lng, day)
+      : await fetchForecastWeather(lat, lng, day);
+  if (!raw) return null;
+
+  return {
+    icon: weatherEmoji(raw.code),
+    temp: Math.round(((raw.max + raw.min) / 2) * 10) / 10,
+    summary: mode === "historical" ? "Météo observée pour cette date" : "Prévision météo",
+    source: mode,
+  };
 }
 
 export const refreshTripDayWeather = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((input: unknown) => {
-    const data = input as { tripId?: unknown; day?: unknown };
-    const tripId = String(data.tripId ?? "").trim();
-    const day = String(data.day ?? "").trim();
-    if (!/^[0-9a-f-]{36}$/i.test(tripId)) throw new Error("Voyage invalide.");
-    if (!DAY_RE.test(day)) throw new Error("Date météo invalide.");
-    return { tripId, day };
-  })
-  .handler(async ({ data, context }) => {
-    const db = context.supabase as any;
-    const { data: trip, error: tripError } = await db
+  .inputValidator((input: { tripId: string; day: string }) => input)
+  .handler(async ({ data }) => {
+    const supabase = createServerClient(getRequest());
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Non connecté.");
+
+    const { data: trip, error: tripError } = await supabase
       .from("trips")
-      .select("id,city,country,starts_on,ends_on")
+      .select("id,user_id,city,country")
       .eq("id", data.tripId)
-      .eq("user_id", context.userId)
+      .eq("user_id", user.id)
       .maybeSingle();
+    if (tripError) throw tripError;
+    if (!trip) throw new Error("Voyage introuvable.");
 
-    if (tripError || !trip) throw new Error("Voyage introuvable.");
+    const location = await geocode(trip.city || trip.country || "", trip.city ? trip.country : null);
+    if (!location) return { ok: false as const, reason: "location_unavailable" as const };
 
-    const destination = String(trip.city || trip.country || "").trim();
-    if (!destination) throw new Error("Ajoute une destination au voyage pour afficher la météo.");
+    const weather = await fetchWeatherForDay(location.lat, location.lng, data.day);
+    if (!weather) return { ok: false as const, reason: "weather_unavailable" as const };
 
-    const cacheKey = `${destination.toLocaleLowerCase("fr-FR")}:${data.day}`;
-    const cached = weatherCache.get(cacheKey);
-    let weather = cached && cached.expiresAt > Date.now() ? cached.value : null;
+    const { data: saved, error } = await supabase
+      .from("trip_days")
+      .upsert(
+        {
+          trip_id: data.tripId,
+          user_id: user.id,
+          day_date: data.day,
+          weather_icon: weather.icon,
+          weather_temp: weather.temp,
+          weather_summary: weather.summary,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "trip_id,day_date" },
+      )
+      .select("weather_icon,weather_temp,weather_summary")
+      .single();
+    if (error) throw error;
 
-    if (!weather) {
-      const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
-      geoUrl.searchParams.set("name", destination);
-      geoUrl.searchParams.set("count", "1");
-      geoUrl.searchParams.set("language", "fr");
-      geoUrl.searchParams.set("format", "json");
-      const geo = (await fetchJson(geoUrl.toString())) as {
-        results?: Array<{ latitude?: number; longitude?: number }>;
-      };
-      const point = geo.results?.[0];
-      if (!point || !Number.isFinite(Number(point.latitude)) || !Number.isFinite(Number(point.longitude))) {
-        throw new Error("Météo indisponible pour cette destination.");
-      }
-
-      const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
-      forecastUrl.searchParams.set("latitude", String(point.latitude));
-      forecastUrl.searchParams.set("longitude", String(point.longitude));
-      forecastUrl.searchParams.set(
-        "daily",
-        "weather_code,temperature_2m_max,temperature_2m_min",
-      );
-      forecastUrl.searchParams.set("timezone", "auto");
-      forecastUrl.searchParams.set("start_date", data.day);
-      forecastUrl.searchParams.set("end_date", data.day);
-      const payload = (await fetchJson(forecastUrl.toString())) as {
-        daily?: {
-          weather_code?: number[];
-          temperature_2m_max?: number[];
-          temperature_2m_min?: number[];
-        };
-      };
-
-      const code = Number(payload.daily?.weather_code?.[0]);
-      const max = Number(payload.daily?.temperature_2m_max?.[0]);
-      const rawMin = payload.daily?.temperature_2m_min?.[0];
-      const min = rawMin == null ? null : Number(rawMin);
-      if (!Number.isFinite(code) || !Number.isFinite(max)) {
-        throw new Error("Prévision météo non disponible pour cette date.");
-      }
-
-      const condition = weatherFromCode(code);
-      const temperature = Math.round(Number.isFinite(min) ? (max + Number(min)) / 2 : max);
-      weather = {
-        ...condition,
-        temperature,
-        temperatureMin: Number.isFinite(min) ? Number(min) : null,
-        temperatureMax: max,
-      };
-      weatherCache.set(cacheKey, { expiresAt: Date.now() + 3 * 60 * 60 * 1000, value: weather });
-      if (weatherCache.size > 300) {
-        const oldest = weatherCache.keys().next().value;
-        if (oldest) weatherCache.delete(oldest);
-      }
-    }
-
-    const { error: dayError } = await db.from("trip_days").upsert(
-      {
-        trip_id: trip.id,
-        user_id: context.userId,
-        day_date: data.day,
-        weather_icon: weather.icon,
-        weather_temp: weather.temperature,
-      },
-      { onConflict: "trip_id,day_date" },
-    );
-    if (dayError) throw new Error("Impossible d’enregistrer la météo de cette journée.");
-
-    return weather;
+    return {
+      ok: true as const,
+      icon: saved.weather_icon ?? weather.icon,
+      temp: saved.weather_temp == null ? weather.temp : Number(saved.weather_temp),
+      summary: saved.weather_summary ?? weather.summary,
+      source: weather.source,
+    };
   });
