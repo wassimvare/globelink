@@ -93,6 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { name: "color-scheme", content: "light dark" },
       { name: "theme-color", content: "#087b83" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "application-name", content: "GlobeLink" },

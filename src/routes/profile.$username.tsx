@@ -273,7 +273,11 @@ function ProfilePage() {
     <div className="min-h-screen bg-background pb-20 sm:pb-10">
       <AppHeader />
       <div className="relative">
-        <div className="profile-banner h-36 w-full overflow-hidden bg-slate-900 sm:h-56">
+        <div
+          className={`profile-banner w-full overflow-hidden bg-slate-900 transition-[height] ${
+            banner ? "h-36 sm:h-56" : "h-16 sm:h-28"
+          }`}
+        >
           {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
         </div>
         <div className="mx-auto max-w-5xl px-3 sm:px-4">

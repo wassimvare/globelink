@@ -319,7 +319,7 @@ export function AppHeader() {
                 <DropdownMenuTrigger asChild>
                   <button
                     aria-label="Ouvrir le menu du profil"
-                    className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border/70 bg-secondary transition hover:border-primary/25 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-primary/30"
+                    className="hidden h-10 w-10 place-items-center overflow-hidden rounded-full border border-border/70 bg-secondary transition hover:border-primary/25 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-primary/30 sm:grid"
                   >
                     {avatarUrl ? (
                       <img src={avatarUrl} alt="Photo de profil" className="h-full w-full object-cover" />

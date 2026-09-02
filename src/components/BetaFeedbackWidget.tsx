@@ -199,11 +199,11 @@ export function BetaFeedbackWidget() {
           <DialogTrigger asChild>
             <button
               type="button"
-              className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-3 z-40 inline-flex h-10 items-center gap-1.5 rounded-full border border-primary/25 bg-card/95 px-3 text-xs font-bold text-primary shadow-elevated backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/45 sm:bottom-5 sm:right-5"
+              className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-2 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-primary/25 bg-card/95 p-0 text-xs font-bold text-primary shadow-elevated backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/45 sm:bottom-5 sm:right-5 sm:h-10 sm:w-auto sm:gap-1.5 sm:px-3"
               aria-label="Ouvrir l’aide et envoyer un retour GlobeLink"
             >
               <MessageCircleQuestion className="h-4 w-4" />
-              Aide
+              <span className="sr-only sm:not-sr-only">Aide</span>
             </button>
           </DialogTrigger>
 
