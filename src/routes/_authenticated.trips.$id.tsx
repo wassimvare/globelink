@@ -32,6 +32,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import {
+  MAP_TILE_ATTRIBUTION,
+  MAP_TILE_MAX_ZOOM,
+  MAP_TILE_URL,
+} from "@/lib/map-tiles";
 import { finalizeTrip } from "@/lib/trip-finalize.functions";
 import { resolvedDestinationCover } from "@/lib/destination-cover";
 import { getSignedMediaUrl } from "@/lib/storage";
@@ -622,7 +627,11 @@ function TripRouteMap({ entries, zoomLevel = 4 }: { entries: any[]; zoomLevel?: 
 
   return (
     <MapContainer center={center} zoom={zoomLevel} className="h-full w-full" scrollWheelZoom={false}>
-      <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+      <TileLayer
+        attribution={MAP_TILE_ATTRIBUTION}
+        maxZoom={MAP_TILE_MAX_ZOOM}
+        url={MAP_TILE_URL}
+      />
       <Polyline positions={path} pathOptions={{ color: "#0ea5e9", weight: 3, dashArray: "6 6" }} />
       {geo.map((entry, index) => {
         const icon = L.divIcon({

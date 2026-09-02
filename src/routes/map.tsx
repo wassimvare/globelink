@@ -57,6 +57,11 @@ import { catalogIdentityKey, getCachedViewportCatalog } from "@/lib/viewport-cat
 import { WORLD_MAP_HUBS } from "@/lib/world-map-hubs";
 import { useAuth } from "@/lib/auth-context";
 import {
+  MAP_TILE_ATTRIBUTION,
+  MAP_TILE_MAX_ZOOM,
+  MAP_TILE_URL,
+} from "@/lib/map-tiles";
+import {
   DEFAULT_ACCOUNT_SETTINGS,
   getAccountSettings,
 } from "@/lib/account-settings";
@@ -1260,8 +1265,9 @@ function LeafletMap({
       <ViewportReporter useMapEventsHook={useMapEvents} onViewportChange={onViewportChange} />
       <ZoomControl position="bottomright" />
       <TileLayer
-        attribution="&copy; OpenStreetMap contributors"
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        attribution={MAP_TILE_ATTRIBUTION}
+        maxZoom={MAP_TILE_MAX_ZOOM}
+        url={MAP_TILE_URL}
       />
 
       {userPosition && userAccuracy && (
