@@ -19,10 +19,11 @@ describe("Android mobile layout regressions", () => {
     expect(profileRoute).toContain('banner ? "h-36 sm:h-56" : "h-16 sm:h-28"');
   });
 
-  it("does not render the redundant profile menu inside the mobile header", () => {
+  it("keeps the profile menu visible inside the compact mobile header", () => {
     expect(appHeader).toMatch(
-      /aria-label="Ouvrir le menu du profil"\s*className="hidden [^"]* sm:grid"/,
+      /aria-label="Ouvrir le menu du profil"\s*className="grid h-10 w-10/,
     );
+    expect(appHeader).toContain('className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5"');
   });
 
   it("keeps the floating help action compact on mobile", () => {

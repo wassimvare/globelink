@@ -166,18 +166,18 @@ export function AppHeader() {
           : "border-transparent bg-background/72 backdrop-blur-xl"
       }`}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-3 sm:px-4">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-1 px-2 sm:gap-2 sm:px-4">
         {!isHome && <BackButton compact />}
         <Link
           to="/"
           preload="intent"
-          className="group flex min-w-0 shrink-0 items-center gap-2 pr-1 sm:pr-2"
+          className="group flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2 sm:pr-2"
           aria-label="Accueil GlobeLink"
         >
           <div className="brand-logo-shell h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-slate-950 shadow-soft transition duration-300 group-hover:scale-105 group-hover:shadow-glow">
             <BrandLogo className="h-full w-full" priority />
           </div>
-          <div className="min-w-0">
+          <div className={`min-w-0 ${isHome ? "hidden min-[400px]:block" : "hidden sm:block"}`}>
             <div className="brand-name truncate font-display text-lg font-bold leading-none tracking-tight sm:text-xl">
               GlobeLink
             </div>
@@ -276,12 +276,12 @@ export function AppHeader() {
           )}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
           <Link
             to="/search"
             preload="intent"
             aria-label="Rechercher"
-            className="group inline-flex h-10 items-center gap-2 rounded-xl border border-border/70 bg-card/80 px-3 text-sm font-medium text-muted-foreground shadow-[0_1px_0_rgba(255,255,255,.6)_inset] transition hover:border-primary/25 hover:text-foreground hover:shadow-soft"
+            className="group inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-card/80 p-0 text-sm font-medium text-muted-foreground shadow-[0_1px_0_rgba(255,255,255,.6)_inset] transition hover:border-primary/25 hover:text-foreground hover:shadow-soft sm:w-auto sm:gap-2 sm:rounded-xl sm:px-3"
           >
             <Search className="h-4 w-4 transition group-hover:scale-110" />
             <span className="hidden xl:inline">Rechercher</span>
@@ -319,7 +319,7 @@ export function AppHeader() {
                 <DropdownMenuTrigger asChild>
                   <button
                     aria-label="Ouvrir le menu du profil"
-                    className="hidden h-10 w-10 place-items-center overflow-hidden rounded-full border border-border/70 bg-secondary transition hover:border-primary/25 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-primary/30 sm:grid"
+                    className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border/70 bg-secondary transition hover:border-primary/25 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
                     {avatarUrl ? (
                       <img src={avatarUrl} alt="Photo de profil" className="h-full w-full object-cover" />
