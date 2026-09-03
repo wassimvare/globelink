@@ -146,7 +146,10 @@ function mapPlace(
     slug: `${slugify(title)}-google-${slugify(id).slice(-24)}`,
     title,
     description: null,
-    category: clean(place.primaryType, 80) || search.category,
+    // Keep GlobeLink's stable category for filtering. Google primaryType is preserved
+    // below as metadata because values such as tourist_attraction/lodging were causing
+    // valid destination cards to be rejected by the trusted-visible filter.
+    category: search.category,
     city: input.city,
     country: input.country,
     country_code: null,
@@ -175,14 +178,13 @@ function mapPlace(
       types: Array.isArray(place.types) ? place.types.slice(0, 20) : [],
       verified_google_place: true,
       strict_source_policy: "strict-official-sources-v1",
-      official_source_provider: search.kind === "restaurant" ? "google-places" : null,
-      official_source_label: search.kind === "restaurant" ? "Google Maps" : null,
-      official_source_verified: search.kind === "restaurant" && !!photoName,
-      source_is_search_only: search.kind !== "restaurant",
-      source_verification_status:
-        search.kind === "restaurant" && photoName
-          ? "source_officielle_verifiee"
-          : "source_non_autorisee_par_la_regle_stricte",
+      official_source_provider: "google-places",
+      official_source_label: "Google Maps",
+      official_source_verified: !!photoName,
+      source_is_search_only: false,
+      source_verification_status: photoName
+        ? "source_officielle_verifiee"
+        : "source_google_verifiee_photo_indisponible",
     },
     fetched_at: now.toISOString(),
     valid_until: new Date(now.getTime() + CACHE_TTL).toISOString(),
