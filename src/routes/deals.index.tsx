@@ -11,6 +11,7 @@ import {
   catalogSourceLabel,
   type LiveCatalogItem,
 } from "@/lib/live-catalog";
+import { dailyWorldActivitySelection } from "@/lib/world-activities";
 import { CatalogImage } from "@/components/CatalogImage";
 
 export const Route = createFileRoute("/deals/")({
@@ -35,9 +36,15 @@ export const Route = createFileRoute("/deals/")({
 });
 
 function DealsPage() {
+  const instantSelection = {
+    items: selectFallbackSelection(dailyWorldActivitySelection(18)),
+    mode: "selection" as const,
+  };
+
   const {
     data: selection,
     isLoading,
+    isFetching,
     error,
   } = useQuery({
     queryKey: ["live-catalog", "deals-with-fallback-selection"],
@@ -51,7 +58,11 @@ function DealsPage() {
       });
       return { items: selectFallbackSelection(fallbackItems), mode: "selection" as const };
     },
+    initialData: instantSelection,
+    initialDataUpdatedAt: 0,
     staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
   });
 
   const items = selection?.items ?? [];
@@ -60,7 +71,7 @@ function DealsPage() {
   const pageSubtitle = hasRealOffers
     ? "Offres voyage issues de fournisseurs externes. Vérifie toujours le prix final sur la source."
     : "Lieux et activités réels issus de sources vérifiables, alignés avec la sélection de l’accueil.";
-  const lastRefresh = items[0]?.fetched_at
+  const lastRefresh = hasRealOffers && items[0]?.fetched_at
     ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(
         new Date(items[0].fetched_at),
       )
@@ -82,10 +93,14 @@ function DealsPage() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5">
-              <RefreshCw className="h-3.5 w-3.5 text-accent" />{" "}
+              <RefreshCw
+                className={`h-3.5 w-3.5 text-accent ${isFetching ? "animate-spin" : ""}`}
+              />{" "}
               {lastRefresh
                 ? `Mise à jour : ${lastRefresh}`
-                : `Sélection directe disponible · ${dailyRefreshLabel()}`}
+                : isFetching
+                  ? "Sélection affichée · actualisation en arrière-plan"
+                  : `Sélection directe disponible · ${dailyRefreshLabel()}`}
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5">
               <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Sources réelles, prix et horaires
@@ -94,13 +109,13 @@ function DealsPage() {
           </div>
         </header>
 
-        {isLoading ? (
+        {isLoading && items.length === 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-72 animate-pulse rounded-3xl bg-secondary" />
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-44 animate-pulse rounded-3xl bg-secondary" />
             ))}
           </div>
-        ) : error ? (
+        ) : error && items.length === 0 ? (
           <div className="rounded-3xl border border-destructive/30 bg-destructive/5 p-8 text-center">
             <h2 className="font-display text-xl">La collecte ne répond pas</h2>
             <p className="mt-2 text-sm text-muted-foreground">
