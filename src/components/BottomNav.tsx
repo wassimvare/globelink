@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -20,7 +21,6 @@ import {
   DrawerDescription,
   DrawerHeader,
   DrawerTitle,
-  DrawerTrigger,
 } from "@/components/ui/drawer";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -81,21 +81,24 @@ export function BottomNav() {
 }
 
 function MobileExplorer({ active, pathname }: { active: boolean; pathname: string }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Drawer>
-      <DrawerTrigger asChild>
-        <button
-          type="button"
-          aria-label="Ouvrir Explorer"
-          className={`relative flex min-h-[52px] w-full flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
-            active ? "text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" : "text-muted-foreground"
-          }`}
-        >
-          <Map className="h-[21px] w-[21px] transition" />
-          <span className="max-w-full truncate">Explorer</span>
-          <span className="nav-dot absolute bottom-0.5 h-1 w-1 scale-0 rounded-full bg-primary transition" />
-        </button>
-      </DrawerTrigger>
+    <Drawer open={open} onOpenChange={setOpen}>
+      <button
+        type="button"
+        aria-label="Ouvrir Explorer"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        className={`relative flex min-h-[52px] w-full touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
+          active ? "text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" : "text-muted-foreground"
+        }`}
+      >
+        <Map className="h-[21px] w-[21px] transition" />
+        <span className="max-w-full truncate">Explorer</span>
+        <span className="nav-dot absolute bottom-0.5 h-1 w-1 scale-0 rounded-full bg-primary transition" />
+      </button>
 
       <DrawerContent className="rounded-t-3xl border-border/70 bg-card/95 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-elevated backdrop-blur-2xl">
         <DrawerHeader className="px-5 pb-2 text-left">
