@@ -230,7 +230,38 @@ export async function fetchFastViewportCatalog(
   bounds: CatalogViewportBounds,
 ): Promise<LiveCatalogItem[]> {
   if (typeof window === "undefined" || bounds.zoom < 7) return [];
+
+  const centerLatitude = (bounds.north + bounds.south) / 2;
+  const centerLongitude = (bounds.east + bounds.west) / 2;
+  const radiusMeters = Math.max(
+    1_000,
+    Math.min(
+      40_000,
+      Math.round(Math.max(bounds.north - bounds.south, bounds.east - bounds.west) * 60_000),
+    ),
+  );
+
   try {
+    // Google Places is the fastest verified source when configured. Query it first so
+    // restaurants, hotels and activities can render without waiting for the browser/OSM pass.
+    const officialRows = (await fetchOfficialProviderCatalog({
+      data: {
+        kinds: ["activity", "hotel", "restaurant"],
+        limit: bounds.zoom >= 13 ? 120 : 80,
+        latitude: centerLatitude,
+        longitude: centerLongitude,
+        radiusMeters,
+      },
+    })) as LiveCatalogItem[];
+    const officialUnique = uniqueCatalogRows(
+      filterReliableMapCatalogItems(visibleCatalogRows(officialRows.map(enrichCatalogRow))),
+    );
+    if (officialUnique.length) {
+      saveCachedViewportCatalog(bounds, officialUnique);
+      return officialUnique;
+    }
+
+    // Keep the public browser/OSM layer as a zero-key fallback when Google is unavailable.
     const rows = (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[];
     const unique = uniqueCatalogRows(
       filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
@@ -238,8 +269,18 @@ export async function fetchFastViewportCatalog(
     if (unique.length) saveCachedViewportCatalog(bounds, unique);
     return unique;
   } catch (error) {
-    console.warn("[GlobeLink catalog] Fast viewport pass unavailable", error);
-    return [];
+    console.warn("[GlobeLink catalog] Fast verified viewport pass unavailable", error);
+    try {
+      const rows = (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[];
+      const unique = uniqueCatalogRows(
+        filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
+      );
+      if (unique.length) saveCachedViewportCatalog(bounds, unique);
+      return unique;
+    } catch (fallbackError) {
+      console.warn("[GlobeLink catalog] Fast viewport fallback unavailable", fallbackError);
+      return [];
+    }
   }
 }
 
@@ -258,9 +299,8 @@ export async function fetchLiveViewportCatalog(
   );
   try {
     if (typeof window !== "undefined" && bounds.zoom >= 7) {
-      // The map already renders its fast browser/OSM layer separately. This live pass
-      // always waits for the verified providers too, so a faster fallback cannot hide
-      // Google Places or Ticketmaster results.
+      // The map already renders its fast verified layer separately. This live pass
+      // waits for the verified providers and public catalog so the map can enrich progressively.
       const settled = await Promise.allSettled([
         fetchOfficialProviderCatalog({
           data: {
