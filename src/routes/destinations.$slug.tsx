@@ -41,6 +41,7 @@ import { searchInternetCatalog } from "@/lib/public-travel-catalog.functions";
 import { fetchGoogleDestinationCatalog } from "@/lib/google-destination-catalog.functions";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { WORLD_MAP_HUBS } from "@/lib/world-map-hubs";
+import { curatedActivitiesForCountry } from "@/lib/world-activities";
 import { normalizeText, slugifyDestination } from "@/lib/phase2";
 import { useAuth } from "@/lib/auth-context";
 import { isTrustedVisibleCatalogItem } from "@/lib/catalog-source-routing";
@@ -163,7 +164,7 @@ function DestinationDetail({ slug }: { slug: string }) {
   // Fast first paint: whichever trusted source answers first wins. Cached map rows are
   // shown immediately through placeholderData while Google/DB/OSM refresh in parallel.
   const fastCatalogQuery = useQuery({
-    queryKey: ["destination-fast-catalog-v6", slug, catalogCity, country, latitude, longitude],
+    queryKey: ["destination-fast-catalog-v7", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity,
     placeholderData: cachedCatalog,
     queryFn: async () => {
@@ -206,7 +207,7 @@ function DestinationDetail({ slug }: { slug: string }) {
   // Enrich in the background without holding the destination page hostage. This
   // can add missing categories after the first cards are already visible.
   const fullCatalogQuery = useQuery({
-    queryKey: ["destination-full-catalog-v6", slug, catalogCity, country, latitude, longitude],
+    queryKey: ["destination-full-catalog-v7", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity && !fastCatalogQuery.isLoading,
     queryFn: async () => {
       if (!bounds || !catalogCity || latitude == null || longitude == null)
@@ -311,14 +312,14 @@ function DestinationDetail({ slug }: { slug: string }) {
     retry: false,
   });
 
-  const isCatalogLoading = fastCatalogQuery.isLoading && !catalog.length;
   const isCatalogFetching = fastCatalogQuery.isFetching || fullCatalogQuery.isFetching;
+  const isCatalogLoading = !catalog.length && isCatalogFetching;
   const reloadCatalog = () => Promise.all([fastCatalogQuery.refetch(), fullCatalogQuery.refetch()]);
 
-  const activityCatalog = useMemo(
-    () => normalizeCatalog(catalog.filter((item) => item.kind === "activity")),
-    [catalog, normalizeCatalog],
-  );
+  const activityCatalog = useMemo(() => {
+    const live = normalizeCatalog(catalog.filter((item) => item.kind === "activity"));
+    return live.length ? live : normalizeCatalog(curatedActivitiesForCountry(country));
+  }, [catalog, country, normalizeCatalog]);
 
   const groups = {
     activity: activityCatalog.slice(0, 8),
@@ -719,13 +720,7 @@ function CatalogRail({
         title={title}
         subtitle="Lieux affichés uniquement quand la source est traçable. Aucune photo générique n’est utilisée."
       />
-      {loading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="skeleton aspect-[4/5] rounded-2xl" />
-          ))}
-        </div>
-      ) : items.length ? (
+      {items.length ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {items.map((item, index) => {
             const card = (
@@ -794,8 +789,14 @@ function CatalogRail({
             );
           })}
         </div>
+      ) : loading ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="skeleton aspect-[4/5] rounded-2xl" />
+          ))}
+        </div>
       ) : (
-        <Empty text="Aucun lieu trouvé pour le moment. Déplace-toi sur la carte pour charger cette zone en direct." />
+        <Empty text="Aucun résultat vérifié disponible pour le moment. GlobeLink relancera automatiquement la recherche lors de la prochaine actualisation." />
       )}
     </section>
   );
