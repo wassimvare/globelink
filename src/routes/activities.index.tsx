@@ -11,6 +11,7 @@ import {
   itemLocation,
   type LiveCatalogItem,
 } from "@/lib/live-catalog";
+import { dailyWorldActivitySelection } from "@/lib/world-activities";
 
 export const Route = createFileRoute("/activities/")({
   head: () => ({
@@ -35,10 +36,18 @@ function normalize(value: string) {
 
 function ActivitiesExplorerPage() {
   const [query, setQuery] = useState("");
-  const { data: activities = [], isLoading } = useQuery({
+  const instantActivities = useMemo(() => dailyWorldActivitySelection(24), []);
+  const {
+    data: activities = [],
+    isLoading,
+    isFetching,
+  } = useQuery({
     queryKey: ["live-catalog", "trusted-activities-page"],
     queryFn: () => fetchLiveCatalog({ kinds: ["activity"], limit: 240 }),
+    initialData: instantActivities,
+    initialDataUpdatedAt: 0,
     staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
     retry: 1,
   });
   const visibleActivities = useMemo(() => {
@@ -82,13 +91,13 @@ function ActivitiesExplorerPage() {
                 Activités dans tous les pays
               </h1>
               <p className="mt-2 text-sm leading-6 text-muted-foreground sm:text-base">
-                Activités affichées uniquement avec une source vérifiée : Google Places pour les
-                attractions et Ticketmaster pour les événements. Aucune image générique n’est utilisée
+                Lieux et activités réels issus de sources vérifiables. Google Places et Ticketmaster
+                restent prioritaires quand ils sont disponibles. Aucune image générique n’est utilisée
                 comme photo de lieu.
               </p>
               <p className="mt-2 text-xs font-semibold text-primary">
-                {activities.length} activité{activities.length > 1 ? "s" : ""} vérifiée
-                {activities.length > 1 ? "s" : ""} · {countryCount} pays
+                {activities.length} activité{activities.length > 1 ? "s" : ""} · {countryCount} pays
+                {isFetching ? " · actualisation…" : ""}
               </p>
             </div>
             <label className="relative w-full lg:max-w-md">
@@ -103,10 +112,10 @@ function ActivitiesExplorerPage() {
           </div>
         </section>
 
-        {isLoading ? (
+        {isLoading && activities.length === 0 ? (
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="skeleton aspect-[4/5] rounded-[1.6rem]" />
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="skeleton h-44 rounded-[1.6rem]" />
             ))}
           </section>
         ) : visibleActivities.length ? (
@@ -127,6 +136,7 @@ function ActivitiesExplorerPage() {
                       <CatalogImage
                         item={activity as LiveCatalogItem}
                         fallbackIndex={index}
+                        priority={index < 2}
                         lookup={{
                           latitude: activity.latitude,
                           longitude: activity.longitude,
