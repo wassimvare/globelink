@@ -56,14 +56,37 @@ function safeExactHttps(value: unknown): string | null {
   } catch { return null; }
 }
 
-function directImage(item: Pick<LiveCatalogItem, "kind" | "title" | "image_url" | "tags"> & Partial<Pick<LiveCatalogItem, "provider" | "source_url">>): string | null {
-  const tags = asRecord(item.tags);
-  return trustedDirectCatalogImage(item, item.image_url) ?? trustedDirectCatalogImage(item, tags.official_image_url) ?? trustedDirectCatalogImage(item, tags.provider_image_url);
-}
-
 function tagString(tags: Record<string, unknown>, key: string) {
   const value = tags[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function cachedCatalogImage(item: Pick<LiveCatalogItem, "image_url" | "tags">): string | null {
+  const tags = asRecord(item.tags);
+  const storagePath = tagString(tags, "catalog_image_storage_path");
+  const source = tagString(tags, "catalog_image_source");
+  const sourceUrl = safeExactHttps(tags.catalog_image_source_url);
+  const license = tagString(tags, "catalog_image_license");
+  const status = tagString(tags, "catalog_image_status");
+  const candidate = safeExactHttps(item.image_url);
+  if (!storagePath || !candidate || !license || status !== "cached" || source !== "wikimedia-commons") return null;
+  try {
+    const imageUrl = new URL(candidate);
+    const sourcePage = sourceUrl ? new URL(sourceUrl) : null;
+    const decodedPath = decodeURIComponent(imageUrl.pathname);
+    const expectedSuffix = `/storage/v1/object/public/catalog-media/${storagePath}`;
+    if (!/(^|\.)supabase\.co$/i.test(imageUrl.hostname)) return null;
+    if (!decodedPath.endsWith(expectedSuffix)) return null;
+    if (sourcePage && sourcePage.hostname !== "commons.wikimedia.org") return null;
+    return imageUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function directImage(item: Pick<LiveCatalogItem, "kind" | "title" | "image_url" | "tags"> & Partial<Pick<LiveCatalogItem, "provider" | "source_url">>): string | null {
+  const tags = asRecord(item.tags);
+  return cachedCatalogImage(item) ?? trustedDirectCatalogImage(item, item.image_url) ?? trustedDirectCatalogImage(item, tags.official_image_url) ?? trustedDirectCatalogImage(item, tags.provider_image_url);
 }
 
 function cachedCatalogAttributions(item: Pick<LiveCatalogItem, "tags">) {
