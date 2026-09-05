@@ -24,3 +24,6 @@ content_path = "./supabase/email-templates/confirm-signup.html"
 
 [functions.sync-travel-catalog]
 verify_jwt = false
+
+[functions.cache-catalog-media]
+verify_jwt = true
