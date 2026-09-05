@@ -55,6 +55,18 @@ export type LiveCatalogItem = {
 
 const db = supabase as any;
 
+function viewportCoverageTarget(bounds: CatalogViewportBounds) {
+  if (bounds.zoom >= 13) return 24;
+  if (bounds.zoom >= 10) return 16;
+  return 8;
+}
+
+function hasUsefulViewportCoverage(rows: LiveCatalogItem[], bounds: CatalogViewportBounds) {
+  if (rows.length < viewportCoverageTarget(bounds)) return false;
+  const kinds = new Set(rows.map((row) => row.kind).filter((kind) => kind !== "deal"));
+  return kinds.size >= 2;
+}
+
 export async function fetchLiveCatalog(
   options: {
     kinds?: LiveCatalogKind[];
@@ -100,20 +112,16 @@ export async function fetchLiveCatalog(
 
   const visibleDatabaseRows = visibleCatalogRows(databaseRows);
   if (wantsDealsOnly) return visibleDatabaseRows;
-  const officialRows = await fetchOfficialRows({
-    kinds: options.kinds,
-    limit,
-    city: options.city,
-    country: options.country,
-  });
-  const officialAndDatabaseRows = uniqueCatalogRows([...officialRows, ...visibleDatabaseRows]);
-  const enoughDatabaseRows = officialAndDatabaseRows.length >= Math.min(limit, 24);
-  const isMapRequest = limit > 200 && !options.city && !options.country;
-  if (enoughDatabaseRows && !options.city && !options.country)
-    return uniqueCatalogRows(
-      visibleCatalogRows([...officialRows, ...curatedRows, ...databaseRows]),
-    ).slice(0, limit);
 
+  // Local-first: a sufficiently populated Supabase result is returned without
+  // touching paid providers. Open/public sources are tried next; Google is only
+  // a final fallback when the local/public catalogue is still too sparse.
+  const localRows = uniqueCatalogRows(visibleCatalogRows([...curatedRows, ...visibleDatabaseRows]));
+  const enoughLocalRows = visibleDatabaseRows.length >= Math.min(limit, 24);
+  if (enoughLocalRows) return localRows.slice(0, limit);
+
+  const isMapRequest = limit > 200 && !options.city && !options.country;
+  let publicRows: LiveCatalogItem[] = [];
   try {
     const kinds = options.kinds?.filter(
       (kind): kind is Exclude<LiveCatalogKind, "deal"> => kind !== "deal",
@@ -126,23 +134,29 @@ export async function fetchLiveCatalog(
           ? await getMapInternetCatalog()
           : await getHomepageInternetCatalog()
     ) as LiveCatalogItem[];
-    const filtered = visibleCatalogRows(
+    publicRows = visibleCatalogRows(
       directRows.filter(
         (item) => item.kind !== "deal" && (!kinds?.length || kinds.includes(item.kind)),
       ),
     );
-    return uniqueCatalogRows([
-      ...officialRows,
-      ...visibleCatalogRows(curatedRows),
-      ...visibleDatabaseRows,
-      ...filtered,
-    ]).slice(0, limit);
   } catch (error) {
-    console.warn("[GlobeLink catalog] Direct internet fallback unavailable", error);
-    return uniqueCatalogRows(
-      visibleCatalogRows([...officialRows, ...curatedRows, ...databaseRows]),
-    ).slice(0, limit);
+    console.warn("[GlobeLink catalog] Public catalog fallback unavailable", error);
   }
+
+  const localAndPublic = uniqueCatalogRows(
+    visibleCatalogRows([...curatedRows, ...visibleDatabaseRows, ...publicRows]),
+  );
+  if (localAndPublic.length >= Math.min(limit, 24)) return localAndPublic.slice(0, limit);
+
+  const officialRows = await fetchOfficialRows({
+    kinds: options.kinds,
+    limit,
+    city: options.city,
+    country: options.country,
+  });
+  return uniqueCatalogRows(
+    visibleCatalogRows([...officialRows, ...localAndPublic]),
+  ).slice(0, limit);
 }
 
 const VIEWPORT_SELECT =
@@ -231,6 +245,31 @@ export async function fetchFastViewportCatalog(
 ): Promise<LiveCatalogItem[]> {
   if (typeof window === "undefined" || bounds.zoom < 7) return [];
 
+  const localRows = getCachedViewportCatalog(bounds);
+  const databaseRows = await fetchPersistedViewportCatalog(bounds);
+  let zeroCostRows = uniqueCatalogRows(
+    filterReliableMapCatalogItems(
+      visibleCatalogRows([...localRows, ...databaseRows].map(enrichCatalogRow)),
+    ),
+  );
+  if (hasUsefulViewportCoverage(zeroCostRows, bounds)) return zeroCostRows;
+
+  // Fill gaps from the public OSM/browser layer before considering Google.
+  try {
+    const publicRows = (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[];
+    zeroCostRows = uniqueCatalogRows(
+      filterReliableMapCatalogItems(
+        visibleCatalogRows([...zeroCostRows, ...publicRows].map(enrichCatalogRow)),
+      ),
+    );
+    if (hasUsefulViewportCoverage(zeroCostRows, bounds)) {
+      saveCachedViewportCatalog(bounds, zeroCostRows);
+      return zeroCostRows;
+    }
+  } catch (error) {
+    console.warn("[GlobeLink catalog] Fast public viewport pass unavailable", error);
+  }
+
   const centerLatitude = (bounds.north + bounds.south) / 2;
   const centerLongitude = (bounds.east + bounds.west) / 2;
   const radiusMeters = Math.max(
@@ -242,8 +281,8 @@ export async function fetchFastViewportCatalog(
   );
 
   try {
-    // Google Places is the fastest verified source when configured. Query it first so
-    // restaurants, hotels and activities can render without waiting for the browser/OSM pass.
+    // Paid/official providers are now a true fallback: they are queried only
+    // when Supabase + cached + public OSM data cannot populate the viewport.
     const officialRows = (await fetchOfficialProviderCatalog({
       data: {
         kinds: ["activity", "hotel", "restaurant"],
@@ -253,34 +292,16 @@ export async function fetchFastViewportCatalog(
         radiusMeters,
       },
     })) as LiveCatalogItem[];
-    const officialUnique = uniqueCatalogRows(
-      filterReliableMapCatalogItems(visibleCatalogRows(officialRows.map(enrichCatalogRow))),
+    const merged = uniqueCatalogRows(
+      filterReliableMapCatalogItems(
+        visibleCatalogRows([...zeroCostRows, ...officialRows].map(enrichCatalogRow)),
+      ),
     );
-    if (officialUnique.length) {
-      saveCachedViewportCatalog(bounds, officialUnique);
-      return officialUnique;
-    }
-
-    // Keep the public browser/OSM layer as a zero-key fallback when Google is unavailable.
-    const rows = (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[];
-    const unique = uniqueCatalogRows(
-      filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
-    );
-    if (unique.length) saveCachedViewportCatalog(bounds, unique);
-    return unique;
+    if (merged.length) saveCachedViewportCatalog(bounds, merged);
+    return merged;
   } catch (error) {
-    console.warn("[GlobeLink catalog] Fast verified viewport pass unavailable", error);
-    try {
-      const rows = (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[];
-      const unique = uniqueCatalogRows(
-        filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
-      );
-      if (unique.length) saveCachedViewportCatalog(bounds, unique);
-      return unique;
-    } catch (fallbackError) {
-      console.warn("[GlobeLink catalog] Fast viewport fallback unavailable", fallbackError);
-      return [];
-    }
+    console.warn("[GlobeLink catalog] Official viewport fallback unavailable", error);
+    return zeroCostRows;
   }
 }
 
@@ -288,36 +309,12 @@ export async function fetchLiveViewportCatalog(
   bounds: CatalogViewportBounds,
 ): Promise<LiveCatalogItem[]> {
   let rows: LiveCatalogItem[] = [];
-  const centerLatitude = (bounds.north + bounds.south) / 2;
-  const centerLongitude = (bounds.east + bounds.west) / 2;
-  const radiusMeters = Math.max(
-    1_000,
-    Math.min(
-      40_000,
-      Math.round(Math.max(bounds.north - bounds.south, bounds.east - bounds.west) * 60_000),
-    ),
-  );
+  const persistedRows = await fetchPersistedViewportCatalog(bounds);
+  if (hasUsefulViewportCoverage(persistedRows, bounds)) return persistedRows;
+
   try {
     if (typeof window !== "undefined" && bounds.zoom >= 7) {
-      // The map already renders its fast verified layer separately. This live pass
-      // waits for the verified providers and public catalog so the map can enrich progressively.
-      const settled = await Promise.allSettled([
-        fetchOfficialProviderCatalog({
-          data: {
-            kinds: ["activity", "hotel", "restaurant"],
-            limit: bounds.zoom >= 13 ? 120 : 80,
-            latitude: centerLatitude,
-            longitude: centerLongitude,
-            radiusMeters,
-          },
-        }) as Promise<unknown>,
-        getViewportInternetCatalog({ data: bounds }) as Promise<unknown>,
-      ]);
-      rows = settled.flatMap((result) =>
-        result.status === "fulfilled" && Array.isArray(result.value)
-          ? (result.value as LiveCatalogItem[])
-          : [],
-      );
+      rows = (await getViewportInternetCatalog({ data: bounds })) as LiveCatalogItem[];
       if (!rows.length) {
         rows = (await fetchBrowserViewportCatalog(bounds, { mode: "full" })) as LiveCatalogItem[];
       }
@@ -325,11 +322,50 @@ export async function fetchLiveViewportCatalog(
       rows = (await getViewportInternetCatalog({ data: bounds })) as LiveCatalogItem[];
     }
   } catch (error) {
-    console.warn("[GlobeLink catalog] Aucun fournisseur viewport temps réel disponible", error);
+    console.warn("[GlobeLink catalog] Public viewport source unavailable", error);
   }
-  const unique = uniqueCatalogRows(
-    filterReliableMapCatalogItems(visibleCatalogRows(rows.map(enrichCatalogRow))),
+
+  let unique = uniqueCatalogRows(
+    filterReliableMapCatalogItems(
+      visibleCatalogRows([...persistedRows, ...rows].map(enrichCatalogRow)),
+    ),
   );
+  if (hasUsefulViewportCoverage(unique, bounds)) {
+    saveCachedViewportCatalog(bounds, unique);
+    return unique;
+  }
+
+  // Only enrich a genuinely sparse viewport through official providers.
+  if (typeof window !== "undefined" && bounds.zoom >= 7) {
+    const centerLatitude = (bounds.north + bounds.south) / 2;
+    const centerLongitude = (bounds.east + bounds.west) / 2;
+    const radiusMeters = Math.max(
+      1_000,
+      Math.min(
+        40_000,
+        Math.round(Math.max(bounds.north - bounds.south, bounds.east - bounds.west) * 60_000),
+      ),
+    );
+    try {
+      const officialRows = (await fetchOfficialProviderCatalog({
+        data: {
+          kinds: ["activity", "hotel", "restaurant"],
+          limit: bounds.zoom >= 13 ? 120 : 80,
+          latitude: centerLatitude,
+          longitude: centerLongitude,
+          radiusMeters,
+        },
+      })) as LiveCatalogItem[];
+      unique = uniqueCatalogRows(
+        filterReliableMapCatalogItems(
+          visibleCatalogRows([...unique, ...officialRows].map(enrichCatalogRow)),
+        ),
+      );
+    } catch (error) {
+      console.warn("[GlobeLink catalog] Official sparse-viewport fallback unavailable", error);
+    }
+  }
+
   if (unique.length) saveCachedViewportCatalog(bounds, unique);
   return unique;
 }
@@ -337,15 +373,18 @@ export async function fetchLiveViewportCatalog(
 export async function fetchViewportCatalog(
   bounds: CatalogViewportBounds,
 ): Promise<LiveCatalogItem[]> {
-  // Compatibility helper for callers outside the map. The map itself uses the
-  // four layers separately so cached/persisted rows can render before the live request.
+  // Resolve local cache and persisted Supabase rows first. Only if coverage is
+  // still insufficient do we launch the live/public/official fallback chain.
   const localRows = getCachedViewportCatalog(bounds);
-  const [databaseRows, internetRows] = await Promise.all([
-    fetchPersistedViewportCatalog(bounds),
-    fetchLiveViewportCatalog(bounds),
-  ]);
+  const databaseRows = await fetchPersistedViewportCatalog(bounds);
+  const localAndDatabase = uniqueCatalogRows(
+    visibleCatalogRows([...localRows, ...databaseRows].map(enrichCatalogRow)),
+  );
+  if (hasUsefulViewportCoverage(localAndDatabase, bounds)) return localAndDatabase;
+
+  const internetRows = await fetchLiveViewportCatalog(bounds);
   return uniqueCatalogRows(
-    visibleCatalogRows([...localRows, ...databaseRows, ...internetRows].map(enrichCatalogRow)),
+    visibleCatalogRows([...localAndDatabase, ...internetRows].map(enrichCatalogRow)),
   );
 }
 
