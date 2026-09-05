@@ -66,6 +66,19 @@ function tagString(tags: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function cachedCatalogAttributions(item: Pick<LiveCatalogItem, "tags">) {
+  const tags = asRecord(item.tags);
+  const sourceUrl = safeExactHttps(tags.catalog_image_source_url);
+  const licenseUrl = safeExactHttps(tags.catalog_image_license_url);
+  const attribution = tagString(tags, "catalog_image_attribution");
+  const license = tagString(tags, "catalog_image_license");
+  if (!sourceUrl && !licenseUrl && !attribution && !license) return [];
+  const rows: Array<{ label: string; url?: string | null }> = [];
+  rows.push({ label: attribution ? `Wikimedia · ${attribution}` : "Wikimedia Commons", url: sourceUrl });
+  if (license) rows.push({ label: license, url: licenseUrl });
+  return rows;
+}
+
 function hostMatches(hostname: string, domain: string) {
   const host = hostname.replace(/^www\./i, "").toLowerCase();
   const expected = domain.replace(/^www\./i, "").toLowerCase();
@@ -114,10 +127,12 @@ export function CatalogImage({ item, className = "h-full w-full object-cover", p
   const exactDirect = useMemo(() => directImage(item), [item]);
   const resolveMedia = useServerFn(resolveVerifiedPlaceMedia);
   const resolvePublicMedia = useServerFn(resolvePublicPlaceMedia);
-  const primaryInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false }), [item, lookup]);
+  const hasExplicitGooglePhoto = useMemo(() => !!tagString(asRecord(item.tags), "google_photo_name"), [item.tags]);
+  const primaryInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: !hasExplicitGooglePhoto, skipOfficialSite: false }), [hasExplicitGooglePhoto, item, lookup]);
   const fallbackInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: true, skipOfficialSite: true }), [item, lookup]);
   const publicInput = useMemo(() => ({ title: item.title, kind: item.kind, latitude: primaryInput.latitude, longitude: primaryInput.longitude, city: primaryInput.city ?? null, country: primaryInput.country ?? null }), [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude]);
   const knownLogo = useMemo(() => knownPlaceLogo(item), [item]);
+  const directAttributions = useMemo(() => cachedCatalogAttributions(item), [item]);
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   useEffect(() => setFailedUrls(new Set()), [item.id]);
 
@@ -141,7 +156,7 @@ export function CatalogImage({ item, className = "h-full w-full object-cover", p
 
   if (resolvedUrl) {
     const image = <img src={resolvedUrl} alt={item.title} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" referrerPolicy="no-referrer" className={className} onError={() => { setFailedUrls((current) => new Set([...current, resolvedUrl])); if (activeMedia?.source === "google-places") void refetchPrimary(); }} />;
-    const attributions = activeMedia?.attributions ?? [];
+    const attributions = activeMedia?.attributions ?? (directAvailable === resolvedUrl ? directAttributions : []);
     if (!showAttribution || !attributions.length) return image;
     return <div className="relative w-full overflow-hidden bg-secondary">{image}<div className="absolute bottom-1.5 right-1.5 max-w-[85%] rounded-md bg-black/65 px-2 py-1 text-[9px] leading-tight text-white backdrop-blur-sm">Photo · {attributions.slice(0, 2).map((entry, index) => <span key={`${entry.label}-${index}`}>{index > 0 ? " · " : ""}{entry.url ? <a href={entry.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{entry.label}</a> : entry.label}</span>)}</div></div>;
   }
