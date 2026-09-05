@@ -108,7 +108,7 @@ function escapeHtml(value: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -1046,7 +1046,7 @@ function MapPage() {
               <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold">{explorerResults.length}</span>
             </div>
             <div className="flex snap-x gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {explorerResults.slice(0, 12).map((entry) => (
+              {explorerResults.map((entry) => (
                 <ExplorerPlaceCard
                   key={entry.place.id}
                   entry={entry}
