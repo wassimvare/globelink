@@ -84,8 +84,8 @@ function withSecurityHeaders(response: Response, requestUrl?: URL): Response {
     // Browser network access is limited to GlobeLink and Supabase.
     // Server-side AI/catalog requests are unaffected.
     isHttps
-      ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co"
-      : "connect-src 'self' http: ws: https://*.supabase.co wss://*.supabase.co",
+      ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://raspberrypi.tailaa3fb6.ts.net wss://raspberrypi.tailaa3fb6.ts.net"
+      : "connect-src 'self' http: ws: https://*.supabase.co wss://*.supabase.co https://raspberrypi.tailaa3fb6.ts.net wss://raspberrypi.tailaa3fb6.ts.net",
     "form-action 'self' https://checkout.stripe.com",
   ];
   // Never upgrade local Wi-Fi HTTP requests to HTTPS: the local preview has no TLS certificate.
