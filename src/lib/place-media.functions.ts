@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { rankCatalogPhotosForCard } from "./catalog-photo-ranking";
 
 export type PlaceMediaAttribution = {
   label: string;
@@ -497,6 +498,8 @@ async function resolveWikidataSearch(input: PlaceMediaInput): Promise<ResolvedPl
 
 type GooglePhoto = {
   name?: string;
+  widthPx?: number;
+  heightPx?: number;
   authorAttributions?: Array<{ displayName?: string; uri?: string }>;
 };
 
@@ -1177,7 +1180,7 @@ async function resolveGooglePlaces(
     // Search responses can omit or contain stale photo refs. Try a few refs before
     // falling back to Place Details, then try the next high-confidence candidate.
     const tryPhotos = async (photos: GooglePhoto[] | undefined) => {
-      for (const photo of (photos ?? []).filter((entry) => !!entry.name).slice(0, 8)) {
+      for (const photo of rankCatalogPhotosForCard(photos).slice(0, 8)) {
         const media = await googlePhotoMedia(photo, key);
         if (!media) continue;
         return {
