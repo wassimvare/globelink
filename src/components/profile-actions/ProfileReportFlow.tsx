@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronLeft } from "lucide-react";
+import { DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 
 const REPORT_REASONS = [
   { id: "spam", label: "Spam ou contenu indésirable" },
@@ -49,7 +50,7 @@ export function ProfileReportFlow({
 
   return (
     <>
-      <div className="px-5 pb-2 pt-5 text-left">
+      <DrawerHeader className="px-5 pb-2 pt-5 text-left">
         <button
           type="button"
           onClick={onBack}
@@ -59,11 +60,11 @@ export function ProfileReportFlow({
           <ChevronLeft className="h-4 w-4" />
           Retour
         </button>
-        <h2 className="text-lg font-semibold">Pourquoi signalez-vous @{username} ?</h2>
+        <DrawerTitle>Pourquoi signalez-vous @{username} ?</DrawerTitle>
         <p className="mt-1 text-sm text-muted-foreground">
           Choisissez la raison qui correspond le mieux. Aucun signalement n'est envoyé avant votre confirmation.
         </p>
-      </div>
+      </DrawerHeader>
 
       <div className="overflow-y-auto px-4 pb-3">
         <div className="space-y-2" role="radiogroup" aria-label="Raison du signalement">
