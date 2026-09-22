@@ -125,8 +125,11 @@ export function catalogItemsDescribeSamePlace(a: QualityCatalogItem, b: QualityC
   const bTitle = titleKey(b);
   if (!aTitle || aTitle !== bTitle) return false;
 
-  const distance = haversineMeters(a, b);
-  if (distance <= 250) return true;
+  const aHasCoordinates = catalogCoordinatesAreReliable(a);
+  const bHasCoordinates = catalogCoordinatesAreReliable(b);
+  if (aHasCoordinates && bHasCoordinates) {
+    return haversineMeters(a, b) <= 250;
+  }
 
   const aLocation = locationKey(a);
   const bLocation = locationKey(b);
