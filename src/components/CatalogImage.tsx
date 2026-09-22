@@ -110,7 +110,7 @@ function placeInitials(title: string) {
   return `${words[0][0] ?? ""}${words[1][0] ?? ""}`.toLocaleUpperCase("fr-FR");
 }
 
-export function catalogPlaceMediaInput(item: Pick<LiveCatalogItem, "kind" | "title" | "tags">, lookup: CatalogImageLookup | null, options?: { skipGoogle?: boolean; skipOfficialSite?: boolean }): PlaceMediaInput {
+export function catalogPlaceMediaInput(item: Pick<LiveCatalogItem, "kind" | "title" | "tags">, lookup: CatalogImageLookup | null, options?: { skipGoogle?: boolean; skipOfficialSite?: boolean; skipOpenKnowledge?: boolean }): PlaceMediaInput {
   const tags = asRecord(item.tags);
   return {
     title: item.title, kind: item.kind, latitude: lookup?.latitude ?? null, longitude: lookup?.longitude ?? null,
@@ -119,18 +119,23 @@ export function catalogPlaceMediaInput(item: Pick<LiveCatalogItem, "kind" | "tit
     googlePhotoName: tagString(tags, "google_photo_name"),
     googlePhotoAttributions: Array.isArray(tags.google_photo_attributions) ? tags.google_photo_attributions.map((entry) => { const value = asRecord(entry); return { displayName: typeof value.displayName === "string" ? value.displayName : null, uri: typeof value.uri === "string" ? value.uri : null }; }).filter((entry) => !!entry.displayName) : [],
     address: lookup?.address ?? tagString(tags, "address") ?? null,
-    wikidata: tagString(tags, "wikidata"), wikipedia: tagString(tags, "wikipedia"),
-    wikimediaCommons: tagString(tags, "wikimedia_commons") ?? tagString(tags, "commons"),
+    wikidata: options?.skipOpenKnowledge ? null : tagString(tags, "wikidata"), wikipedia: options?.skipOpenKnowledge ? null : tagString(tags, "wikipedia"),
+    wikimediaCommons: options?.skipOpenKnowledge ? null : (tagString(tags, "wikimedia_commons") ?? tagString(tags, "commons")),
     skipGoogle: options?.skipGoogle === true, skipOfficialSite: options?.skipOfficialSite === true,
   };
 }
 
 export function CatalogImage({ item, className = "h-full w-full object-cover", placeholderClassName, priority = false, lookup = null, showAttribution = false }: CatalogImageProps) {
   const exactDirect = useMemo(() => directImage(item), [item]);
+  const cachedOpenImage = useMemo(() => cachedCatalogImage(item), [item]);
   const resolveMedia = useServerFn(resolveVerifiedPlaceMedia);
   const resolvePublicMedia = useServerFn(resolvePublicPlaceMedia);
-  const hasExplicitGooglePhoto = useMemo(() => !!tagString(asRecord(item.tags), "google_photo_name"), [item.tags]);
-  const primaryInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: !hasExplicitGooglePhoto, skipOfficialSite: false }), [hasExplicitGooglePhoto, item, lookup]);
+  // Local catalog rows remain the source of truth for the place. Google is used only
+  // to resolve media when the card has no reliable photo. For commercial places,
+  // a cached Wikimedia image is treated as a fallback so a more representative
+  // verified Google/official image can win without replacing the local catalog row.
+  const preferVerifiedCommercialPhoto = !!cachedOpenImage && (item.kind === "restaurant" || item.kind === "hotel");
+  const primaryInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false, skipOpenKnowledge: preferVerifiedCommercialPhoto }), [item, lookup, preferVerifiedCommercialPhoto]);
   const fallbackInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: true, skipOfficialSite: true }), [item, lookup]);
   const publicInput = useMemo(() => ({ title: item.title, kind: item.kind, latitude: primaryInput.latitude, longitude: primaryInput.longitude, city: primaryInput.city ?? null, country: primaryInput.country ?? null }), [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude]);
   const knownLogo = useMemo(() => knownPlaceLogo(item), [item]);
@@ -139,7 +144,7 @@ export function CatalogImage({ item, className = "h-full w-full object-cover", p
   useEffect(() => setFailedUrls(new Set()), [item.id]);
 
   const directFailed = !!exactDirect && failedUrls.has(exactDirect);
-  const canResolveSource = (!exactDirect || directFailed) && (!!lookup || !!primaryInput.wikidata || !!primaryInput.wikipedia || !!primaryInput.wikimediaCommons);
+  const canResolveSource = ((!exactDirect || directFailed) || preferVerifiedCommercialPhoto) && (!!lookup || !!primaryInput.wikidata || !!primaryInput.wikipedia || !!primaryInput.wikimediaCommons);
   const { data: resolvedMedia, isFetching, refetch: refetchPrimary } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, primaryInput, "primary"), queryFn: async () => resolveMedia({ data: primaryInput }), enabled: canResolveSource, staleTime: 30_000, gcTime: 15 * 60_000, retry: 1 });
   const primaryUrl = safeExactHttps(resolvedMedia?.url);
   const primaryFailed = !!primaryUrl && failedUrls.has(primaryUrl);
@@ -153,7 +158,10 @@ export function CatalogImage({ item, className = "h-full w-full object-cover", p
   const resolvedCandidate = safeExactHttps(resolvedMedia?.url);
   const publicCandidate = safeExactHttps(publicMedia?.url);
   const fallbackCandidate = safeExactHttps(fallbackMedia?.url);
-  const resolvedUrl = directAvailable ?? (resolvedCandidate && !failedUrls.has(resolvedCandidate) ? resolvedCandidate : null) ?? (publicCandidate && !failedUrls.has(publicCandidate) ? publicCandidate : null) ?? (fallbackCandidate && !failedUrls.has(fallbackCandidate) ? fallbackCandidate : null);
+  const primaryAvailable = resolvedCandidate && !failedUrls.has(resolvedCandidate) ? resolvedCandidate : null;
+  const resolvedUrl = preferVerifiedCommercialPhoto
+    ? primaryAvailable ?? directAvailable ?? (publicCandidate && !failedUrls.has(publicCandidate) ? publicCandidate : null) ?? (fallbackCandidate && !failedUrls.has(fallbackCandidate) ? fallbackCandidate : null)
+    : directAvailable ?? primaryAvailable ?? (publicCandidate && !failedUrls.has(publicCandidate) ? publicCandidate : null) ?? (fallbackCandidate && !failedUrls.has(fallbackCandidate) ? fallbackCandidate : null);
   const activeMedia = resolvedUrl && fallbackCandidate === resolvedUrl ? fallbackMedia : resolvedUrl && publicCandidate === resolvedUrl ? publicMedia : resolvedUrl && resolvedCandidate === resolvedUrl ? resolvedMedia : null;
 
   if (resolvedUrl) {
