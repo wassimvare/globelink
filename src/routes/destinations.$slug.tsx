@@ -1,6 +1,5 @@
-import { loadLocalFirstDestinationCatalog } from "@/lib/destination-catalog-loader";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -208,38 +207,69 @@ function DestinationDetail({ slug }: { slug: string }) {
     [cachedCatalog, localCatalog, normalizeCatalog, quickPublicCatalogQuery.data],
   );
 
-  const fastCatalogQuery = useQuery({
-    queryKey: ["destination-local-first-v10", slug, catalogCity, country, latitude, longitude],
+  const slowPublicCatalogQuery = useQuery({
+    queryKey: ["destination-public-full-v1", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity,
-    placeholderData: firstWaveCatalog,
     queryFn: async () => {
-      if (!bounds || !catalogCity || latitude == null || longitude == null)
+      if (!bounds || !catalogCity) return [] as LiveCatalogItem[];
+      const results = await Promise.allSettled([
+        searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<
+          LiveCatalogItem[]
+        >,
+        ...(typeof window !== "undefined"
+          ? [
+              fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<
+                LiveCatalogItem[]
+              >,
+            ]
+          : []),
+      ]);
+      return normalizeCatalog(
+        results.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+      );
+    },
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+  const googleMissingKinds = useMemo(() => {
+    const kinds = ["activity", "restaurant", "hotel"] as const;
+    return kinds.filter(
+      (kind) => firstWaveCatalog.filter((item) => item.kind === kind).length < 3,
+    );
+  }, [firstWaveCatalog]);
+
+  const googleFallbackQuery = useQuery({
+    queryKey: [
+      "destination-google-fallback-v1",
+      slug,
+      catalogCity,
+      country,
+      latitude,
+      longitude,
+      googleMissingKinds.join(","),
+    ],
+    enabled:
+      !!bounds &&
+      !!catalogCity &&
+      latitude != null &&
+      longitude != null &&
+      !quickPublicCatalogQuery.isFetching &&
+      googleMissingKinds.length > 0,
+    queryFn: async () => {
+      if (!catalogCity || latitude == null || longitude == null || !googleMissingKinds.length)
         return [] as LiveCatalogItem[];
-      const rows = await loadLocalFirstDestinationCatalog<LiveCatalogItem>({
-        cached: firstWaveCatalog,
-        local: async () => [],
-        publicSources: [
-          () =>
-            searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<
-              LiveCatalogItem[]
-            >,
-          ...(typeof window !== "undefined"
-            ? [
-                () =>
-                  fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<
-                    LiveCatalogItem[]
-                  >,
-              ]
-            : []),
-        ],
-        google: (kinds) =>
-          fetchGoogleDestinationCatalog({
-            data: { city: catalogCity, country, latitude, longitude, kinds },
-          }) as Promise<LiveCatalogItem[]>,
-        normalize: normalizeCatalog,
-      });
-      if (rows.length) saveCachedViewportCatalog(bounds, rows);
-      return rows;
+      return normalizeCatalog(
+        (await fetchGoogleDestinationCatalog({
+          data: {
+            city: catalogCity,
+            country,
+            latitude,
+            longitude,
+            kinds: [...googleMissingKinds],
+          },
+        })) as LiveCatalogItem[],
+      );
     },
     staleTime: 10 * 60_000,
     retry: false,
@@ -249,10 +279,20 @@ function DestinationDetail({ slug }: { slug: string }) {
     () =>
       normalizeCatalog([
         ...firstWaveCatalog,
-        ...(fastCatalogQuery.data ?? []),
+        ...(googleFallbackQuery.data ?? []),
+        ...(slowPublicCatalogQuery.data ?? []),
       ]),
-    [fastCatalogQuery.data, firstWaveCatalog, normalizeCatalog],
+    [
+      firstWaveCatalog,
+      googleFallbackQuery.data,
+      normalizeCatalog,
+      slowPublicCatalogQuery.data,
+    ],
   );
+
+  useEffect(() => {
+    if (bounds && catalog.length) saveCachedViewportCatalog(bounds, catalog);
+  }, [bounds, catalog]);
 
   const socialQuery = useQuery({
     queryKey: ["destination-social-v2", slug, country],
@@ -319,14 +359,17 @@ function DestinationDetail({ slug }: { slug: string }) {
   });
 
   const isCatalogFetching =
-    localCatalogQuery.isFetching || quickPublicCatalogQuery.isFetching || fastCatalogQuery.isFetching;
-  const isCatalogLoading =
-    !catalog.length && (localCatalogQuery.isFetching || quickPublicCatalogQuery.isFetching);
+    localCatalogQuery.isFetching ||
+    quickPublicCatalogQuery.isFetching ||
+    googleFallbackQuery.isFetching ||
+    slowPublicCatalogQuery.isFetching;
+  const isCatalogLoading = !catalog.length && isCatalogFetching;
   const reloadCatalog = () =>
     Promise.all([
       localCatalogQuery.refetch(),
       quickPublicCatalogQuery.refetch(),
-      fastCatalogQuery.refetch(),
+      googleFallbackQuery.refetch(),
+      slowPublicCatalogQuery.refetch(),
     ]);
 
   const activityCatalog = useMemo(() => {
@@ -491,7 +534,7 @@ function DestinationDetail({ slug }: { slug: string }) {
             title="À faire sur place"
             icon={<Sparkles className="h-4 w-4" />}
             items={groups.activity}
-            loading={isCatalogLoading}
+            loading={groups.activity.length === 0 && isCatalogFetching}
             fallbackCity={catalogCity}
             fallbackCountry={country}
           />
@@ -499,7 +542,7 @@ function DestinationDetail({ slug }: { slug: string }) {
             title="Restaurants"
             icon={<Utensils className="h-4 w-4" />}
             items={groups.restaurant}
-            loading={isCatalogLoading}
+            loading={groups.restaurant.length === 0 && isCatalogFetching}
             fallbackCity={catalogCity}
             fallbackCountry={country}
           />
@@ -507,7 +550,7 @@ function DestinationDetail({ slug }: { slug: string }) {
             title="Hébergements"
             icon={<Hotel className="h-4 w-4" />}
             items={groups.hotel}
-            loading={isCatalogLoading}
+            loading={groups.hotel.length === 0 && isCatalogFetching}
             fallbackCity={catalogCity}
             fallbackCountry={country}
           />
