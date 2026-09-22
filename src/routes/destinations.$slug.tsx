@@ -673,6 +673,7 @@ function CatalogRail({
                       website: catalogOfficialWebsite(item),
                     }}
                     className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    showAttribution
                   />
                 </div>
                 <div className="p-3">
