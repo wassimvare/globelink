@@ -1,3 +1,5 @@
+import { cachedCatalogImage } from "./catalog-storage";
+
 export type ReliableCatalogKind = "activity" | "restaurant" | "hotel" | "deal";
 
 type CatalogReliabilityItem = {
@@ -323,6 +325,8 @@ export function trustedDirectCatalogImage(
   item: CatalogReliabilityItem,
   value: unknown,
 ): string | null {
+  const cached = cachedCatalogImage(item);
+  if (cached) return cached;
   const url = safeHttps(value);
   if (!url) return null;
   if (matchesAny(url.hostname, BLOCKED_GENERIC_IMAGE_HOSTS)) return null;

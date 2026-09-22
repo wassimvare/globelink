@@ -7,6 +7,7 @@ export type GoogleDestinationCatalogInput = {
   country: string;
   latitude: number;
   longitude: number;
+  kinds?: Array<Exclude<LiveCatalogKind, "deal">>;
 };
 
 type GooglePhotoAttribution = { displayName?: string; uri?: string };
@@ -99,7 +100,8 @@ function validateInput(data: GoogleDestinationCatalogInput): GoogleDestinationCa
     throw new Error("Latitude invalide");
   if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)
     throw new Error("Longitude invalide");
-  return { city, country, latitude, longitude };
+  const kinds = data.kinds === undefined ? undefined : SEARCHES.filter((search) => Array.isArray(data.kinds) && data.kinds.includes(search.kind)).map((search) => search.kind);
+  return { city, country, latitude, longitude, kinds };
 }
 
 async function fetchJson(url: string, init: RequestInit, timeoutMs = 5_500) {
@@ -290,16 +292,18 @@ async function searchGoogle(
 export const fetchGoogleDestinationCatalog = createServerFn({ method: "POST" })
   .validator((data: GoogleDestinationCatalogInput) => validateInput(data))
   .handler(async ({ data }) => {
+    const searches = SEARCHES.filter((search) => !data.kinds || data.kinds.includes(search.kind));
+    if (!searches.length) return [] as GoogleCatalogItem[];
     const key = apiKey();
     if (!key) return [] as GoogleCatalogItem[];
-    const cacheKey = `${data.city.toLowerCase()}|${data.country.toLowerCase()}|${data.latitude.toFixed(3)}|${data.longitude.toFixed(3)}`;
+    const cacheKey = `${data.city.toLowerCase()}|${data.country.toLowerCase()}|${data.latitude.toFixed(3)}|${data.longitude.toFixed(3)}|${searches.map((search) => search.kind).join(",")}`;
     const cached = cache.get(cacheKey);
     if (cached && cached.expires > Date.now()) return cached.rows;
 
     // Nearby Search is far more deterministic for destination pages than a broad
     // free-text query. Run one typed request per category around the city hub.
     const nearbySettled = await Promise.allSettled(
-      SEARCHES.map((search) => searchGoogleNearby(key, data, search)),
+      searches.map((search) => searchGoogleNearby(key, data, search)),
     );
     let rows = nearbySettled.flatMap((result) =>
       result.status === "fulfilled" ? result.value : [],
@@ -309,7 +313,7 @@ export const fetchGoogleDestinationCatalog = createServerFn({ method: "POST" })
     // keeps the first paint fast while still covering hotels/activities that Google
     // may classify more specifically than the generic Nearby type.
     const kinds = new Set(rows.map((item) => item.kind));
-    const missing = SEARCHES.filter((search) => !kinds.has(search.kind));
+    const missing = searches.filter((search) => !kinds.has(search.kind));
     if (missing.length) {
       const textSettled = await Promise.allSettled(
         missing.map((search) => searchGoogle(key, data, search)),

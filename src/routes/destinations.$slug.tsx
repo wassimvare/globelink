@@ -1,3 +1,4 @@
+import { loadLocalFirstDestinationCatalog } from "@/lib/destination-catalog-loader";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -155,87 +156,22 @@ function DestinationDetail({ slug }: { slug: string }) {
     [bounds, normalizeCatalog],
   );
 
-  const requireRows = async (promise: Promise<LiveCatalogItem[]>, label: string) => {
-    const rows = await promise;
-    if (!rows.length) throw new Error(`${label}: aucun lieu`);
-    return rows;
-  };
-
-  // Fast first paint: whichever trusted source answers first wins. Cached map rows are
-  // shown immediately through placeholderData while Google/DB/OSM refresh in parallel.
   const fastCatalogQuery = useQuery({
-    queryKey: ["destination-fast-catalog-v7", slug, catalogCity, country, latitude, longitude],
+    queryKey: ["destination-local-first-v8", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity,
     placeholderData: cachedCatalog,
     queryFn: async () => {
-      if (!bounds || !catalogCity || latitude == null || longitude == null)
-        return [] as LiveCatalogItem[];
-      // The free/public catalog is always queried and merged. A partial response from
-      // Google, Booking or the database must never suppress OpenStreetMap/Wikidata
-      // hotels, restaurants or activities.
-      const requests: Promise<LiveCatalogItem[]>[] = [
-        (
-          searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<
-            LiveCatalogItem[]
-          >
-        ).catch(() => []),
-        fetchPersistedViewportCatalog(bounds).catch(() => []),
-        (
-          fetchGoogleDestinationCatalog({
-            data: { city: catalogCity, country, latitude, longitude },
-          }) as Promise<LiveCatalogItem[]>
-        ).catch(() => []),
-      ];
-      if (typeof window !== "undefined") {
-        requests.push(
-          (
-            fetchBrowserViewportCatalog(bounds, { mode: "fast" }) as Promise<LiveCatalogItem[]>
-          ).catch(() => []),
-        );
-      }
-      const settled = await Promise.allSettled(requests);
-      const rows = normalizeCatalog(
-        settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
-      );
-      if (rows.length) saveCachedViewportCatalog(bounds, rows);
-      return rows;
-    },
-    staleTime: 3 * 60_000,
-    retry: false,
-  });
-
-  // Enrich in the background without holding the destination page hostage. This
-  // can add missing categories after the first cards are already visible.
-  const fullCatalogQuery = useQuery({
-    queryKey: ["destination-full-catalog-v7", slug, catalogCity, country, latitude, longitude],
-    enabled: !!bounds && !!catalogCity && !fastCatalogQuery.isLoading,
-    queryFn: async () => {
-      if (!bounds || !catalogCity || latitude == null || longitude == null)
-        return [] as LiveCatalogItem[];
-      const requests: Promise<LiveCatalogItem[]>[] = [
-        (
-          fetchGoogleDestinationCatalog({
-            data: { city: catalogCity, country, latitude, longitude },
-          }) as Promise<LiveCatalogItem[]>
-        ).catch(() => []),
-        fetchPersistedViewportCatalog(bounds).catch(() => []),
-        (
-          searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<
-            LiveCatalogItem[]
-          >
-        ).catch(() => []),
-      ];
-      if (typeof window !== "undefined") {
-        requests.push(
-          (
-            fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<LiveCatalogItem[]>
-          ).catch(() => []),
-        );
-      }
-      const settled = await Promise.allSettled(requests);
-      const rows = normalizeCatalog(
-        settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
-      );
+      if (!bounds || !catalogCity || latitude == null || longitude == null) return [] as LiveCatalogItem[];
+      const rows = await loadLocalFirstDestinationCatalog<LiveCatalogItem>({
+        cached: cachedCatalog,
+        local: () => fetchPersistedViewportCatalog(bounds),
+        publicSources: [
+          () => searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<LiveCatalogItem[]>,
+          ...(typeof window !== "undefined" ? [() => fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<LiveCatalogItem[]>] : []),
+        ],
+        google: (kinds) => fetchGoogleDestinationCatalog({ data: { city: catalogCity, country, latitude, longitude, kinds } }) as Promise<LiveCatalogItem[]>,
+        normalize: normalizeCatalog,
+      });
       if (rows.length) saveCachedViewportCatalog(bounds, rows);
       return rows;
     },
@@ -244,8 +180,8 @@ function DestinationDetail({ slug }: { slug: string }) {
   });
 
   const catalog = useMemo(
-    () => normalizeCatalog([...(fastCatalogQuery.data ?? []), ...(fullCatalogQuery.data ?? [])]),
-    [fastCatalogQuery.data, fullCatalogQuery.data, normalizeCatalog],
+    () => normalizeCatalog(fastCatalogQuery.data ?? []),
+    [fastCatalogQuery.data, normalizeCatalog],
   );
 
   const socialQuery = useQuery({
@@ -312,9 +248,9 @@ function DestinationDetail({ slug }: { slug: string }) {
     retry: false,
   });
 
-  const isCatalogFetching = fastCatalogQuery.isFetching || fullCatalogQuery.isFetching;
+  const isCatalogFetching = fastCatalogQuery.isFetching;
   const isCatalogLoading = !catalog.length && isCatalogFetching;
-  const reloadCatalog = () => Promise.all([fastCatalogQuery.refetch(), fullCatalogQuery.refetch()]);
+  const reloadCatalog = () => fastCatalogQuery.refetch();
 
   const activityCatalog = useMemo(() => {
     const live = normalizeCatalog(catalog.filter((item) => item.kind === "activity"));
