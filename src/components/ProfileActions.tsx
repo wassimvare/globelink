@@ -1,15 +1,14 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Ban, Check, ChevronLeft, MoreHorizontal, ShieldAlert, UserX } from "lucide-react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import {
   Drawer,
-  DrawerClose,
   DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
+import { ProfileRelationshipMenu } from "@/components/profile-actions/ProfileRelationshipMenu";
+import { ProfileReportFlow } from "@/components/profile-actions/ProfileReportFlow";
 import { reportProfile, saveRelationshipControl } from "@/features/social/profile-moderation";
 
 type ProfileActionsProps = {
@@ -20,17 +19,20 @@ type ProfileActionsProps = {
 
 type ProfileAction = "restrict" | "block" | "report";
 
-const REPORT_REASONS = [
-  { id: "spam", label: "Spam ou contenu indésirable" },
-  { id: "harassment", label: "Harcèlement ou intimidation" },
-  { id: "impersonation", label: "Faux compte ou usurpation d'identité" },
-  { id: "inappropriate", label: "Contenu inapproprié" },
-  { id: "scam", label: "Arnaque ou fraude" },
-  { id: "dangerous", label: "Menace, haine ou comportement dangereux" },
-  { id: "other", label: "Autre" },
-] as const;
+function syncRelationshipVisibilityCaches(queryClient: QueryClient, targetUserId: string) {
+  queryClient.setQueriesData({ queryKey: ["search"] }, (cached: unknown) => {
+    if (!cached || typeof cached !== "object") return cached;
+    const searchResults = cached as { user?: Array<{ id?: string }> };
+    if (!Array.isArray(searchResults.user)) return cached;
 
-type ReportReasonId = (typeof REPORT_REASONS)[number]["id"];
+    const visibleUsers = searchResults.user.filter((result) => result.id !== targetUserId);
+    if (visibleUsers.length === searchResults.user.length) return cached;
+    return { ...searchResults, user: visibleUsers };
+  });
+
+  void queryClient.invalidateQueries({ queryKey: ["search"] });
+  void queryClient.invalidateQueries({ queryKey: ["relationship-controls"] });
+}
 
 export function ProfileActions({
   currentUserId,
@@ -41,98 +43,53 @@ export function ProfileActions({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState<ProfileAction | null>(null);
   const [reportMode, setReportMode] = useState(false);
-  const [reportReasonId, setReportReasonId] = useState<ReportReasonId | null>(null);
-  const [otherReason, setOtherReason] = useState("");
 
   const isOwnProfile = !!currentUserId && currentUserId === targetUserId;
-  const selectedReason = REPORT_REASONS.find((reason) => reason.id === reportReasonId);
-  const canSubmitReport =
-    !!selectedReason && (selectedReason.id !== "other" || otherReason.trim().length >= 3);
-
   if (!currentUserId || isOwnProfile) return null;
-
-  const resetReportFlow = () => {
-    setReportMode(false);
-    setReportReasonId(null);
-    setOtherReason("");
-  };
 
   const closeDrawer = () => {
     setOpen(false);
-    resetReportFlow();
+    setReportMode(false);
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (loading) return;
     setOpen(nextOpen);
-    if (!nextOpen) resetReportFlow();
+    if (!nextOpen) setReportMode(false);
   };
 
-  const syncRelationshipVisibilityCaches = () => {
-    queryClient.setQueriesData({ queryKey: ["search"] }, (cached: unknown) => {
-      if (!cached || typeof cached !== "object") return cached;
-
-      const searchResults = cached as { user?: Array<{ id?: string }> };
-      if (!Array.isArray(searchResults.user)) return cached;
-
-      const visibleUsers = searchResults.user.filter((result) => result.id !== targetUserId);
-      if (visibleUsers.length === searchResults.user.length) return cached;
-
-      return { ...searchResults, user: visibleUsers };
-    });
-
-    void queryClient.invalidateQueries({ queryKey: ["search"] });
-    void queryClient.invalidateQueries({ queryKey: ["relationship-controls"] });
-  };
-
-  const handleRestrict = async () => {
+  const saveControl = async (mode: "restricted" | "blocked") => {
     if (loading) return;
-    setLoading("restrict");
+    const action = mode === "restricted" ? "restrict" : "block";
+    setLoading(action);
 
     try {
       await saveRelationshipControl({
         ownerId: currentUserId,
         targetId: targetUserId,
-        mode: "restricted",
+        mode,
       });
-      syncRelationshipVisibilityCaches();
-      toast.success(`@${username} a été restreint`);
+      syncRelationshipVisibilityCaches(queryClient, targetUserId);
+      toast.success(
+        mode === "restricted"
+          ? `@${username} a été restreint`
+          : `@${username} a été bloqué`,
+      );
       closeDrawer();
     } catch {
-      toast.error("Impossible de restreindre ce compte.");
+      toast.error(
+        mode === "restricted"
+          ? "Impossible de restreindre ce compte."
+          : "Impossible de bloquer ce compte.",
+      );
     } finally {
       setLoading(null);
     }
   };
 
-  const handleBlock = async () => {
+  const handleReport = async (reason: string) => {
     if (loading) return;
-    setLoading("block");
-
-    try {
-      await saveRelationshipControl({
-        ownerId: currentUserId,
-        targetId: targetUserId,
-        mode: "blocked",
-      });
-      syncRelationshipVisibilityCaches();
-      toast.success(`@${username} a été bloqué`);
-      closeDrawer();
-    } catch {
-      toast.error("Impossible de bloquer ce compte.");
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const handleReport = async () => {
-    if (loading || !selectedReason || !canSubmitReport) return;
     setLoading("report");
-
-    const reason =
-      selectedReason.id === "other"
-        ? `Autre : ${otherReason.trim().slice(0, 240)}`
-        : selectedReason.label;
 
     try {
       await reportProfile({
@@ -163,163 +120,20 @@ export function ProfileActions({
 
       <DrawerContent className="mx-auto max-h-[88dvh] max-w-lg rounded-t-[28px] border-border/70 bg-card/98 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {reportMode ? (
-          <>
-            <DrawerHeader className="px-5 pb-2 pt-5 text-left">
-              <button
-                type="button"
-                onClick={() => resetReportFlow()}
-                disabled={loading !== null}
-                className="mb-3 inline-flex w-fit items-center gap-1 rounded-full px-2 py-1 text-sm font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-60"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Retour
-              </button>
-              <DrawerTitle>Pourquoi signalez-vous @{username} ?</DrawerTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Choisissez la raison qui correspond le mieux. Aucun signalement n'est envoyé avant votre confirmation.
-              </p>
-            </DrawerHeader>
-
-            <div className="overflow-y-auto px-4 pb-3">
-              <div className="space-y-2" role="radiogroup" aria-label="Raison du signalement">
-                {REPORT_REASONS.map((reason) => {
-                  const selected = reportReasonId === reason.id;
-                  return (
-                    <button
-                      key={reason.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setReportReasonId(reason.id)}
-                      disabled={loading !== null}
-                      className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                        selected
-                          ? "border-primary/60 bg-primary/10 text-foreground"
-                          : "border-border/70 bg-background/40 hover:bg-secondary"
-                      }`}
-                    >
-                      <span
-                        className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
-                          selected ? "border-primary bg-primary text-primary-foreground" : "border-border"
-                        }`}
-                      >
-                        {selected ? <Check className="h-3.5 w-3.5" /> : null}
-                      </span>
-                      <span>{reason.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {reportReasonId === "other" ? (
-                <div className="mt-3">
-                  <label htmlFor="profile-report-other" className="mb-1.5 block text-sm font-semibold">
-                    Précisez la raison
-                  </label>
-                  <textarea
-                    id="profile-report-other"
-                    value={otherReason}
-                    onChange={(event) => setOtherReason(event.target.value.slice(0, 240))}
-                    disabled={loading !== null}
-                    maxLength={240}
-                    rows={3}
-                    placeholder="Expliquez brièvement le problème…"
-                    className="w-full resize-none rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
-                  />
-                  <div className="mt-1 text-right text-xs text-muted-foreground">
-                    {otherReason.length}/240
-                  </div>
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => void handleReport()}
-                disabled={!canSubmitReport || loading !== null}
-                className="mt-4 w-full rounded-2xl bg-destructive px-4 py-3.5 text-sm font-bold text-destructive-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                {loading === "report" ? "Envoi…" : "Envoyer le signalement"}
-              </button>
-
-              <button
-                type="button"
-                onClick={closeDrawer}
-                disabled={loading !== null}
-                className="mt-2 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Annuler
-              </button>
-            </div>
-          </>
+          <ProfileReportFlow
+            username={username}
+            submitting={loading === "report"}
+            onBack={() => setReportMode(false)}
+            onCancel={closeDrawer}
+            onSubmit={handleReport}
+          />
         ) : (
-          <>
-            <DrawerHeader className="px-5 pb-2 pt-5 text-left">
-              <DrawerTitle>Options du profil</DrawerTitle>
-            </DrawerHeader>
-
-            <div className="space-y-2 px-4 pb-3">
-              <button
-                type="button"
-                onClick={() => void handleRestrict()}
-                disabled={loading !== null}
-                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-sm font-semibold transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-secondary">
-                  <ShieldAlert className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block">Restreindre</span>
-                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Limiter discrètement les interactions de ce compte.
-                  </span>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleBlock()}
-                disabled={loading !== null}
-                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-destructive/10">
-                  <Ban className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block">Bloquer</span>
-                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Empêcher ce compte d'interagir avec toi.
-                  </span>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setReportMode(true)}
-                disabled={loading !== null}
-                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-sm font-semibold transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-secondary">
-                  <UserX className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block">Signaler</span>
-                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Envoyer ce profil à la modération GlobeLink.
-                  </span>
-                </span>
-              </button>
-
-              <DrawerClose asChild>
-                <button
-                  type="button"
-                  disabled={loading !== null}
-                  className="mt-2 w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Annuler
-                </button>
-              </DrawerClose>
-            </div>
-          </>
+          <ProfileRelationshipMenu
+            loading={loading !== null}
+            onRestrict={() => void saveControl("restricted")}
+            onBlock={() => void saveControl("blocked")}
+            onReport={() => setReportMode(true)}
+          />
         )}
       </DrawerContent>
     </Drawer>
