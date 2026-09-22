@@ -122,6 +122,7 @@ export function catalogPlaceMediaInput(item: Pick<LiveCatalogItem, "kind" | "tit
     wikidata: options?.skipOpenKnowledge ? null : tagString(tags, "wikidata"), wikipedia: options?.skipOpenKnowledge ? null : tagString(tags, "wikipedia"),
     wikimediaCommons: options?.skipOpenKnowledge ? null : (tagString(tags, "wikimedia_commons") ?? tagString(tags, "commons")),
     skipGoogle: options?.skipGoogle === true, skipOfficialSite: options?.skipOfficialSite === true,
+    skipOpenKnowledge: options?.skipOpenKnowledge === true,
   };
 }
 
