@@ -24,6 +24,13 @@ const dayProgram = fs.existsSync(path.join(root, "src/features/travel/day-progra
 const aiPro = read("src/lib/ai-pro.functions.ts");
 const settings = read("src/components/SettingsHub.tsx");
 const profileActions = read("src/components/ProfileActions.tsx");
+const profileRelationshipMenu = fs.existsSync(path.join(root, "src/components/profile-actions/ProfileRelationshipMenu.tsx"))
+  ? read("src/components/profile-actions/ProfileRelationshipMenu.tsx")
+  : "";
+const profileReportFlow = fs.existsSync(path.join(root, "src/components/profile-actions/ProfileReportFlow.tsx"))
+  ? read("src/components/profile-actions/ProfileReportFlow.tsx")
+  : "";
+const profileActionsSurface = `${profileActions}\n${profileRelationshipMenu}\n${profileReportFlow}`;
 
 check(
   "Routes privées protégées par session",
@@ -97,7 +104,10 @@ check(
 );
 check(
   "Actions profil restent réservées aux autres utilisateurs",
-  profileActions.includes("targetUserId") && profileActions.includes("currentUserId") && profileActions.includes("Bloquer") && profileActions.includes("Signaler"),
+  profileActions.includes("targetUserId") &&
+    profileActions.includes("currentUserId") &&
+    profileActionsSurface.includes("Bloquer") &&
+    profileActionsSurface.includes("Signaler"),
 );
 
 const failed = checks.filter((item) => !item.ok);
