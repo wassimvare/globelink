@@ -252,9 +252,9 @@ export async function fetchBrowserViewportCatalog(
         : bounds.zoom >= 10
           ? 350
           : 220;
-  const timeoutMs = mode === "fast" ? 3_500 : 12_000;
-  const endpoints = mode === "fast" ? ENDPOINTS.slice(0, 1) : ENDPOINTS;
-  for (const endpoint of endpoints) {
+  const timeoutMs = mode === "fast" ? 2_200 : 12_000;
+
+  const fetchEndpoint = async (endpoint: string) => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -265,17 +265,43 @@ export async function fetchBrowserViewportCatalog(
         signal: controller.signal,
         body: `data=${encodeURIComponent(query)}`,
       });
-      if (!response.ok) continue;
+      if (!response.ok) return [] as BrowserViewportCatalogItem[];
       const json = (await response.json()) as { elements?: OsmElement[] };
-      const rows = mapRows(json.elements ?? [], maxRows);
-      if (rows.length) {
-        browserCache.set(key, { expires: Date.now() + CACHE_TTL, rows });
-        return rows;
-      }
+      return mapRows(json.elements ?? [], maxRows);
     } catch {
-      // Try the next public mirror.
+      return [] as BrowserViewportCatalogItem[];
     } finally {
       window.clearTimeout(timeout);
+    }
+  };
+
+  if (mode === "fast") {
+    // Race both public mirrors so a slow Overpass instance cannot hold the first
+    // visible cards for several seconds. The first non-empty answer wins.
+    const rows = await new Promise<BrowserViewportCatalogItem[]>((resolve) => {
+      let pending = ENDPOINTS.length;
+      let resolved = false;
+      for (const endpoint of ENDPOINTS) {
+        void fetchEndpoint(endpoint).then((result) => {
+          if (!resolved && result.length) {
+            resolved = true;
+            resolve(result);
+            return;
+          }
+          pending -= 1;
+          if (!pending && !resolved) resolve([]);
+        });
+      }
+    });
+    if (rows.length) browserCache.set(key, { expires: Date.now() + CACHE_TTL, rows });
+    return rows;
+  }
+
+  for (const endpoint of ENDPOINTS) {
+    const rows = await fetchEndpoint(endpoint);
+    if (rows.length) {
+      browserCache.set(key, { expires: Date.now() + CACHE_TTL, rows });
+      return rows;
     }
   }
   return [];
