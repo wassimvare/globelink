@@ -46,6 +46,7 @@ import { curatedActivitiesForCountry } from "@/lib/world-activities";
 import { normalizeText, slugifyDestination } from "@/lib/phase2";
 import { useAuth } from "@/lib/auth-context";
 import { isTrustedVisibleCatalogItem } from "@/lib/catalog-source-routing";
+import { catalogItemsDescribeSamePlace } from "@/lib/catalog-quality";
 
 export const Route = createFileRoute("/destinations/$slug")({
   head: ({ params }) => ({ meta: [{ title: `${params.slug.replace(/-/g, " ")} — GlobeLink` }] }),
@@ -130,21 +131,26 @@ function DestinationDetail({ slug }: { slug: string }) {
   );
 
   const normalizeCatalog = useCallback(
-    (rows: LiveCatalogItem[]) =>
-      rows
+    (rows: LiveCatalogItem[]) => {
+      const prepared = rows
         .filter((item) => item.kind === "deal" || isTrustedVisibleCatalogItem(item))
-        .filter(
-          (item, index, all) =>
-            all.findIndex(
-              (candidate) => catalogIdentityKey(candidate) === catalogIdentityKey(item),
-            ) === index,
-        )
         .map((item) => ({
           ...item,
           city: item.city || catalogCity || null,
           country: item.country || country || null,
-        }))
-        .slice(0, 120),
+        }));
+
+      return prepared
+        .filter(
+          (item, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                catalogIdentityKey(candidate) === catalogIdentityKey(item) ||
+                catalogItemsDescribeSamePlace(candidate, item),
+            ) === index,
+        )
+        .slice(0, 120);
+    },
     [catalogCity, country],
   );
 
@@ -156,20 +162,57 @@ function DestinationDetail({ slug }: { slug: string }) {
     [bounds, normalizeCatalog],
   );
 
-  const fastCatalogQuery = useQuery({
-    queryKey: ["destination-local-first-v8", slug, catalogCity, country, latitude, longitude],
+  // Render the Raspberry/local catalogue as soon as it arrives. Slower internet
+  // enrichment (public sources + Google) continues in the background instead of
+  // keeping the whole rail on skeletons until every fallback has finished.
+  const localCatalogQuery = useQuery({
+    queryKey: ["destination-persisted-catalog-v1", slug, catalogCity, country, latitude, longitude],
     enabled: !!bounds && !!catalogCity,
     placeholderData: cachedCatalog,
     queryFn: async () => {
-      if (!bounds || !catalogCity || latitude == null || longitude == null) return [] as LiveCatalogItem[];
+      if (!bounds) return [] as LiveCatalogItem[];
+      return normalizeCatalog(await fetchPersistedViewportCatalog(bounds));
+    },
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+  const localCatalog = useMemo(
+    () => normalizeCatalog(localCatalogQuery.data ?? cachedCatalog),
+    [cachedCatalog, localCatalogQuery.data, normalizeCatalog],
+  );
+
+  const fastCatalogQuery = useQuery({
+    queryKey: ["destination-local-first-v9", slug, catalogCity, country, latitude, longitude],
+    enabled:
+      !!bounds &&
+      !!catalogCity &&
+      (!localCatalogQuery.isFetching || cachedCatalog.length > 0),
+    placeholderData: localCatalog,
+    queryFn: async () => {
+      if (!bounds || !catalogCity || latitude == null || longitude == null)
+        return [] as LiveCatalogItem[];
       const rows = await loadLocalFirstDestinationCatalog<LiveCatalogItem>({
-        cached: cachedCatalog,
-        local: () => fetchPersistedViewportCatalog(bounds),
+        cached: localCatalog,
+        local: async () => [],
         publicSources: [
-          () => searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<LiveCatalogItem[]>,
-          ...(typeof window !== "undefined" ? [() => fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<LiveCatalogItem[]>] : []),
+          () =>
+            searchInternetCatalog({ data: { query: `${catalogCity}, ${country}` } }) as Promise<
+              LiveCatalogItem[]
+            >,
+          ...(typeof window !== "undefined"
+            ? [
+                () =>
+                  fetchBrowserViewportCatalog(bounds, { mode: "full" }) as Promise<
+                    LiveCatalogItem[]
+                  >,
+              ]
+            : []),
         ],
-        google: (kinds) => fetchGoogleDestinationCatalog({ data: { city: catalogCity, country, latitude, longitude, kinds } }) as Promise<LiveCatalogItem[]>,
+        google: (kinds) =>
+          fetchGoogleDestinationCatalog({
+            data: { city: catalogCity, country, latitude, longitude, kinds },
+          }) as Promise<LiveCatalogItem[]>,
         normalize: normalizeCatalog,
       });
       if (rows.length) saveCachedViewportCatalog(bounds, rows);
@@ -180,8 +223,8 @@ function DestinationDetail({ slug }: { slug: string }) {
   });
 
   const catalog = useMemo(
-    () => normalizeCatalog(fastCatalogQuery.data ?? []),
-    [fastCatalogQuery.data, normalizeCatalog],
+    () => normalizeCatalog([...localCatalog, ...(fastCatalogQuery.data ?? [])]),
+    [fastCatalogQuery.data, localCatalog, normalizeCatalog],
   );
 
   const socialQuery = useQuery({
@@ -248,9 +291,9 @@ function DestinationDetail({ slug }: { slug: string }) {
     retry: false,
   });
 
-  const isCatalogFetching = fastCatalogQuery.isFetching;
+  const isCatalogFetching = localCatalogQuery.isFetching || fastCatalogQuery.isFetching;
   const isCatalogLoading = !catalog.length && isCatalogFetching;
-  const reloadCatalog = () => fastCatalogQuery.refetch();
+  const reloadCatalog = () => Promise.all([localCatalogQuery.refetch(), fastCatalogQuery.refetch()]);
 
   const activityCatalog = useMemo(() => {
     const live = normalizeCatalog(catalog.filter((item) => item.kind === "activity"));
