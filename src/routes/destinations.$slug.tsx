@@ -358,12 +358,13 @@ function DestinationDetail({ slug }: { slug: string }) {
     retry: false,
   });
 
-  const isCatalogFetching =
+  const isCatalogForegroundFetching =
     localCatalogQuery.isFetching ||
     quickPublicCatalogQuery.isFetching ||
-    googleFallbackQuery.isFetching ||
-    slowPublicCatalogQuery.isFetching;
-  const isCatalogLoading = !catalog.length && isCatalogFetching;
+    googleFallbackQuery.isFetching;
+  const isCatalogFetching =
+    isCatalogForegroundFetching || slowPublicCatalogQuery.isFetching;
+  const isCatalogLoading = !catalog.length && isCatalogForegroundFetching;
   const reloadCatalog = () =>
     Promise.all([
       localCatalogQuery.refetch(),
@@ -534,7 +535,7 @@ function DestinationDetail({ slug }: { slug: string }) {
             title="À faire sur place"
             icon={<Sparkles className="h-4 w-4" />}
             items={groups.activity}
-            loading={groups.activity.length === 0 && isCatalogFetching}
+            loading={groups.activity.length === 0 && isCatalogForegroundFetching}
             fallbackCity={catalogCity}
             fallbackCountry={country}
           />
@@ -542,7 +543,7 @@ function DestinationDetail({ slug }: { slug: string }) {
             title="Restaurants"
             icon={<Utensils className="h-4 w-4" />}
             items={groups.restaurant}
-            loading={groups.restaurant.length === 0 && isCatalogFetching}
+            loading={groups.restaurant.length === 0 && isCatalogForegroundFetching}
             fallbackCity={catalogCity}
             fallbackCountry={country}
           />
@@ -550,7 +551,7 @@ function DestinationDetail({ slug }: { slug: string }) {
             title="Hébergements"
             icon={<Hotel className="h-4 w-4" />}
             items={groups.hotel}
-            loading={groups.hotel.length === 0 && isCatalogFetching}
+            loading={groups.hotel.length === 0 && isCatalogForegroundFetching}
             fallbackCity={catalogCity}
             fallbackCountry={country}
           />
