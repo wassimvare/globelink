@@ -75,6 +75,39 @@ describe("Phase 5 catalog quality", () => {
     expect(catalogItemsDescribeSamePlace(googleRestaurant, paris)).toBe(false);
   });
 
+  it("does not merge two branches of the same chain in the same city when coordinates differ", () => {
+    const first = {
+      ...googleRestaurant,
+      id: "burger-king-1",
+      title: "Burger King",
+      city: "Jakarta",
+      country: "Indonésie",
+      latitude: -6.1754,
+      longitude: 106.8272,
+    };
+    const second = {
+      ...first,
+      id: "burger-king-2",
+      latitude: -6.2146,
+      longitude: 106.8451,
+    };
+    expect(catalogItemsDescribeSamePlace(first, second)).toBe(false);
+  });
+
+  it("can still merge same-named rows by city when one source lacks coordinates", () => {
+    const osmWithoutCoordinates = {
+      ...googleRestaurant,
+      id: "osm-no-coordinates",
+      provider: "openstreetmap",
+      latitude: null,
+      longitude: null,
+      source_url: "https://www.openstreetmap.org/node/456",
+      tags: {},
+    };
+    expect(catalogItemsDescribeSamePlace(googleRestaurant, osmWithoutCoordinates)).toBe(true);
+  });
+
+
   it("removes a generic stock image instead of presenting it as the place", () => {
     const cleaned = sanitizeCatalogItem({
       ...googleRestaurant,
