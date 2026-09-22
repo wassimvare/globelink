@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowRight,
   CalendarDays,
@@ -42,10 +43,16 @@ import { fetchGoogleDestinationCatalog } from "@/lib/google-destination-catalog.
 import { getSignedMediaUrl } from "@/lib/storage";
 import { WORLD_MAP_HUBS } from "@/lib/world-map-hubs";
 import { curatedActivitiesForCountry } from "@/lib/world-activities";
-import { normalizeText, slugifyDestination } from "@/lib/phase2";
+import { slugifyDestination } from "@/lib/phase2";
 import { useAuth } from "@/lib/auth-context";
 import { isTrustedVisibleCatalogItem } from "@/lib/catalog-source-routing";
 import { catalogItemsDescribeSamePlace } from "@/lib/catalog-quality";
+import {
+  destinationMissingKinds,
+  destinationViewportBounds,
+  resolveDestinationHub,
+} from "@/lib/destination-explorer-policy";
+import { geocodeDestinationLocation } from "@/lib/place-geocoding.functions";
 
 export const Route = createFileRoute("/destinations/$slug")({
   head: ({ params }) => ({ meta: [{ title: `${params.slug.replace(/-/g, " ")} — GlobeLink` }] }),
@@ -74,6 +81,7 @@ function DestinationPage() {
 
 function DestinationDetail({ slug }: { slug: string }) {
   const { user } = useAuth();
+  const geocodeDestination = useServerFn(geocodeDestinationLocation);
   const fallbackInfo = COUNTRY_INFO.find((item) => slugifyDestination(item.name) === slug);
 
   const { data: destination } = useQuery({
@@ -96,37 +104,36 @@ function DestinationDetail({ slug }: { slug: string }) {
     destination?.country ?? fallbackInfo?.name ?? slugHub?.country ?? slug.replace(/-/g, " ");
   const city = destination?.city ?? null;
   const title = destination?.name ?? fallbackInfo?.name ?? country;
-  const destinationHub = useMemo(() => {
-    const countryNeedle = normalizeText(country);
-    const cityNeedle = normalizeText(city);
-    const exactCity = cityNeedle
-      ? WORLD_MAP_HUBS.find(
-          (hub) =>
-            normalizeText(hub.city) === cityNeedle && normalizeText(hub.country) === countryNeedle,
-        )
-      : null;
-    return (
-      exactCity ??
-      WORLD_MAP_HUBS.find((hub) => normalizeText(hub.country) === countryNeedle) ??
-      null
-    );
-  }, [city, country]);
+  const destinationHub = useMemo(
+    () => resolveDestinationHub({ city, country }),
+    [city, country],
+  );
   const catalogCity = city ?? destinationHub?.city ?? null;
+  const hasDestinationCoordinates =
+    destination?.latitude != null && destination?.longitude != null;
+  const needsCityGeocoding = !!city && !hasDestinationCoordinates && !destinationHub;
 
-  const latitude = destination?.latitude ?? destinationHub?.lat ?? null;
-  const longitude = destination?.longitude ?? destinationHub?.lng ?? null;
+  const { data: geocodedDestination } = useQuery({
+    queryKey: ["destination-geocode-v1", city, country],
+    enabled: needsCityGeocoding,
+    queryFn: () => geocodeDestination({ data: { city: city!, country } }),
+    staleTime: 30 * 24 * 60 * 60_000,
+    gcTime: 30 * 24 * 60 * 60_000,
+    retry: false,
+  });
+
+  const latitude = hasDestinationCoordinates
+    ? destination!.latitude
+    : destinationHub?.lat ?? geocodedDestination?.lat ?? null;
+  const longitude = hasDestinationCoordinates
+    ? destination!.longitude
+    : destinationHub?.lng ?? geocodedDestination?.lng ?? null;
+  const viewportZoom = !hasDestinationCoordinates && destinationHub
+    ? destinationHub.zoom ?? 14
+    : 14;
   const bounds = useMemo(
-    () =>
-      latitude != null && longitude != null
-        ? {
-            south: latitude - 0.055,
-            west: longitude - 0.08,
-            north: latitude + 0.055,
-            east: longitude + 0.08,
-            zoom: 14,
-          }
-        : null,
-    [latitude, longitude],
+    () => destinationViewportBounds(latitude, longitude, viewportZoom),
+    [latitude, longitude, viewportZoom],
   );
 
   const normalizeCatalog = useCallback(
@@ -232,12 +239,10 @@ function DestinationDetail({ slug }: { slug: string }) {
     retry: false,
   });
 
-  const googleMissingKinds = useMemo(() => {
-    const kinds = ["activity", "restaurant", "hotel"] as const;
-    return kinds.filter(
-      (kind) => firstWaveCatalog.filter((item) => item.kind === kind).length < 3,
-    );
-  }, [firstWaveCatalog]);
+  const googleMissingKinds = useMemo(
+    () => destinationMissingKinds(firstWaveCatalog),
+    [firstWaveCatalog],
+  );
 
   const googleFallbackQuery = useQuery({
     queryKey: [

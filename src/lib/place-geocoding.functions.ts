@@ -362,3 +362,30 @@ export const geocodePlaceLocation = createServerFn({ method: "GET" })
     geocodeCache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
     return result;
   });
+
+
+export const geocodeDestinationLocation = createServerFn({ method: "GET" })
+  .validator((raw: unknown): GeocodeInput => {
+    const data = raw as Partial<GeocodeInput>;
+    const city = cleanText(data.city, 100);
+    const country = cleanText(data.country, 80);
+    if (city.length < 1 || country.length < 2) {
+      throw new Error("Destination invalide.");
+    }
+    return { city, country };
+  })
+  .handler(async ({ data }) => {
+    const key = `public-destination|${cacheKey(data)}`;
+    const cached = geocodeCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { ...cached.result, cached: true };
+    }
+
+    try {
+      const result = await geocodeCityForServer(data);
+      geocodeCache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+      return result;
+    } catch {
+      return null;
+    }
+  });
