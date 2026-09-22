@@ -1,3 +1,4 @@
+import { catalogSyncSecret, catalogMediaPublicUrl } from "../_shared/catalog-runtime.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type Json = Record<string, unknown>;
@@ -5,7 +6,7 @@ type Candidate = { id: string; external_id: string; title: string; tags: Json | 
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const SYNC_SECRET = Deno.env.get("CATALOG_SYNC_SECRET") ?? "";
+const SYNC_SECRET = catalogSyncSecret;
 const USER_AGENT = "GlobeLink/12.0 (+https://github.com/wassimvare/globelink)";
 const BUCKET = "catalog-media";
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -30,8 +31,8 @@ function isAllowedLicense(value: string) {
   const license = value.trim();
   if (/public domain/i.test(license)) return true;
   if (/^cc0(?:\s|$)/i.test(license)) return true;
-  if (/^cc(?:-|\s)by(?:-sa)?(?:-|\s|$)/i.test(license)) return true;
-  if (/creative commons attribution(?:-share alike)?/i.test(license)) return true;
+  if (/^cc(?:-|\s)by(?:-sa)?(?:[ -]\d|$)/i.test(license)) return true;
+  if (/^creative commons attribution(?:-share alike)?(?:[ -]\d|$)/i.test(license)) return true;
   return false;
 }
 function mime(value: unknown): "image/jpeg" | "image/png" | "image/webp" | null {
@@ -85,7 +86,23 @@ async function chooseFile(tags: Json) {
   const direct = commonsFilename(tags.wikimedia_commons ?? tags.commons);
   if (direct) return direct;
   const wikidata = clean(tags.wikidata, 80);
-  return wikidata ? await fileFromWikidata(wikidata) : null;
+  if (wikidata) {
+    const file = await fileFromWikidata(wikidata);
+    if (file) return file;
+  }
+  const wikipedia = clean(tags.wikipedia, 300).match(/^([a-z]{2,12}):(.+)$/i);
+  if (!wikipedia) return null;
+  const url = new URL("https://www.wikidata.org/w/api.php");
+  url.searchParams.set("action", "wbgetentities");
+  url.searchParams.set("sites", `${wikipedia[1].toLowerCase()}wiki`);
+  url.searchParams.set("titles", wikipedia[2]);
+  url.searchParams.set("props", "claims");
+  url.searchParams.set("format", "json");
+  const json = record(await fixedJson(url));
+  const entity = record(Object.values(record(json.entities))[0]);
+  const claims = record(entity.claims);
+  const values = Array.isArray(claims.P18) ? claims.P18 as Json[] : [];
+  return commonsFilename(record(record(values[0]?.mainsnak).datavalue).value);
 }
 async function commonsInfo(fileName: string) {
   const url = new URL("https://commons.wikimedia.org/w/api.php");
@@ -144,6 +161,7 @@ async function mark(candidate: Candidate, status: string, extra: Json = {}, imag
   if (error) throw new Error(error.message);
 }
 async function processOne(candidate: Candidate) {
+  catalogMediaPublicUrl("openstreetmap/preflight.jpg");
   const tags = record(candidate.tags);
   const fileName = await chooseFile(tags);
   if (!fileName) { await mark(candidate, "no-reusable-source"); return false; }
@@ -155,8 +173,7 @@ async function processOne(candidate: Candidate) {
   const path = `openstreetmap/${safeId}/${fingerprint}.${ext(image.contentType)}`;
   const { error: uploadError } = await db.storage.from(BUCKET).upload(path, image.buffer, { contentType: image.contentType, cacheControl: "31536000", upsert: true });
   if (uploadError) throw new Error(uploadError.message);
-  const { data } = db.storage.from(BUCKET).getPublicUrl(path);
-  const publicUrl = clean(data.publicUrl, 2500);
+  const publicUrl = catalogMediaPublicUrl(path);
   if (!publicUrl.startsWith("https://")) throw new Error("invalid-public-url");
   await mark(candidate, "cached", {
     catalog_image_storage_path: path,
@@ -179,9 +196,13 @@ Deno.serve(async (req) => {
   const { data, error } = await db.rpc("get_catalog_media_candidates", { p_limit: limit });
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: HEADERS });
   const candidates = (data ?? []) as Candidate[];
+  const started = Date.now();
+  let processed = 0;
   let cached = 0, skipped = 0, failed = 0;
   const errors: Json[] = [];
   for (const candidate of candidates) {
+    if (Date.now() - started > 45_000) break;
+    processed += 1;
     try { if (await processOne(candidate)) cached += 1; else skipped += 1; }
     catch (error) {
       failed += 1;
@@ -191,5 +212,5 @@ Deno.serve(async (req) => {
     }
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
-  return new Response(JSON.stringify({ ok: failed === 0 || cached > 0, processed: candidates.length, cached, skipped, failed, errors: errors.slice(0, 20), googlePlacesStored: false }), { status: failed > 0 && cached === 0 ? 502 : 200, headers: HEADERS });
+  return new Response(JSON.stringify({ ok: failed === 0 || cached > 0, processed, remaining: candidates.length - processed, cached, skipped, failed, errors: errors.slice(0, 20), googlePlacesStored: false }), { status: failed > 0 && cached === 0 ? 502 : 200, headers: HEADERS });
 });

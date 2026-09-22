@@ -1,3 +1,4 @@
+import { catalogSyncSecret } from "../_shared/catalog-runtime.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type CatalogKind = "activity" | "restaurant" | "hotel" | "deal";
@@ -59,7 +60,7 @@ const PUBLISHABLE_KEY =
   Deno.env.get("SUPABASE_ANON_KEY") ??
   Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
   readDefaultKey("SUPABASE_PUBLISHABLE_KEYS");
-const SYNC_SECRET = Deno.env.get("CATALOG_SYNC_SECRET") ?? "";
+const SYNC_SECRET = catalogSyncSecret;
 const AMADEUS_ID = Deno.env.get("AMADEUS_CLIENT_ID") ?? "";
 const AMADEUS_SECRET = Deno.env.get("AMADEUS_CLIENT_SECRET") ?? "";
 const AMADEUS_ENV = Deno.env.get("AMADEUS_ENV") === "production" ? "production" : "test";
@@ -389,7 +390,7 @@ out center 240;`;
           },
           area_id: area.id,
           fetched_at: now,
-          valid_until: tomorrowIso(30),
+          valid_until: null,
           published: true,
           admin_hidden: false,
         } satisfies CatalogRow,

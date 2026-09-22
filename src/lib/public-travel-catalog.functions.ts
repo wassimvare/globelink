@@ -1027,11 +1027,13 @@ function rankForQuery(items: PublicCatalogItem[], query: string) {
 }
 
 export const getHomepageInternetCatalog = createServerFn({ method: "GET" }).handler(async () => {
-  return fetchOverpass(dailyAreas(2), 100);
+  const { rememberPublicCatalog } = await import("./catalog-persistence.server");
+  return rememberPublicCatalog(await fetchOverpass(dailyAreas(2), 100));
 });
 
 export const getMapInternetCatalog = createServerFn({ method: "GET" }).handler(async () => {
-  return fetchWorldMapOverpass();
+  const { rememberPublicCatalog } = await import("./catalog-persistence.server");
+  return rememberPublicCatalog(await fetchWorldMapOverpass());
 });
 
 export const getViewportInternetCatalog = createServerFn({ method: "GET" })
@@ -1062,11 +1064,12 @@ export const getViewportInternetCatalog = createServerFn({ method: "GET" })
     const lngSpan = data.east - data.west;
     if (latSpan > 35 || lngSpan > 50) return [];
     const maxResults = data.zoom >= 13 ? 450 : data.zoom >= 10 ? 360 : data.zoom >= 7 ? 260 : 180;
-    return fetchViewportOverpass(
+    const { rememberPublicCatalog } = await import("./catalog-persistence.server");
+    return rememberPublicCatalog(await fetchViewportOverpass(
       { south: data.south, west: data.west, north: data.north, east: data.east },
       maxResults,
       data.zoom,
-    );
+    ));
   });
 
 export const searchInternetCatalog = createServerFn({ method: "GET" })
@@ -1079,5 +1082,6 @@ export const searchInternetCatalog = createServerFn({ method: "GET" })
     const area = await geocode(data.query);
     if (!area) return [];
     const items = await fetchOverpass([area], 120);
-    return rankForQuery(items, data.query);
+    const { rememberPublicCatalog } = await import("./catalog-persistence.server");
+    return rememberPublicCatalog(rankForQuery(items, data.query));
   });

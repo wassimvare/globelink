@@ -48,3 +48,6 @@ dist-ssr
 cloudflared.exe
 
 IDENTIFIANTS_ADMIN_LOCAL.txt
+
+# Generated self-hosted catalog secrets
+supabase/functions/_shared/catalog-runtime.json
