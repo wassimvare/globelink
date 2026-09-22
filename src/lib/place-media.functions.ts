@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { rankCatalogPhotosForCard } from "./catalog-photo-ranking";
+import { shouldTryOpenKnowledgeFallback } from "./catalog-media-fallback";
 
 export type PlaceMediaAttribution = {
   label: string;
@@ -30,6 +31,7 @@ export type PlaceMediaInput = {
   googlePhotoAttributions?: Array<{ displayName?: string | null; uri?: string | null }>;
   skipGoogle?: boolean;
   skipOfficialSite?: boolean;
+  skipOpenKnowledge?: boolean;
   fastOnly?: boolean;
 };
 
@@ -59,6 +61,7 @@ export function verifiedPlaceMediaQueryKey(
     input.wikimediaCommons ?? null,
     input.skipGoogle === true,
     input.skipOfficialSite === true,
+    input.skipOpenKnowledge === true,
     input.fastOnly === true,
   ] as const;
 }
@@ -1317,6 +1320,7 @@ function validateInput(data: PlaceMediaInput): PlaceMediaInput {
       : [],
     skipGoogle: data?.skipGoogle === true,
     skipOfficialSite: data?.skipOfficialSite === true,
+    skipOpenKnowledge: data?.skipOpenKnowledge === true,
     fastOnly: data?.fastOnly === true,
   };
 }
@@ -1403,9 +1407,10 @@ export const resolveVerifiedPlaceMedia = createServerFn({ method: "POST" })
       }
     }
 
-    const allowsOpenKnowledgeFallback =
-      data.kind === "activity" && !!(data.wikidata || data.wikipedia || data.wikimediaCommons);
-    if (!allowsOpenKnowledgeFallback) {
+    // Last resort for real places: use only traceable open-knowledge sources
+    // after Google and the verified official site have failed. This now also
+    // applies to restaurants and hotels, while deals remain excluded.
+    if (!shouldTryOpenKnowledgeFallback(data)) {
       return {
         url: null,
         source: null,
@@ -1414,7 +1419,7 @@ export const resolveVerifiedPlaceMedia = createServerFn({ method: "POST" })
       } satisfies ResolvedPlaceMedia;
     }
 
-    const nominatim = await resolveFromNominatim(data);
+    const nominatim = await resolveFromNominatim({ ...data, skipOfficialSite: true });
     if (nominatim) return nominatim;
 
     const wikidataSearch = await resolveWikidataSearch(data);
