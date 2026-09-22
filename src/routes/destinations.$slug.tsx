@@ -182,18 +182,41 @@ function DestinationDetail({ slug }: { slug: string }) {
     [cachedCatalog, localCatalogQuery.data, normalizeCatalog],
   );
 
+  const quickPublicCatalogQuery = useQuery({
+    queryKey: ["destination-public-fast-v1", slug, catalogCity, country, latitude, longitude],
+    enabled: !!bounds && !!catalogCity,
+    placeholderData: cachedCatalog,
+    queryFn: async () => {
+      if (!bounds || typeof window === "undefined") return [] as LiveCatalogItem[];
+      const rows = normalizeCatalog(
+        (await fetchBrowserViewportCatalog(bounds, { mode: "fast" })) as LiveCatalogItem[],
+      );
+      if (rows.length) saveCachedViewportCatalog(bounds, rows);
+      return rows;
+    },
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+  const firstWaveCatalog = useMemo(
+    () =>
+      normalizeCatalog([
+        ...cachedCatalog,
+        ...localCatalog,
+        ...(quickPublicCatalogQuery.data ?? []),
+      ]),
+    [cachedCatalog, localCatalog, normalizeCatalog, quickPublicCatalogQuery.data],
+  );
+
   const fastCatalogQuery = useQuery({
-    queryKey: ["destination-local-first-v9", slug, catalogCity, country, latitude, longitude],
-    enabled:
-      !!bounds &&
-      !!catalogCity &&
-      (!localCatalogQuery.isFetching || cachedCatalog.length > 0),
-    placeholderData: localCatalog,
+    queryKey: ["destination-local-first-v10", slug, catalogCity, country, latitude, longitude],
+    enabled: !!bounds && !!catalogCity,
+    placeholderData: firstWaveCatalog,
     queryFn: async () => {
       if (!bounds || !catalogCity || latitude == null || longitude == null)
         return [] as LiveCatalogItem[];
       const rows = await loadLocalFirstDestinationCatalog<LiveCatalogItem>({
-        cached: localCatalog,
+        cached: firstWaveCatalog,
         local: async () => [],
         publicSources: [
           () =>
@@ -223,8 +246,12 @@ function DestinationDetail({ slug }: { slug: string }) {
   });
 
   const catalog = useMemo(
-    () => normalizeCatalog([...localCatalog, ...(fastCatalogQuery.data ?? [])]),
-    [fastCatalogQuery.data, localCatalog, normalizeCatalog],
+    () =>
+      normalizeCatalog([
+        ...firstWaveCatalog,
+        ...(fastCatalogQuery.data ?? []),
+      ]),
+    [fastCatalogQuery.data, firstWaveCatalog, normalizeCatalog],
   );
 
   const socialQuery = useQuery({
@@ -291,9 +318,16 @@ function DestinationDetail({ slug }: { slug: string }) {
     retry: false,
   });
 
-  const isCatalogFetching = localCatalogQuery.isFetching || fastCatalogQuery.isFetching;
-  const isCatalogLoading = !catalog.length && isCatalogFetching;
-  const reloadCatalog = () => Promise.all([localCatalogQuery.refetch(), fastCatalogQuery.refetch()]);
+  const isCatalogFetching =
+    localCatalogQuery.isFetching || quickPublicCatalogQuery.isFetching || fastCatalogQuery.isFetching;
+  const isCatalogLoading =
+    !catalog.length && (localCatalogQuery.isFetching || quickPublicCatalogQuery.isFetching);
+  const reloadCatalog = () =>
+    Promise.all([
+      localCatalogQuery.refetch(),
+      quickPublicCatalogQuery.refetch(),
+      fastCatalogQuery.refetch(),
+    ]);
 
   const activityCatalog = useMemo(() => {
     const live = normalizeCatalog(catalog.filter((item) => item.kind === "activity"));
