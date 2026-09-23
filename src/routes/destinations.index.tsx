@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Compass, MapPin, Search } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { DestinationImage } from "@/components/DestinationImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import { supabase } from "@/integrations/supabase/client";
 import { COUNTRY_INFO } from "@/lib/country-info";
 import { verifiedDestinationCover } from "@/lib/destination-cover";
@@ -57,6 +58,7 @@ function DestinationsExplorerPage() {
         title: string;
         subtitle: string;
         country: string;
+        city: string | null;
         cover: string | null;
         summary: string;
         emoji?: string;
@@ -70,6 +72,7 @@ function DestinationsExplorerPage() {
         title: info.name,
         subtitle: (info.tags ?? []).slice(0, 3).join(" · "),
         country: info.name,
+        city: null,
         // Historical COUNTRY_INFO images are Unsplash illustrations. They are not
         // presented as verified photos of the country on the Destinations page.
         cover: null,
@@ -88,6 +91,7 @@ function DestinationsExplorerPage() {
         title: hub.country,
         subtitle: `Explorer depuis ${hub.city}`,
         country: hub.country,
+        city: hub.city,
         // Never fabricate a country photo. A clean geographic placeholder is
         // preferable to showing the same unrelated landscape for several countries.
         cover: null,
@@ -104,6 +108,7 @@ function DestinationsExplorerPage() {
         title: item.name,
         subtitle: [item.city, item.country].filter(Boolean).join(", "),
         country: item.country,
+        city: item.city,
         cover: verifiedDestinationCover(item.cover_url) || countryFallback?.cover || null,
         summary: item.summary || `Découvre ${item.name} avec GlobeLink.`,
       });
@@ -169,41 +174,61 @@ function DestinationsExplorerPage() {
             {destinations.map((item) => {
               const resolvedCover = coverByTitle.get(item.title.toLowerCase()) ?? null;
               return (
-                <Link
+                <article
                   key={item.slug}
-                  to="/destinations/$slug"
-                  params={{ slug: item.slug }}
                   className="group overflow-hidden rounded-[1.6rem] border border-border bg-card shadow-soft transition hover:-translate-y-0.5 hover:shadow-elevated"
                 >
-                  <div className="relative aspect-[16/11] overflow-hidden bg-secondary">
-                    <DestinationImage
-                      title={item.title}
-                      country={item.country}
-                      storedUrl={item.cover}
-                      resolvedMedia={resolvedCover}
-                      resolve={false}
-                      emoji={item.emoji}
-                      className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  <Link
+                    to="/destinations/$slug"
+                    params={{ slug: item.slug }}
+                    className="block"
+                  >
+                    <div className="relative aspect-[16/11] overflow-hidden bg-secondary">
+                      <DestinationImage
+                        title={item.title}
+                        country={item.country}
+                        storedUrl={item.cover}
+                        resolvedMedia={resolvedCover}
+                        resolve={false}
+                        emoji={item.emoji}
+                        className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+                      <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+                        <h2 className="font-display text-xl font-semibold">
+                          {item.emoji ? `${item.emoji} ` : ""}
+                          {item.title}
+                        </h2>
+                        <p className="mt-1 line-clamp-1 text-xs text-white/80">{item.subtitle}</p>
+                      </div>
+                    </div>
+                    <div className="p-4 pb-3">
+                      <p className="line-clamp-2 text-sm text-muted-foreground">{item.summary}</p>
+                      <div className="mt-3 flex items-center justify-between text-xs font-semibold text-primary">
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" /> Ouvrir
+                        </span>
+                        <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+                      </div>
+                    </div>
+                  </Link>
+                  <div className="border-t border-border/70 p-3">
+                    <AddToTripButton
+                      item={{
+                        title: item.title,
+                        city: item.city,
+                        country: item.country,
+                        kind: "stop",
+                        source: "Destination GlobeLink",
+                        notes: item.summary,
+                      }}
+                      compact
+                      size="sm"
+                      variant="ghost"
+                      className="w-full rounded-xl"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
-                    <div className="absolute inset-x-0 bottom-0 p-4 text-white">
-                      <h2 className="font-display text-xl font-semibold">
-                        {item.emoji ? `${item.emoji} ` : ""}
-                        {item.title}
-                      </h2>
-                      <p className="mt-1 line-clamp-1 text-xs text-white/80">{item.subtitle}</p>
-                    </div>
                   </div>
-                  <div className="p-4">
-                    <p className="line-clamp-2 text-sm text-muted-foreground">{item.summary}</p>
-                    <div className="mt-3 flex items-center justify-between text-xs font-semibold text-primary">
-                      <span className="inline-flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5" /> Ouvrir
-                      </span>
-                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-                    </div>
-                  </div>
-                </Link>
+                </article>
               );
             })}
           </section>
