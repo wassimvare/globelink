@@ -30,6 +30,11 @@ import { formatDistanceToNow } from "date-fns";
 import { z } from "zod";
 import { fr } from "date-fns/locale";
 import { useCalls } from "@/components/CallProvider";
+import {
+  conversationDraftKey,
+  matchIntentDraftKey,
+  resolvePreparedMatchMessage,
+} from "@/features/match/match-draft";
 
 const messageSearch = z.object({ draft: z.string().max(360).optional() });
 // TRAVEL_MATCH_V3_DRAFT
@@ -73,6 +78,7 @@ function ConversationPage() {
   const navigate = useNavigate();
   const { startCall, busy: callBusy } = useCalls();
   const [text, setText] = useState(draft?.trim() ?? "");
+  const [preparedMatchDraft, setPreparedMatchDraft] = useState(!!draft?.trim());
   const [otherTyping, setOtherTyping] = useState(false);
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -109,17 +115,29 @@ function ConversationPage() {
   });
 
   useEffect(() => {
-    if (!other?.user_id || typeof window === "undefined") return;
-    const key = `globelink:match-intent:${other.user_id}`;
-    const pending = window.localStorage.getItem(key);
-    if (draft?.trim()) {
-      window.localStorage.removeItem(key);
-      return;
+    if (typeof window === "undefined") return;
+    const conversationKey = conversationDraftKey(id);
+    const intentKey = other?.user_id ? matchIntentDraftKey(other.user_id) : null;
+    const pendingIntentDraft = intentKey ? window.localStorage.getItem(intentKey) : null;
+    const resolved = resolvePreparedMatchMessage({
+      routeDraft: draft,
+      conversationDraft: window.localStorage.getItem(conversationKey),
+      pendingIntentDraft,
+    });
+
+    if (resolved.text) {
+      setText((current: string) => (current.trim() ? current : resolved.text));
+      window.localStorage.setItem(conversationKey, resolved.text);
     }
-    if (!pending) return;
-    setText((current: string) => current.trim() ? current : pending);
-    window.localStorage.removeItem(key);
-  }, [other?.user_id, draft]);
+    setPreparedMatchDraft(!!draft?.trim() || !!pendingIntentDraft?.trim());
+  }, [id, other?.user_id, draft]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = conversationDraftKey(id);
+    if (text.trim()) window.localStorage.setItem(key, text);
+    else window.localStorage.removeItem(key);
+  }, [id, text]);
 
   const { data: conversationControlled = false } = useQuery({
     queryKey: ["conversation-controlled", id, user?.id, other?.user_id],
@@ -236,7 +254,7 @@ function ConversationPage() {
     attachment_type?: string;
     attachment_meta?: Record<string, unknown>;
   }) => {
-    if (!user || conversationControlled) return;
+    if (!user || conversationControlled) return false;
     const { data: participant, error: participantError } = await supabase
       .from("conversation_participants")
       .select("conversation_id")
@@ -246,7 +264,7 @@ function ConversationPage() {
     if (participantError || !participant) {
       console.error(participantError ?? new Error("Current user is not a participant"));
       toast.error("Conversation inaccessible");
-      return;
+      return false;
     }
 
     const { error } = await supabase.from("messages").insert({
@@ -260,18 +278,26 @@ function ConversationPage() {
     if (error) {
       console.error(error);
       toast.error("Envoi impossible");
-      return;
+      return false;
     }
     qc.invalidateQueries({ queryKey: ["messages", id] });
     qc.invalidateQueries({ queryKey: ["conversations", user.id] });
+    return true;
   };
 
   const sendText = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
     const content = text.trim();
+    const sent = await insertMessage({ content });
+    if (!sent) return;
+
     setText("");
-    await insertMessage({ content });
+    setPreparedMatchDraft(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(conversationDraftKey(id));
+      if (other?.user_id) window.localStorage.removeItem(matchIntentDraftKey(other.user_id));
+    }
   };
 
   const uploadAndSend = async (file: File, kind: "image" | "video" | "voice") => {
@@ -486,6 +512,37 @@ function ConversationPage() {
             </div>
           )}
         </div>
+
+        {preparedMatchDraft && (
+          <div
+            data-testid="travel-match-prepared-draft"
+            className="mt-3 rounded-2xl border border-primary/20 bg-primary/[0.06] p-3 text-xs leading-relaxed text-muted-foreground"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <p>
+                <strong className="text-foreground">Invitation Travel Match préparée.</strong>{" "}
+                Rien n’est envoyé automatiquement. Modifie le message si tu veux, puis appuie sur
+                Envoyer.
+              </p>
+              <button
+                type="button"
+                className="shrink-0 font-semibold text-primary hover:underline"
+                onClick={() => {
+                  setText("");
+                  setPreparedMatchDraft(false);
+                  if (typeof window !== "undefined") {
+                    window.localStorage.removeItem(conversationDraftKey(id));
+                    if (other?.user_id) {
+                      window.localStorage.removeItem(matchIntentDraftKey(other.user_id));
+                    }
+                  }
+                }}
+              >
+                Retirer
+              </button>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={sendText} className="mt-3 flex items-center gap-2">
           <input
