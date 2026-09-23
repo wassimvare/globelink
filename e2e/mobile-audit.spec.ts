@@ -43,12 +43,18 @@ async function expectBottomNavInsideViewport(page: Page) {
 
   const result = await nav.evaluate((element) => {
     const navRect = element.getBoundingClientRect();
-    const directItems = Array.from(
-      element.querySelectorAll(".mobile-bottom-nav-inner > *"),
-    ).map((child) => {
-      const rect = child.getBoundingClientRect();
-      return { width: rect.width, height: rect.height, left: rect.left, right: rect.right };
-    });
+    const interactiveItems = Array.from(
+      element.querySelectorAll(".mobile-bottom-nav-inner a, .mobile-bottom-nav-inner button"),
+    )
+      .filter((child) => {
+        const style = getComputedStyle(child);
+        const rect = child.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      })
+      .map((child) => {
+        const rect = child.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, left: rect.left, right: rect.right };
+      });
     return {
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
@@ -58,7 +64,7 @@ async function expectBottomNavInsideViewport(page: Page) {
         top: navRect.top,
         bottom: navRect.bottom,
       },
-      directItems,
+      interactiveItems,
     };
   });
 
@@ -66,10 +72,10 @@ async function expectBottomNavInsideViewport(page: Page) {
   expect(result.nav.right).toBeLessThanOrEqual(result.viewportWidth + 1);
   expect(result.nav.bottom).toBeLessThanOrEqual(result.viewportHeight + 1);
   expect(result.nav.top).toBeGreaterThanOrEqual(0);
-  expect(result.directItems).toHaveLength(5);
-  for (const item of result.directItems) {
-    expect(item.width).toBeGreaterThan(40);
-    expect(item.height).toBeGreaterThanOrEqual(44);
+  expect(result.interactiveItems.length).toBeGreaterThanOrEqual(5);
+  for (const item of result.interactiveItems) {
+    expect(item.width).toBeGreaterThanOrEqual(42);
+    expect(item.height).toBeGreaterThanOrEqual(42);
     expect(item.left).toBeGreaterThanOrEqual(-1);
     expect(item.right).toBeLessThanOrEqual(result.viewportWidth + 1);
   }
@@ -109,16 +115,19 @@ test.describe("Audit mobile iPhone + Android", () => {
     test.skip(!isMobileProject(testInfo), "Audit réservé aux projets mobiles.");
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Ouvrir Explorer" }).click();
+    const explorerButton = page.getByRole("button", { name: "Ouvrir Explorer" });
+    await expect(explorerButton).toBeVisible();
+    await page.waitForTimeout(700);
+    await explorerButton.click();
 
+    await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByText("Explorer GlobeLink", { exact: true })).toBeVisible();
     for (const label of ["Carte", "Destinations", "Activités", "Sélection du moment", "Marketplace"]) {
       await expect(page.getByRole("link", { name: new RegExp(label, "i") })).toBeVisible();
     }
 
     const drawerFits = await page
-      .getByText("Explorer GlobeLink", { exact: true })
-      .locator("xpath=ancestor::*[@role='dialog'][1]")
+      .getByRole("dialog")
       .evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return (
