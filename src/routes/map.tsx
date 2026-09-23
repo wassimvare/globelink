@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import { fetchLocatedTravelers, type LocatedTraveler } from "@/lib/real-travelers";
 import { COUNTRY_INFO } from "@/lib/country-info";
 import { CountrySheet } from "@/components/CountrySheet";
@@ -1579,15 +1580,10 @@ function PlaceSheet({
   place: AnyPlace | null;
   onOpenChange: (o: boolean) => void;
 }) {
-  const { user } = useAuth();
-  const qc = useQueryClient();
   const resolveOfficialSite = useServerFn(resolvePlaceLogo);
   const [saved, setSaved] = useState(false);
-  const [tripPickerOpen, setTripPickerOpen] = useState(false);
-  const [addingTripId, setAddingTripId] = useState<string | null>(null);
   useEffect(() => {
     setSaved(false);
-    setTripPickerOpen(false);
   }, [place?.id]);
 
   const officialSiteInput = useMemo<PlaceLogoInput | null>(
@@ -1615,85 +1611,6 @@ function PlaceSheet({
     gcTime: 24 * 60 * 60_000,
     retry: 1,
   });
-
-  const { data: trips = [], isLoading: tripsLoading, isError: tripsError, refetch: refetchTrips } = useQuery({
-    queryKey: ["explorer-trips", user?.id],
-    enabled: !!user && !!place && tripPickerOpen,
-    staleTime: 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("trips")
-        .select("id,title,city,country,starts_on,ends_on,status")
-        .eq("user_id", user!.id)
-        .order("created_at", { ascending: false })
-        .limit(12);
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
-
-  const addToTrip = async (trip: (typeof trips)[number]) => {
-    if (!place || !user || addingTripId) return;
-    setAddingTripId(trip.id);
-    try {
-      const { data: existing } = await supabase
-        .from("trip_entries")
-        .select("id")
-        .eq("trip_id", trip.id)
-        .eq("title", place.name)
-        .limit(1)
-        .maybeSingle();
-      if (existing) {
-        setSaved(true);
-        setTripPickerOpen(false);
-        toast.message("Ce lieu est déjà dans ce voyage", {
-          description: "Ouvre le carnet pour continuer l’organisation.",
-          action: {
-            label: "Ouvrir le voyage",
-            onClick: () => window.location.assign("/trips/" + trip.id),
-          },
-        });
-        return;
-      }
-      const visitDate = trip.starts_on || new Date().toISOString().slice(0, 10);
-      const kind = place.category === "hotel" ? "hotel" : place.category === "restaurant" ? "restaurant" : "activity";
-      const sourceNote = [
-        "Ajouté depuis Explorer · " + (place.provider || "GlobeLink"),
-        place.source_url ? "Source : " + place.source_url : null,
-      ].filter(Boolean).join("\n");
-      const { error } = await supabase.from("trip_entries").insert({
-        trip_id: trip.id,
-        user_id: user.id,
-        kind,
-        title: place.name,
-        city: place.city || null,
-        country: place.country || null,
-        notes: sourceNote,
-        lat: place.lat,
-        lng: place.lng,
-        price_level: place.budget,
-        rating: place.rating || null,
-        visited_on: visitDate,
-        position: Math.floor(Date.now() % 2_000_000_000),
-      });
-      if (error) throw error;
-      await qc.invalidateQueries({ queryKey: ["trip-entries", trip.id] });
-      await qc.invalidateQueries({ queryKey: ["trips", user.id] });
-      setSaved(true);
-      setTripPickerOpen(false);
-      toast.success("Ajouté à " + trip.title, {
-        description: "Le lieu est maintenant dans ton carnet.",
-        action: {
-          label: "Ouvrir le voyage",
-          onClick: () => window.location.assign("/trips/" + trip.id),
-        },
-      });
-    } catch (error: any) {
-      toast.error(error?.message ?? "Impossible d’ajouter ce lieu au voyage.");
-    } finally {
-      setAddingTripId(null);
-    }
-  };
 
   const share = async () => {
     if (!place) return;
@@ -1795,97 +1712,29 @@ function PlaceSheet({
                 <span>{place.hours}</span>
               </div>
 
-              <Button
-                className="mt-5 h-12 w-full rounded-2xl text-sm font-bold shadow-soft"
-                onClick={() => {
-                  if (!user) {
-                    toast.info("Connecte-toi pour ajouter ce lieu à un voyage.");
-                    const redirect = window.location.pathname + window.location.search;
-                    window.location.assign("/auth?redirect=" + encodeURIComponent(redirect));
-                    return;
-                  }
-                  setTripPickerOpen((open) => !open);
+              <AddToTripButton
+                item={{
+                  title: place.name,
+                  city: place.city || null,
+                  country: place.country || null,
+                  lat: place.lat,
+                  lng: place.lng,
+                  kind:
+                    place.category === "hotel"
+                      ? "hotel"
+                      : place.category === "restaurant"
+                        ? "restaurant"
+                        : "activity",
+                  rating: place.rating || null,
+                  priceLevel: place.budget || null,
+                  source: place.provider || "Explorer GlobeLink",
+                  sourceUrl: place.source_url || null,
+                  notes: place.description || null,
                 }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                {saved ? "Ajouté à mon voyage" : "Ajouter à mon voyage"}
-              </Button>
-
-              {tripPickerOpen && (
-                <div
-                  data-testid="explorer-trip-picker"
-                  className="mt-3 rounded-2xl border border-primary/25 bg-primary/[0.06] p-3 shadow-soft"
-                >
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-bold">Ajouter à quel voyage ?</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">Choisis le carnet où enregistrer ce lieu.</p>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label="Fermer le choix du voyage"
-                      onClick={() => setTripPickerOpen(false)}
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-card text-muted-foreground"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  {tripsLoading ? (
-                    <div className="flex min-h-20 items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" /> Chargement de tes voyages…
-                    </div>
-                  ) : tripsError ? (
-                    <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-center">
-                      <p className="text-xs text-muted-foreground">Impossible de charger tes voyages pour le moment.</p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="mt-2 rounded-full"
-                        onClick={() => void refetchTrips()}
-                      >
-                        Réessayer
-                      </Button>
-                    </div>
-                  ) : trips.length ? (
-                    <div className="max-h-[34dvh] space-y-2 overflow-y-auto overscroll-contain pr-0.5">
-                      {trips.map((trip) => (
-                        <button
-                          key={trip.id}
-                          type="button"
-                          disabled={!!addingTripId}
-                          onClick={() => void addToTrip(trip)}
-                          className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 text-left transition active:scale-[0.99] disabled:opacity-60"
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold">{trip.title}</div>
-                            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                              {[trip.city, trip.country].filter(Boolean).join(", ") || "Voyage GlobeLink"}
-                              {trip.starts_on
-                                ? " · dès le " + new Date(trip.starts_on + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
-                                : ""}
-                            </div>
-                          </div>
-                          {addingTripId === trip.id ? (
-                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
-                          ) : (
-                            <Plus className="h-4 w-4 shrink-0 text-primary" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-border bg-card/60 p-4 text-center">
-                      <p className="text-sm font-semibold">Tu n’as pas encore de voyage.</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Crée ton premier carnet puis reviens ajouter ce lieu.</p>
-                      <Button asChild size="sm" className="mt-3 rounded-full">
-                        <Link to="/trips">Créer mon voyage</Link>
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
+                variant="default"
+                className="mt-5 h-12 w-full rounded-2xl text-sm font-bold shadow-soft"
+                label="Ajouter à mon voyage"
+              />
 
               <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <Button
@@ -2023,42 +1872,6 @@ function PlaceSheet({
         )}
       </SheetContent>
 
-      <Dialog open={false} onOpenChange={() => undefined}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-3xl sm:w-full">
-          <DialogHeader>
-            <DialogTitle>Ajouter à quel voyage ?</DialogTitle>
-          </DialogHeader>
-          {trips.length ? (
-            <div className="max-h-[55dvh] space-y-2 overflow-y-auto">
-              {trips.map((trip) => (
-                <button
-                  key={trip.id}
-                  type="button"
-                  disabled={!!addingTripId}
-                  onClick={() => void addToTrip(trip)}
-                  className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3 text-left transition hover:border-primary/40 disabled:opacity-60"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold">{trip.title}</div>
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {[trip.city, trip.country].filter(Boolean).join(", ") || "Voyage GlobeLink"}
-                      {trip.starts_on ? " · dès le " + new Date(trip.starts_on + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
-                    </div>
-                  </div>
-                  {addingTripId === trip.id ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" /> : <Plus className="h-4 w-4 shrink-0 text-primary" />}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-              <p className="text-sm text-muted-foreground">Crée d’abord un voyage pour y enregistrer ce lieu.</p>
-              <Button asChild className="mt-4 rounded-full">
-                <Link to="/trips">Créer mon voyage</Link>
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </Sheet>
   );
 }

@@ -54,6 +54,7 @@ import {
   type LiveCatalogItem,
 } from "@/lib/live-catalog";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import type { Database } from "@/integrations/supabase/types";
 import { slugifyDestination } from "@/lib/phase2";
 
@@ -1021,58 +1022,80 @@ function CatalogCard({
   const actualDeal = item.kind === "deal";
   const destination = actualDeal ? ("/deals/$slug" as const) : ("/activities/$slug" as const);
   return (
-    <Link to={destination} params={{ slug: item.slug }} className="catalog-home-card group">
-      <div className="relative aspect-[4/3] overflow-hidden bg-secondary sm:aspect-[3/4]">
-        <CatalogImage
-          item={item}
-          priority={priority}
-          fallbackIndex={fallbackIndex}
-          lookup={{
-            latitude: item.latitude,
-            longitude: item.longitude,
-            city: item.city,
-            country: item.country,
-            website: catalogOfficialWebsite(item),
-          }}
-          className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
-        <span className="absolute right-2 top-2 max-w-[75%] truncate rounded-full bg-black/55 px-2 py-1 text-[9px] font-medium text-white backdrop-blur-sm">
-          {catalogSourceLabel(item)}
-        </span>
-        {offerMode && (
-          <span className="absolute left-2 top-2 rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-primary-foreground shadow-soft">
-            {actualDeal ? item.category || "Offre" : "Source vérifiable"}
+    <article className="catalog-home-card group overflow-hidden">
+      <Link to={destination} params={{ slug: item.slug }} className="block">
+        <div className="relative aspect-[4/3] overflow-hidden bg-secondary sm:aspect-[3/4]">
+          <CatalogImage
+            item={item}
+            priority={priority}
+            fallbackIndex={fallbackIndex}
+            lookup={{
+              latitude: item.latitude,
+              longitude: item.longitude,
+              city: item.city,
+              country: item.country,
+              website: catalogOfficialWebsite(item),
+            }}
+            className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
+          <span className="absolute right-2 top-2 max-w-[75%] truncate rounded-full bg-black/55 px-2 py-1 text-[9px] font-medium text-white backdrop-blur-sm">
+            {catalogSourceLabel(item)}
           </span>
-        )}
-        <div className="absolute inset-x-0 bottom-0 p-3 text-white sm:p-4">
-          <h3 className="line-clamp-2 font-display text-lg font-semibold leading-tight">
-            {item.title}
-          </h3>
-          <p className="mt-1 flex items-center gap-1 truncate text-xs text-white/80">
-            <MapPin className="h-3 w-3 shrink-0" />
-            {itemLocation(item) || "En ligne"}
-          </p>
-          <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-            {offerMode ? (
-              <span className="font-semibold text-white">{itemPrice(item)}</span>
-            ) : item.rating != null ? (
-              <span className="inline-flex items-center gap-1">
-                <Star className="h-3 w-3 fill-amber-300 text-amber-300" />
-                {Number(item.rating).toFixed(1)}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-white/75">
-                <RefreshCw className="h-3 w-3" /> Actualisé
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1 font-semibold">
-              Voir <ExternalLink className="h-3 w-3" />
+          {offerMode && (
+            <span className="absolute left-2 top-2 rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-primary-foreground shadow-soft">
+              {actualDeal ? item.category || "Offre" : "Source vérifiable"}
             </span>
+          )}
+          <div className="absolute inset-x-0 bottom-0 p-3 text-white sm:p-4">
+            <h3 className="line-clamp-2 font-display text-lg font-semibold leading-tight">
+              {item.title}
+            </h3>
+            <p className="mt-1 flex items-center gap-1 truncate text-xs text-white/80">
+              <MapPin className="h-3 w-3 shrink-0" />
+              {itemLocation(item) || "En ligne"}
+            </p>
+            <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+              {offerMode ? (
+                <span className="font-semibold text-white">{itemPrice(item)}</span>
+              ) : item.rating != null ? (
+                <span className="inline-flex items-center gap-1">
+                  <Star className="h-3 w-3 fill-amber-300 text-amber-300" />
+                  {Number(item.rating).toFixed(1)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-white/75">
+                  <RefreshCw className="h-3 w-3" /> Actualisé
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1 font-semibold">
+                Voir <ExternalLink className="h-3 w-3" />
+              </span>
+            </div>
           </div>
         </div>
+      </Link>
+      <div className="border-t border-border/70 bg-card p-2.5">
+        <AddToTripButton
+          item={{
+            title: item.title,
+            city: item.city,
+            country: item.country,
+            lat: item.latitude,
+            lng: item.longitude,
+            kind: item.kind,
+            rating: item.rating,
+            source: catalogSourceLabel(item),
+            sourceUrl: item.source_url,
+            notes: item.description,
+          }}
+          compact
+          size="sm"
+          variant="ghost"
+          className="w-full rounded-xl"
+        />
       </div>
-    </Link>
+    </article>
   );
 }
 

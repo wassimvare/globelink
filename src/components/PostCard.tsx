@@ -55,6 +55,8 @@ type Post = {
   video_url?: string | null;
   country: string | null;
   city: string | null;
+  lat?: number | null;
+  lng?: number | null;
   activity?: string | null;
   hashtags?: string[] | null;
   created_at: string;
@@ -658,6 +660,8 @@ export function PostCard({ post }: { post: Post }) {
                 title: post.activity || [post.city, post.country].filter(Boolean).join(", ") || "Lieu partagé sur GlobeLink",
                 city: post.city,
                 country: post.country,
+                lat: post.lat,
+                lng: post.lng,
                 kind: post.activity ? "activity" : "stop",
                 source: "Publication GlobeLink",
                 notes: post.caption ? post.caption.slice(0, 300) : null,

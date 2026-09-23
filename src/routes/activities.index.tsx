@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Camera, MapPin, Search, Sparkles } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import {
   catalogOfficialWebsite,
   catalogSourceLabel,
@@ -170,6 +171,26 @@ function ActivitiesExplorerPage() {
                         {itemLocation(activity) || country}
                       </span>
                     </div>
+                  </div>
+                  <div className="border-t border-border/70 p-3">
+                    <AddToTripButton
+                      item={{
+                        title: activity.title,
+                        city: activity.city,
+                        country: activity.country,
+                        lat: activity.latitude,
+                        lng: activity.longitude,
+                        kind: activity.kind,
+                        rating: activity.rating,
+                        source: catalogSourceLabel(activity),
+                        sourceUrl: activity.source_url,
+                        notes: activity.description,
+                      }}
+                      compact
+                      size="sm"
+                      variant="ghost"
+                      className="w-full rounded-xl"
+                    />
                   </div>
                 </article>
               );

@@ -170,6 +170,43 @@ test.describe("Phase 3 — parcours authentifiés live", () => {
     await expect(page.getByText(title, { exact: true })).toHaveCount(0, { timeout: 15_000 });
   });
 
+  test("Ajouter à mon voyage: une destination rejoint la journée choisie", async ({ page }, testInfo) => {
+    await login(page, accounts[0]);
+    const suffix = `${testInfo.project.name}-${Date.now()}`;
+    const title = `E2E Ajout voyage ${suffix}`;
+
+    await page.goto("/trips", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Nouveau voyage" }).click();
+    const createDialog = page.getByRole("dialog");
+    await createDialog.getByTestId("trip-create-title").fill(title);
+    await createDialog.getByTestId("trip-create-country").fill("France");
+    await createDialog.getByTestId("trip-create-city").fill("Lyon");
+    await createDialog.getByTestId("trip-create-start").fill("2026-10-20");
+    await createDialog.getByTestId("trip-create-end").fill("2026-10-21");
+    await createDialog.getByTestId("trip-create-submit").click();
+
+    await expect(page).toHaveURL(/\/trips\/[0-9a-f-]{20,}$/i, { timeout: 15_000 });
+    const tripUrl = page.url();
+
+    await page.goto("/destinations/france", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Ajouter cette destination" }).click();
+
+    const picker = page.getByRole("dialog");
+    await expect(picker.getByText("Ajouter à quel voyage ?")).toBeVisible();
+    await picker.getByRole("button").filter({ hasText: title }).click();
+    await picker.getByTestId("add-to-trip-day").selectOption("2026-10-20");
+    await picker.getByTestId("confirm-add-to-trip").click();
+
+    await page.goto(tripUrl, { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("France", { exact: true }).first()).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/trips", { waitUntil: "domcontentloaded" });
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByLabel(`Supprimer le voyage ${title}`).click();
+    await expect(page.getByText(title, { exact: true })).toHaveCount(0, { timeout: 15_000 });
+  });
+
   test("deux comptes réels restent isolés entre deux contextes navigateur", async ({ browser }) => {
     const contextA = await browser.newContext();
     const contextB = await browser.newContext();
