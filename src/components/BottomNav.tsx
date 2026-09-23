@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -30,6 +30,9 @@ const explorerPrefixes = ["/map", "/destinations", "/activities", "/deals", "/ma
 export function BottomNav() {
   const { user } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => setHydrated(true), []);
   const hiddenOn = ["/auth", "/forgot-password", "/reset-password", "/verify-email", "/onboarding", "/beta"];
 
   const { data: profile } = useQuery({
@@ -59,6 +62,7 @@ export function BottomNav() {
     <nav
       aria-label="Navigation principale"
       className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 sm:hidden"
+      data-hydrated={hydrated ? "true" : "false"}
     >
       <div className="mobile-bottom-nav-inner grid grid-cols-[1fr_1fr_56px_1fr_1fr] items-center border-t border-border/70 bg-card/96 px-1.5 pt-1 shadow-[0_-10px_35px_-24px_rgba(3,28,43,.45)] backdrop-blur-xl">
         <NavItem to="/" label="Accueil" Icon={Home} exact />
