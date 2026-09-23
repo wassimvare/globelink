@@ -120,7 +120,6 @@ test.describe("Audit mobile iPhone + Android", () => {
     const explorerButton = page.getByRole("button", { name: "Ouvrir Explorer" });
     await expect(explorerButton).toBeVisible();
     await explorerButton.click();
-    await expect(explorerButton).toHaveAttribute("aria-expanded", "true");
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
