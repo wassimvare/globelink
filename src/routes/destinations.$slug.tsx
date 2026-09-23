@@ -118,7 +118,8 @@ function DestinationDetail({ slug }: { slug: string }) {
     enabled: needsCityGeocoding,
     queryFn: () => geocodeDestination({ data: { city: city!, country } }),
     staleTime: 30 * 24 * 60 * 60_000,
-    gcTime: 30 * 24 * 60 * 60_000,
+    // Keep below the browser/Node 32-bit timer ceiling (~24.8 days).
+    gcTime: 14 * 24 * 60 * 60_000,
     retry: false,
   });
 

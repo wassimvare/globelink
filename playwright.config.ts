@@ -33,8 +33,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "chromium-mobile",
+      name: "android-chromium",
       use: { ...devices["Pixel 5"] },
+    },
+    {
+      name: "iphone-webkit",
+      use: { ...devices["iPhone 13"] },
     },
   ],
 });

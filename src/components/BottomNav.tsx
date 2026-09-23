@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -15,13 +15,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { QuickCreate } from "@/components/QuickCreate";
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 
 const explorerPrefixes = ["/map", "/destinations", "/activities", "/deals", "/marketplace"];
@@ -29,6 +30,9 @@ const explorerPrefixes = ["/map", "/destinations", "/activities", "/deals", "/ma
 export function BottomNav() {
   const { user } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => setHydrated(true), []);
   const hiddenOn = ["/auth", "/forgot-password", "/reset-password", "/verify-email", "/onboarding", "/beta"];
 
   const { data: profile } = useQuery({
@@ -58,6 +62,7 @@ export function BottomNav() {
     <nav
       aria-label="Navigation principale"
       className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 sm:hidden"
+      data-hydrated={hydrated ? "true" : "false"}
     >
       <div className="mobile-bottom-nav-inner grid grid-cols-[1fr_1fr_56px_1fr_1fr] items-center border-t border-border/70 bg-card/96 px-1.5 pt-1 shadow-[0_-10px_35px_-24px_rgba(3,28,43,.45)] backdrop-blur-xl">
         <NavItem to="/" label="Accueil" Icon={Home} exact />
@@ -81,32 +86,29 @@ export function BottomNav() {
 }
 
 function MobileExplorer({ active, pathname }: { active: boolean; pathname: string }) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <Drawer open={open} onOpenChange={setOpen}>
-      <button
-        type="button"
-        aria-label="Ouvrir Explorer"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        className={`relative flex min-h-[52px] w-full touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
-          active ? "text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" : "text-muted-foreground"
-        }`}
-      >
-        <Map className="h-[21px] w-[21px] transition" />
-        <span className="max-w-full truncate">Explorer</span>
-        <span className="nav-dot absolute bottom-0.5 h-1 w-1 scale-0 rounded-full bg-primary transition" />
-      </button>
+    <Sheet>
+      <SheetTrigger asChild>
+        <button
+          type="button"
+          aria-label="Ouvrir Explorer"
+          className={`relative flex min-h-[52px] w-full touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
+            active ? "text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" : "text-muted-foreground"
+          }`}
+        >
+          <Map className="h-[21px] w-[21px] transition" />
+          <span className="max-w-full truncate">Explorer</span>
+          <span className="nav-dot absolute bottom-0.5 h-1 w-1 scale-0 rounded-full bg-primary transition" />
+        </button>
+      </SheetTrigger>
 
-      <DrawerContent className="rounded-t-3xl border-border/70 bg-card/95 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-elevated backdrop-blur-2xl">
-        <DrawerHeader className="px-5 pb-2 text-left">
-          <DrawerTitle>Explorer GlobeLink</DrawerTitle>
-          <DrawerDescription>
+      <SheetContent side="bottom" className="max-h-[88dvh] overflow-y-auto rounded-t-3xl border-border/70 bg-card/95 px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-4 shadow-elevated backdrop-blur-2xl">
+        <SheetHeader className="px-5 pb-2 text-left">
+          <SheetTitle>Explorer GlobeLink</SheetTitle>
+          <SheetDescription>
             Retrouve sur mobile les mêmes rubriques que sur ordinateur.
-          </DrawerDescription>
-        </DrawerHeader>
+          </SheetDescription>
+        </SheetHeader>
 
         <div className="grid gap-2 px-4 pb-4">
           <ExplorerLink
@@ -145,8 +147,8 @@ function MobileExplorer({ active, pathname }: { active: boolean; pathname: strin
             active={pathname.startsWith("/marketplace")}
           />
         </div>
-      </DrawerContent>
-    </Drawer>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -164,7 +166,7 @@ function ExplorerLink({
   active: boolean;
 }) {
   return (
-    <DrawerClose asChild>
+    <SheetClose asChild>
       <Link
         to={to as any}
         preload="intent"
@@ -183,7 +185,7 @@ function ExplorerLink({
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
       </Link>
-    </DrawerClose>
+    </SheetClose>
   );
 }
 
