@@ -4,11 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft,
+  CalendarDays,
   Camera,
   Loader2,
   MapPin,
   Plus,
   Sparkles,
+  Trash2,
   Wallet,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -41,6 +43,9 @@ import { finalizeTrip } from "@/lib/trip-finalize.functions";
 import { resolvedDestinationCover } from "@/lib/destination-cover";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
+import { formatTripDate } from "@/features/travel/trip-domain";
+import { isInternalJournalEntry } from "@/features/travel/day-program";
+import { tripBudgetSnapshot } from "@/features/travel/trip-journey";
 
 export const Route = createFileRoute("/_authenticated/trips/$id")({
   component: TripDetail,
@@ -53,47 +58,69 @@ function TripDetail() {
   const finalize = useServerFn(finalizeTrip);
   const [showRecap, setShowRecap] = useState(false);
 
-  const { data: trip } = useQuery({
-    queryKey: ["trip", id],
-    queryFn: async () =>
-      (await supabase.from("trips").select("*").eq("id", id).maybeSingle()).data,
+  const {
+    data: trip,
+    isLoading: tripLoading,
+    error: tripError,
+  } = useQuery({
+    queryKey: ["trip", id, user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("*")
+        .eq("id", id)
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
   });
 
-  const { data: entries } = useQuery({
+  const { data: entries, error: entriesError } = useQuery({
     queryKey: ["trip-entries", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("trip_entries")
-          .select("*")
-          .eq("trip_id", id)
-          .order("visited_on")
-          .order("position")
-      ).data ?? [],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trip_entries")
+        .select("*")
+        .eq("trip_id", id)
+        .eq("user_id", user!.id)
+        .order("visited_on")
+        .order("position");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
-  const { data: expenses } = useQuery({
+  const { data: expenses, error: expensesError } = useQuery({
     queryKey: ["trip-expenses", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("trip_expenses")
-          .select("*")
-          .eq("trip_id", id)
-          .order("spent_on")
-      ).data ?? [],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trip_expenses")
+        .select("*")
+        .eq("trip_id", id)
+        .eq("user_id", user!.id)
+        .order("spent_on");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
-  const { data: days } = useQuery({
+  const { data: days, error: daysError } = useQuery({
     queryKey: ["trip-days", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("trip_days")
-          .select("*")
-          .eq("trip_id", id)
-          .order("day_date")
-      ).data ?? [],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trip_days")
+        .select("*")
+        .eq("trip_id", id)
+        .eq("user_id", user!.id)
+        .order("day_date");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
   const dayList = useMemo(() => {
@@ -113,6 +140,14 @@ function TripDetail() {
     return Array.from(set).sort();
   }, [days, entries, expenses, trip?.starts_on, trip?.ends_on]);
 
+  const userEntries = useMemo(
+    () => (entries ?? []).filter((entry) => !isInternalJournalEntry(entry)),
+    [entries],
+  );
+  const planningEntries = useMemo(
+    () => userEntries.filter((entry) => !entry.visited_on),
+    [userEntries],
+  );
   const actualExpenses = useMemo(
     () => (expenses ?? []).filter((expense) => expense.category !== "Prévision IA+"),
     [expenses],
@@ -125,8 +160,11 @@ function TripDetail() {
     [expenses],
   );
   const totalSpent = actualExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-  const budget = trip?.budget ? Number(trip.budget) : 0;
-  const spentPct = budget ? Math.min(100, (totalSpent / budget) * 100) : 0;
+  const budgetState = useMemo(
+    () => tripBudgetSnapshot({ budget: trip?.budget, spent: totalSpent, forecast: forecastTotal }),
+    [trip?.budget, totalSpent, forecastTotal],
+  );
+  const budget = budgetState.budget;
 
   const doFinalize = useMutation({
     mutationFn: async () => finalize({ data: { tripId: id } }),
@@ -138,12 +176,31 @@ function TripDetail() {
     onError: (error: any) => toast.error(error?.message ?? "Erreur"),
   });
 
-  if (!trip) {
+  if (tripLoading) {
     return (
       <div className="app-page">
         <AppHeader />
-        <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted-foreground">
-          Voyage introuvable.
+        <div className="mx-auto max-w-5xl px-4 py-8">
+          <div className="skeleton h-64 rounded-3xl" />
+          <div className="mt-5 skeleton h-40 rounded-3xl" />
+        </div>
+      </div>
+    );
+  }
+
+  const loadError = tripError || entriesError || expensesError || daysError;
+  if (loadError || !trip) {
+    return (
+      <div className="app-page">
+        <AppHeader />
+        <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+          <h1 className="font-display text-2xl">Voyage introuvable</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Ce voyage n’existe plus ou n’est pas accessible avec ce compte.
+          </p>
+          <Button asChild variant="outline" className="mt-5 rounded-full">
+            <Link to="/trips">Retour à mes voyages</Link>
+          </Button>
         </div>
       </div>
     );
@@ -181,7 +238,7 @@ function TripDetail() {
                 </Badge>
                 {trip.starts_on && (
                   <span>
-                    {trip.starts_on} → {trip.ends_on ?? "?"}
+                    {formatTripDate(trip.starts_on)} → {trip.ends_on ? formatTripDate(trip.ends_on) : "date libre"}
                   </span>
                 )}
               </div>
@@ -195,7 +252,7 @@ function TripDetail() {
           </div>
 
           <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
-            <QuickStat label="Étapes" value={String(entries?.length ?? 0)} />
+            <QuickStat label="Étapes" value={String(userEntries.length)} />
             <QuickStat label="Jours" value={String(dayList.length || 0)} />
             <QuickStat
               label="Photos"
@@ -210,27 +267,54 @@ function TripDetail() {
             <QuickStat label="Dépensé" value={`${totalSpent.toFixed(0)} €`} />
           </div>
 
-          {budget > 0 && (
+          {(budget > 0 || forecastTotal > 0) && (
             <div className="p-4">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Wallet className="h-3.5 w-3.5" /> Budget réellement dépensé
-                </span>
-                <span className="tabular-nums">
-                  {totalSpent.toFixed(2)} € / {budget.toFixed(0)} €
-                </span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
-                <div
-                  className={`h-full transition-all ${spentPct > 100 ? "bg-destructive" : "gradient-hero"}`}
-                  style={{ width: `${Math.min(100, spentPct)}%` }}
-                />
-              </div>
-              {forecastTotal > 0 && (
-                <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+              {budget > 0 ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Wallet className="h-3.5 w-3.5" /> Budget réellement dépensé
+                    </span>
+                    <span className="tabular-nums">
+                      {totalSpent.toFixed(2)} € / {budget.toFixed(0)} €
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className={`h-full transition-all ${
+                        budgetState.isOverBudget ? "bg-destructive" : "gradient-hero"
+                      }`}
+                      style={{ width: `${Math.min(100, budgetState.spentPct)}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span
+                      className={
+                        budgetState.isOverBudget ? "font-semibold text-destructive" : "text-muted-foreground"
+                      }
+                    >
+                      {budgetState.remaining != null && budgetState.remaining >= 0
+                        ? `${budgetState.remaining.toFixed(2)} € restants`
+                        : `${Math.abs(budgetState.remaining ?? 0).toFixed(2)} € au-dessus du budget`}
+                    </span>
+                    {forecastTotal > 0 && (
+                      <span
+                        className={`rounded-full px-2.5 py-1 font-semibold tabular-nums ${
+                          budgetState.isProjectedOverBudget
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-primary/10 text-primary"
+                        }`}
+                      >
+                        {budgetState.projected.toFixed(2)} € projetés avec IA+
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">Prévision IA+ du voyage</span>
                   <span className="rounded-full bg-primary/10 px-2.5 py-1 font-semibold tabular-nums text-primary">
-                    {forecastTotal.toFixed(2)} € prévu
+                    {forecastTotal.toFixed(2)} € prévu · ajoute un budget pour suivre l’écart
                   </span>
                 </div>
               )}
@@ -273,7 +357,16 @@ function TripDetail() {
           </section>
         )}
 
-        {(entries ?? []).some((entry) => entry.lat != null && entry.lng != null) && (
+        {planningEntries.length > 0 && (
+          <PlanningInbox
+            entries={planningEntries}
+            tripId={id}
+            userId={user!.id}
+            dayOptions={dayList}
+          />
+        )}
+
+        {userEntries.some((entry) => entry.lat != null && entry.lng != null) && (
           <section className="mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <div className="flex items-center justify-between px-4 py-3">
               <h2 className="font-display text-lg">🗺️ Parcours</h2>
@@ -296,7 +389,7 @@ function TripDetail() {
                   </div>
                 }
               >
-                <TripRouteMap entries={entries ?? []} />
+                <TripRouteMap entries={userEntries} />
               </ClientOnly>
             </div>
           </section>
@@ -438,11 +531,140 @@ function TripDetail() {
         open={showRecap}
         onOpenChange={setShowRecap}
         trip={trip}
-        entries={entries ?? []}
+        entries={userEntries}
         expenses={expenses ?? []}
         days={days ?? []}
       />
     </div>
+  );
+}
+
+function PlanningInbox({
+  entries,
+  tripId,
+  userId,
+  dayOptions,
+}: {
+  entries: any[];
+  tripId: string;
+  userId: string;
+  dayOptions: string[];
+}) {
+  const qc = useQueryClient();
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const assignDay = async (entryId: string, day: string) => {
+    if (!day || pendingId) return;
+    setPendingId(entryId);
+    try {
+      const { error } = await supabase
+        .from("trip_entries")
+        .update({ visited_on: day })
+        .eq("id", entryId)
+        .eq("trip_id", tripId)
+        .eq("user_id", userId);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+      toast.success("Lieu ajouté à la journée");
+    } catch (error: any) {
+      toast.error(error?.message ?? "Impossible de planifier ce lieu.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const removeEntry = async (entryId: string) => {
+    if (pendingId) return;
+    setPendingId(entryId);
+    try {
+      const { error } = await supabase
+        .from("trip_entries")
+        .delete()
+        .eq("id", entryId)
+        .eq("trip_id", tripId)
+        .eq("user_id", userId);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+      toast.success("Élément retiré du voyage");
+    } catch (error: any) {
+      toast.error(error?.message ?? "Impossible de retirer cet élément.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  return (
+    <section
+      data-testid="trip-planning-inbox"
+      className="mt-6 overflow-hidden rounded-3xl border border-amber-400/20 bg-amber-500/[0.05] shadow-soft"
+    >
+      <div className="flex items-start gap-3 border-b border-border/60 p-4 sm:p-5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-500/15 text-amber-500">
+          <CalendarDays className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="font-display text-lg font-bold">À organiser</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            Les lieux ajoutés depuis Explorer restent ici tant que tu ne leur as pas choisi une journée.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-2 p-3 sm:p-4">
+        {entries.map((entry) => (
+          <div
+            key={entry.id}
+            className="grid gap-3 rounded-2xl border border-border/70 bg-card p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{entry.title}</p>
+              {(entry.city || entry.country) && (
+                <p className="mt-1 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  {[entry.city, entry.country].filter(Boolean).join(", ")}
+                </p>
+              )}
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              {dayOptions.length > 0 ? (
+                <select
+                  aria-label={`Planifier ${entry.title}`}
+                  defaultValue=""
+                  disabled={pendingId === entry.id}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value) void assignDay(entry.id, value);
+                  }}
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary/50 sm:w-44"
+                >
+                  <option value="">Choisir un jour</option>
+                  {dayOptions.map((day) => (
+                    <option key={day} value={day}>
+                      {formatTripDate(day)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs text-muted-foreground">Ajoute d’abord une journée.</span>
+              )}
+              <button
+                type="button"
+                aria-label={`Retirer ${entry.title} du voyage`}
+                disabled={pendingId === entry.id}
+                onClick={() => void removeEntry(entry.id)}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+              >
+                {pendingId === entry.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
