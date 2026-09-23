@@ -86,16 +86,12 @@ export function BottomNav() {
 }
 
 function MobileExplorer({ active, pathname }: { active: boolean; pathname: string }) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet>
       <SheetTrigger asChild>
         <button
           type="button"
           aria-label="Ouvrir Explorer"
-          aria-haspopup="dialog"
-          aria-expanded={open}
           className={`relative flex min-h-[52px] w-full touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
             active ? "text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" : "text-muted-foreground"
           }`}
