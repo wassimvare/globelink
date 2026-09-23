@@ -39,7 +39,7 @@ function parseOptionalBudget(value: string) {
   return Math.round(amount * 100) / 100;
 }
 
-export function buildTripInsert(userId: string, form: TripFormState) {
+export function buildTripUpdate(form: TripFormState) {
   const country = form.country.trim();
   if (!country) throw new Error("Renseigne le pays du voyage.");
   validateTripDates(form);
@@ -47,7 +47,6 @@ export function buildTripInsert(userId: string, form: TripFormState) {
   const city = form.city.trim();
   const title = form.title.trim() || `${country} voyage`;
   return {
-    user_id: userId,
     title,
     country,
     city: city || null,
@@ -56,6 +55,13 @@ export function buildTripInsert(userId: string, form: TripFormState) {
     ends_on: form.endsOn || null,
     notes: form.notes.trim() || null,
     cover_url: destinationCover(country, city),
+  };
+}
+
+export function buildTripInsert(userId: string, form: TripFormState) {
+  return {
+    user_id: userId,
+    ...buildTripUpdate(form),
     status: "planned" as const,
   };
 }
