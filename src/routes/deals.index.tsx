@@ -13,6 +13,7 @@ import {
 } from "@/lib/live-catalog";
 import { dailyWorldActivitySelection } from "@/lib/world-activities";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
 
 export const Route = createFileRoute("/deals/")({
   head: () => ({
@@ -139,14 +140,13 @@ function DealsPage() {
                 ? ("/deals/$slug" as const)
                 : ("/activities/$slug" as const);
               return (
-                <Link
+                <article
                   key={item.id}
-                  to={destination}
-                  params={{ slug: item.slug }}
                   style={{ animationDelay: `${Math.min(index, 10) * 45}ms` }}
                   className="animate-rise group overflow-hidden rounded-3xl border border-border bg-card shadow-soft transition hover:-translate-y-1 hover:shadow-elevated"
                 >
-                  <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-primary/15 via-secondary to-accent/15">
+                  <Link to={destination} params={{ slug: item.slug }} className="block">
+                    <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-primary/15 via-secondary to-accent/15">
                     <CatalogImage
                       item={item}
                       lookup={{
@@ -186,7 +186,28 @@ function DealsPage() {
                       </span>
                     </div>
                   </div>
-                </Link>
+                  </Link>
+                  <div className="border-t border-border/70 p-3">
+                    <AddToTripButton
+                      item={{
+                        title: item.title,
+                        city: item.city,
+                        country: item.country,
+                        lat: item.latitude,
+                        lng: item.longitude,
+                        kind: item.kind,
+                        rating: item.rating,
+                        source: catalogSourceLabel(item),
+                        sourceUrl: item.source_url,
+                        notes: item.description,
+                      }}
+                      compact
+                      size="sm"
+                      variant="ghost"
+                      className="w-full rounded-xl"
+                    />
+                  </div>
+                </article>
               );
             })}
           </div>
