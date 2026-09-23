@@ -36,10 +36,20 @@ export const finalizeTrip = createServerFn({ method: "POST" })
         .from("trip_entries")
         .select("*")
         .eq("trip_id", data.tripId)
+        .eq("user_id", userId)
         .order("visited_on", { ascending: true })
         .order("position"),
-      supabase.from("trip_expenses").select("*").eq("trip_id", data.tripId),
-      supabase.from("trip_days").select("*").eq("trip_id", data.tripId).order("day_date"),
+      supabase
+        .from("trip_expenses")
+        .select("*")
+        .eq("trip_id", data.tripId)
+        .eq("user_id", userId),
+      supabase
+        .from("trip_days")
+        .select("*")
+        .eq("trip_id", data.tripId)
+        .eq("user_id", userId)
+        .order("day_date"),
     ]);
 
     const userEntries = (entries ?? []).filter((entry) => !isInternalJournalEntry(entry));
