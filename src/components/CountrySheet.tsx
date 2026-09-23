@@ -26,6 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchLiveCatalog, type LiveCatalogItem } from "@/lib/live-catalog";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import { DestinationImage } from "@/components/DestinationImage";
 import { getPublicExchangeRate, getPublicWeather } from "@/lib/public-open-data.functions";
 
@@ -650,38 +651,60 @@ function PlaceGroup({
       </div>
       <div className="grid grid-cols-2 gap-2">
         {items.map((it) => (
-          <Link
+          <article
             key={`${it.name}-${it.city ?? ""}`}
-            to="/activities/$slug"
-            params={{ slug: it.slug || slugify(it.name) }}
             className="group overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/30 hover:shadow-soft"
           >
-            <div className="aspect-video overflow-hidden bg-secondary">
-              <CatalogImage
+            <Link
+              to="/activities/$slug"
+              params={{ slug: it.slug || slugify(it.name) }}
+              className="block"
+            >
+              <div className="aspect-video overflow-hidden bg-secondary">
+                <CatalogImage
+                  item={{
+                    id: it.id,
+                    kind: it.kind,
+                    title: it.name,
+                    image_url: it.image_url ?? null,
+                    tags: it.tags ?? null,
+                  }}
+                  lookup={{
+                    latitude: it.latitude ?? null,
+                    longitude: it.longitude ?? null,
+                    city: it.city ?? null,
+                    country: it.country ?? null,
+                  }}
+                  className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                />
+              </div>
+              <div className="p-2">
+                <div className="truncate text-sm font-medium">{it.name}</div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="truncate">{it.city}</span>
+                  {it.rating && <span>★ {it.rating.toFixed(1)}</span>}
+                </div>
+              </div>
+            </Link>
+            <div className="border-t border-border/60 p-1.5">
+              <AddToTripButton
                 item={{
-                  id: it.id,
-                  kind: it.kind,
                   title: it.name,
-                  image_url: it.image_url ?? null,
-                  tags: it.tags ?? null,
-                }}
-                lookup={{
-                  latitude: it.latitude ?? null,
-                  longitude: it.longitude ?? null,
                   city: it.city ?? null,
                   country: it.country ?? null,
+                  lat: it.latitude ?? null,
+                  lng: it.longitude ?? null,
+                  kind: it.kind,
+                  rating: it.rating ?? null,
+                  source: "Explorer GlobeLink",
                 }}
-                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                compact
+                size="sm"
+                variant="ghost"
+                className="w-full rounded-lg"
               />
             </div>
-            <div className="p-2">
-              <div className="truncate text-sm font-medium">{it.name}</div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span className="truncate">{it.city}</span>
-                {it.rating && <span>★ {it.rating.toFixed(1)}</span>}
-              </div>
-            </div>
-          </Link>
+          </article>
         ))}
       </div>
     </div>
