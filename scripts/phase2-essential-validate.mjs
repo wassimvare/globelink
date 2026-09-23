@@ -14,6 +14,9 @@ const mapDomain = fs.existsSync(path.join(root, "src/features/explorer/map-domai
   ? read("src/features/explorer/map-domain.ts")
   : "";
 const match = read("src/routes/_authenticated.match.tsx");
+const matchDomain = fs.existsSync(path.join(root, "src/features/match/travel-match.ts"))
+  ? read("src/features/match/travel-match.ts")
+  : "";
 const messages = read("src/routes/_authenticated.messages.index.tsx");
 const notifications = read("src/routes/_authenticated.notifications.tsx");
 const trips = read("src/routes/_authenticated.trips.$id.tsx");
@@ -65,7 +68,13 @@ check(
 );
 check(
   "Travel Match calcule une compatibilité explicable",
-  match.includes("function scoreTraveler") && match.includes("function matchQuality") && match.includes("suggestedMeetups"),
+  (
+    (match.includes("function scoreTraveler") && match.includes("function matchQuality")) ||
+    (match.includes("@/features/match/travel-match") &&
+      matchDomain.includes("function scoreTraveler") &&
+      matchDomain.includes("function matchQuality"))
+  ) &&
+    match.includes("suggestedMeetups"),
 );
 check(
   "Travel Match crée les likes via fonction serveur",

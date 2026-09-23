@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run check:security && npm run check:phase1 && npm run check:phase2 && npm run check:phase3 && npm run check:phase4 && npm run check:phase5 && npm run check:phase6 && npm run check:phase7 && npm run check:map && npm run check:explorer && npm run check:add-to-trip && npm run lint && npm run generate-routes && npm run typecheck && npm run test && npm run build",
+    "check": "npm run check:security && npm run check:phase1 && npm run check:phase2 && npm run check:phase3 && npm run check:phase4 && npm run check:phase5 && npm run check:phase6 && npm run check:phase7 && npm run check:travel-match && npm run check:map && npm run check:explorer && npm run check:add-to-trip && npm run lint && npm run generate-routes && npm run typecheck && npm run test && npm run build",
     "check:security": "node scripts/security-check.mjs",
     "check:apis": "node scripts/check-official-apis.mjs",
     "check:provider-keys": "node scripts/smoke-provider-keys.mjs",
@@ -28,7 +28,8 @@
     "check:phase4": "node scripts/phase4-architecture.mjs",
     "check:phase5": "node scripts/phase5-catalog-validate.mjs && vitest run src/lib/catalog-reliability.test.ts src/lib/catalog-quality.test.ts",
     "check:phase6": "node scripts/phase6-journal-validate.mjs && vitest run src/features/travel/day-program.test.ts src/features/travel/program-selection-budget.test.ts src/features/travel/trip-domain.test.ts src/features/travel/trip-journey.test.ts",
-    "check:phase7": "node scripts/phase7-ai-validate.mjs && vitest run src/features/ai/ai-offers.test.ts src/features/ai/phase7-actions.test.ts src/lib/travel-price-sources.server.test.ts"
+    "check:phase7": "node scripts/phase7-ai-validate.mjs && vitest run src/features/ai/ai-offers.test.ts src/features/ai/phase7-actions.test.ts src/lib/travel-price-sources.server.test.ts",
+    "check:travel-match": "node scripts/travel-match-step7-validate.mjs && vitest run src/features/match/travel-match.test.ts src/features/match/match-draft.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",

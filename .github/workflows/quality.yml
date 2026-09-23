@@ -49,6 +49,9 @@ jobs:
       - name: Validate Phase 7 AI actions
         run: npm run check:phase7
 
+      - name: Validate Travel Match beyond swipe
+        run: npm run check:travel-match
+
       - name: Validate add-to-trip journey
         run: npm run check:add-to-trip
 
