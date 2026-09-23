@@ -118,6 +118,58 @@ test.describe("Phase 3 — parcours authentifiés live", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("Voyage: création, budget, journal et modification restent cohérents", async ({ page }, testInfo) => {
+    await login(page, accounts[0]);
+    const suffix = `${testInfo.project.name}-${Date.now()}`;
+    const title = `E2E Voyage ${suffix}`;
+
+    await page.goto("/trips", { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Nouveau voyage" }).click();
+    const createDialog = page.getByRole("dialog");
+    await createDialog.getByTestId("trip-create-title").fill(title);
+    await createDialog.getByTestId("trip-create-country").fill("France");
+    await createDialog.getByTestId("trip-create-city").fill("Lyon");
+    await createDialog.getByTestId("trip-create-start").fill("2026-10-10");
+    await createDialog.getByTestId("trip-create-end").fill("2026-10-12");
+    await createDialog.getByTestId("trip-create-budget").fill("500");
+    await createDialog.getByTestId("trip-create-submit").click();
+
+    await expect(page).toHaveURL(/\/trips\/[0-9a-f-]{20,}$/i, { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByText("500.00 € / 500 €")).toBeVisible();
+
+    const firstExpenseButton = page.getByRole("button", { name: "Dépense", exact: true }).first();
+    await firstExpenseButton.click();
+    const expenseDialog = page.getByRole("dialog");
+    await expenseDialog.getByPlaceholder("Libellé").fill("Déjeuner E2E");
+    await expenseDialog.getByPlaceholder("Montant (€)").fill("12.50");
+    await expenseDialog.getByPlaceholder("Catégorie (restaurant, transport…)").fill("Restaurant");
+    await expenseDialog.getByRole("button", { name: "Ajouter", exact: true }).click();
+    await expect(page.getByText("Déjeuner E2E")).toBeVisible();
+    await expect(page.getByText("12.50 €").first()).toBeVisible();
+
+    const firstJournalButton = page.getByRole("button", { name: "Ajouter au journal" }).first();
+    await firstJournalButton.click();
+    const journalDialog = page.getByRole("dialog");
+    await journalDialog.getByPlaceholder("Titre *").fill("Balade E2E");
+    await journalDialog.getByPlaceholder("Notes, ressenti, souvenirs…").fill("Parcours de validation.");
+    await journalDialog.getByRole("button", { name: "Ajouter", exact: true }).click();
+    await expect(page.getByText("Balade E2E")).toBeVisible();
+
+    await page.getByRole("button", { name: "Modifier le voyage" }).click();
+    const editDialog = page.getByRole("dialog");
+    await editDialog.getByLabel("Budget du voyage").fill("600");
+    await editDialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(page.getByText("12.50 € / 600 €")).toBeVisible();
+
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/trips", { waitUntil: "domcontentloaded" });
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByLabel(`Supprimer le voyage ${title}`).click();
+    await expect(page.getByText(title, { exact: true })).toHaveCount(0, { timeout: 15_000 });
+  });
+
   test("deux comptes réels restent isolés entre deux contextes navigateur", async ({ browser }) => {
     const contextA = await browser.newContext();
     const contextB = await browser.newContext();
