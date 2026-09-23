@@ -45,7 +45,7 @@ import { getSignedMediaUrl } from "@/lib/storage";
 import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
 import { formatTripDate } from "@/features/travel/trip-domain";
 import { isInternalJournalEntry } from "@/features/travel/day-program";
-import { tripBudgetSnapshot } from "@/features/travel/trip-journey";
+import { buildTripDateRange, tripBudgetSnapshot } from "@/features/travel/trip-journey";
 
 export const Route = createFileRoute("/_authenticated/trips/$id")({
   component: TripDetail,
@@ -129,13 +129,7 @@ function TripDetail() {
     (entries ?? []).forEach((entry) => entry.visited_on && set.add(entry.visited_on));
     (expenses ?? []).forEach((expense) => expense.spent_on && set.add(expense.spent_on));
 
-    if (trip?.starts_on && trip?.ends_on) {
-      const start = new Date(`${trip.starts_on}T12:00:00`);
-      const end = new Date(`${trip.ends_on}T12:00:00`);
-      for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-        set.add(cursor.toISOString().slice(0, 10));
-      }
-    }
+    buildTripDateRange(trip?.starts_on, trip?.ends_on, 366).forEach((day) => set.add(day));
 
     return Array.from(set).sort();
   }, [days, entries, expenses, trip?.starts_on, trip?.ends_on]);
@@ -257,7 +251,7 @@ function TripDetail() {
             <QuickStat
               label="Photos"
               value={String(
-                (entries ?? []).reduce(
+                userEntries.reduce(
                   (count, entry) =>
                     count + (entry.media_urls?.length ?? 0) + (entry.image_url ? 1 : 0),
                   0,
@@ -329,7 +323,7 @@ function TripDetail() {
           country={trip.country}
           startsOn={trip.starts_on}
           endsOn={trip.ends_on}
-          entryCount={entries?.length ?? 0}
+          entryCount={userEntries.length}
         />
 
         {!finalized && (
@@ -403,7 +397,7 @@ function TripDetail() {
                 Chaque journée est organisée clairement : programme, météo, humeur et budget au même endroit.
               </p>
             </div>
-            {dayList.length > 0 && (
+            {dayList.length > 0 && !(trip.starts_on && trip.ends_on) && (
               <AddDayButton
                 tripId={id}
                 userId={user!.id}
@@ -708,8 +702,9 @@ function AddDayButton({
       if (!used.has(candidate) && (!endsOn || candidate <= endsOn)) return candidate;
     }
 
+    if (startsOn && endsOn) return "";
     if (existing.length > 0) return addDay([...existing].sort().at(-1)!);
-    return new Date().toISOString().slice(0, 10);
+    return startsOn || new Date().toISOString().slice(0, 10);
   }, [existing, startsOn, endsOn]);
 
   const [date, setDate] = useState(suggestedDate);
