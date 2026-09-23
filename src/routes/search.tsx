@@ -7,6 +7,7 @@ import { universalSearch, KIND_META, type SearchKind, type SearchResult } from "
 import { BackButton } from "@/components/BackButton";
 import { catalogOfficialWebsite, fetchLiveCatalog, itemLocation } from "@/lib/live-catalog";
 import { CatalogImage } from "@/components/CatalogImage";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import { getSignedMediaUrl } from "@/lib/storage";
 
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
@@ -205,35 +206,59 @@ function SearchPage() {
               ) : liveSuggestions.length > 0 ? (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {liveSuggestions.slice(0, 8).map((item, index) => (
-                    <Link
+                    <article
                       key={item.id}
-                      to="/activities/$slug"
-                      params={{ slug: item.slug }}
-                      className="group flex min-w-0 items-center gap-3 rounded-2xl border border-border/50 bg-card p-3 transition hover:border-primary/35 hover:shadow-soft"
+                      className="overflow-hidden rounded-2xl border border-border/50 bg-card transition hover:border-primary/35 hover:shadow-soft"
                     >
-                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-secondary">
-                        <CatalogImage
-                          item={item}
-                          lookup={{
-                            latitude: item.latitude,
-                            longitude: item.longitude,
+                      <Link
+                        to="/activities/$slug"
+                        params={{ slug: item.slug }}
+                        className="group flex min-w-0 items-center gap-3 p-3"
+                      >
+                        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-secondary">
+                          <CatalogImage
+                            item={item}
+                            lookup={{
+                              latitude: item.latitude,
+                              longitude: item.longitude,
+                              city: item.city,
+                              country: item.country,
+                              website: catalogOfficialWebsite(item),
+                            }}
+                            fallbackIndex={index}
+                            showIllustrationBadge={false}
+                            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{item.title}</p>
+                          <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                            <MapPin className="h-3 w-3 shrink-0" /> {itemLocation(item)}
+                          </p>
+                        </div>
+                        <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </Link>
+                      <div className="border-t border-border/60 p-2">
+                        <AddToTripButton
+                          item={{
+                            title: item.title,
                             city: item.city,
                             country: item.country,
-                            website: catalogOfficialWebsite(item),
+                            lat: item.latitude,
+                            lng: item.longitude,
+                            kind: item.kind,
+                            rating: item.rating,
+                            source: item.provider,
+                            sourceUrl: item.source_url,
+                            notes: item.description,
                           }}
-                          fallbackIndex={index}
-                          showIllustrationBadge={false}
-                          className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                          compact
+                          size="sm"
+                          variant="ghost"
+                          className="w-full rounded-xl"
                         />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{item.title}</p>
-                        <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
-                          <MapPin className="h-3 w-3 shrink-0" /> {itemLocation(item)}
-                        </p>
-                      </div>
-                      <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </Link>
+                    </article>
                   ))}
                 </div>
               ) : (
@@ -333,20 +358,42 @@ function ResultGroup({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.02, duration: 0.2 }}
           >
-            <Link
-              to={r.to as any}
-              className="group flex items-center gap-3 rounded-2xl border border-border/40 bg-card/60 p-3 backdrop-blur-sm transition hover:border-primary/40 hover:shadow-soft"
-              onClick={() => pushRecent(query)}
-            >
-              <SearchResultThumbnail result={r} emoji={meta.emoji} index={i} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{highlight(r.title, query)}</p>
-                {r.subtitle && (
-                  <p className="truncate text-sm text-muted-foreground">{r.subtitle}</p>
-                )}
-              </div>
-              <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
-            </Link>
+            <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-sm transition hover:border-primary/40 hover:shadow-soft">
+              <Link
+                to={r.to as any}
+                className="group flex items-center gap-3 p-3"
+                onClick={() => pushRecent(query)}
+              >
+                <SearchResultThumbnail result={r} emoji={meta.emoji} index={i} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{highlight(r.title, query)}</p>
+                  {r.subtitle && (
+                    <p className="truncate text-sm text-muted-foreground">{r.subtitle}</p>
+                  )}
+                </div>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
+              </Link>
+              {r.catalogItem && (
+                <div className="border-t border-border/60 p-2">
+                  <AddToTripButton
+                    item={{
+                      title: r.catalogItem.title,
+                      city: r.catalogItem.city,
+                      country: r.catalogItem.country,
+                      lat: r.catalogItem.latitude,
+                      lng: r.catalogItem.longitude,
+                      kind: r.catalogItem.kind,
+                      source: r.catalogItem.provider,
+                      sourceUrl: r.catalogItem.source_url,
+                    }}
+                    compact
+                    size="sm"
+                    variant="ghost"
+                    className="w-full rounded-xl"
+                  />
+                </div>
+              )}
+            </div>
           </motion.li>
         ))}
       </ul>
