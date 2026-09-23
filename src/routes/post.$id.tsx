@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getMediaManifestUrl, getSignedMediaUrl } from "@/lib/storage";
 import { AppHeader } from "@/components/AppHeader";
 import { PostDetailActions } from "@/components/PostDetailActions";
+import { AddToTripButton } from "@/components/AddToTripButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { REACTIONS, setReaction, type ReactionKey } from "@/lib/social";
@@ -452,6 +453,33 @@ function PostDetail() {
               </div>
             </div>
             {post.caption && <p className="mt-4 text-sm">{post.caption}</p>}
+            {(post.city || post.country || post.activity) && (
+              <div className="mt-4">
+                <AddToTripButton
+                  item={{
+                    title:
+                      post.activity ||
+                      [post.city, post.country].filter(Boolean).join(", ") ||
+                      "Lieu partagé sur GlobeLink",
+                    city: post.city,
+                    country: post.country,
+                    lat: post.lat,
+                    lng: post.lng,
+                    kind: post.activity ? "activity" : "stop",
+                    source: "Publication GlobeLink",
+                    notes: post.caption ? post.caption.slice(0, 300) : null,
+                  }}
+                  size="sm"
+                  variant="secondary"
+                  label={
+                    post.activity
+                      ? "Ajouter cette activité à mon voyage"
+                      : "Ajouter ce lieu à mon voyage"
+                  }
+                  className="w-full rounded-xl"
+                />
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
               <button onClick={() => toggleLike.mutate()} className="flex items-center gap-1.5">
                 <Heart className={`h-5 w-5 ${liked ? "fill-destructive text-destructive" : ""}`} />
