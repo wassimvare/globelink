@@ -55,6 +55,7 @@ import {
 } from "@/lib/live-catalog";
 import { CatalogImage } from "@/components/CatalogImage";
 import { AddToTripButton } from "@/components/AddToTripButton";
+import { AIContextActions } from "@/components/AIContextActions";
 import type { Database } from "@/integrations/supabase/types";
 import { slugifyDestination } from "@/lib/phase2";
 
@@ -730,13 +731,26 @@ function FeedPage() {
                     <ChevronRight className="h-4 w-4" />
                   </Link>
                   {nextTrip ? (
-                    <Link
-                      to="/destinations/$slug"
-                      params={{ slug: slugifyDestination(nextTrip.country) }}
-                      className="inline-flex h-10 items-center gap-1 rounded-xl bg-secondary px-3 text-xs font-semibold"
-                    >
-                      Explorer la destination <MapPin className="h-4 w-4" />
-                    </Link>
+                    <>
+                      <Link
+                        to="/destinations/$slug"
+                        params={{ slug: slugifyDestination(nextTrip.country) }}
+                        className="inline-flex h-10 items-center gap-1 rounded-xl bg-secondary px-3 text-xs font-semibold"
+                      >
+                        Explorer la destination <MapPin className="h-4 w-4" />
+                      </Link>
+                      <AIContextActions
+                        destination={[nextTrip.city, nextTrip.country].filter(Boolean).join(", ")}
+                        freePrompt={`Donne-moi un conseil rapide pour préparer mon voyage à ${[nextTrip.city, nextTrip.country].filter(Boolean).join(", ") || nextTrip.title}.`}
+                        proPrompt={`Analyse mon voyage "${nextTrip.title}" dans mon carnet GlobeLink et propose les améliorations les plus utiles pour les journées, les trajets, le budget et les réservations.`}
+                        proMode="plan"
+                        tripId={nextTrip.id}
+                        freeLabel="Conseil rapide"
+                        proLabel="Optimiser avec IA+"
+                        compact
+                        className="basis-full"
+                      />
+                    </>
                   ) : (
                     <Link
                       to="/intelligence"
