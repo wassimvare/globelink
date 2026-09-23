@@ -8,6 +8,7 @@ import {
   Camera,
   Loader2,
   MapPin,
+  Pencil,
   Plus,
   Sparkles,
   Trash2,
@@ -32,6 +33,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -43,7 +45,11 @@ import { finalizeTrip } from "@/lib/trip-finalize.functions";
 import { resolvedDestinationCover } from "@/lib/destination-cover";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
-import { formatTripDate } from "@/features/travel/trip-domain";
+import {
+  buildTripUpdate,
+  formatTripDate,
+  type TripFormState,
+} from "@/features/travel/trip-domain";
 import { isInternalJournalEntry } from "@/features/travel/day-program";
 import { buildTripDateRange, tripBudgetSnapshot } from "@/features/travel/trip-journey";
 
@@ -316,6 +322,8 @@ function TripDetail() {
           )}
         </header>
 
+        {!finalized && <EditTripButton trip={trip} userId={user!.id} />}
+
         <TripJourneyRail
           tripId={id}
           tripTitle={trip.title}
@@ -529,6 +537,134 @@ function TripDetail() {
         expenses={expenses ?? []}
         days={days ?? []}
       />
+    </div>
+  );
+}
+
+function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const initialForm = (): TripFormState => ({
+    title: String(trip.title ?? ""),
+    country: String(trip.country ?? ""),
+    city: String(trip.city ?? ""),
+    budget: trip.budget == null ? "" : String(trip.budget),
+    startsOn: String(trip.starts_on ?? ""),
+    endsOn: String(trip.ends_on ?? ""),
+    notes: String(trip.notes ?? ""),
+  });
+  const [form, setForm] = useState<TripFormState>(initialForm);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const patch = buildTripUpdate(form);
+      const { error } = await supabase
+        .from("trips")
+        .update(patch)
+        .eq("id", trip.id)
+        .eq("user_id", userId);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["trip", trip.id] }),
+        qc.invalidateQueries({ queryKey: ["trips"] }),
+        qc.invalidateQueries({ queryKey: ["add-to-trip-picker"] }),
+      ]);
+      setOpen(false);
+      toast.success("Voyage mis à jour");
+    },
+    onError: (error: any) => toast.error(error?.message ?? "Impossible de modifier ce voyage."),
+  });
+
+  return (
+    <div className="mt-3 flex justify-end">
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (nextOpen) setForm(initialForm());
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="rounded-full">
+            <Pencil className="mr-2 h-4 w-4" /> Modifier le voyage
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Modifier le voyage</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Input
+              aria-label="Titre du voyage"
+              placeholder="Titre"
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                aria-label="Pays du voyage"
+                placeholder="Pays *"
+                value={form.country}
+                onChange={(event) => setForm({ ...form, country: event.target.value })}
+              />
+              <Input
+                aria-label="Ville du voyage"
+                placeholder="Ville / région"
+                value={form.city}
+                onChange={(event) => setForm({ ...form, city: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                Départ
+                <Input
+                  type="date"
+                  value={form.startsOn}
+                  onChange={(event) => setForm({ ...form, startsOn: event.target.value })}
+                />
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                Retour
+                <Input
+                  type="date"
+                  min={form.startsOn || undefined}
+                  value={form.endsOn}
+                  onChange={(event) => setForm({ ...form, endsOn: event.target.value })}
+                />
+              </label>
+            </div>
+            <Input
+              aria-label="Budget du voyage"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="Budget prévu (€)"
+              value={form.budget}
+              onChange={(event) => setForm({ ...form, budget: event.target.value })}
+            />
+            <Textarea
+              aria-label="Notes du voyage"
+              rows={4}
+              placeholder="Notes, plans, envies…"
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              disabled={save.isPending || !form.country.trim()}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
