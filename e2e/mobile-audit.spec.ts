@@ -115,13 +115,16 @@ test.describe("Audit mobile iPhone + Android", () => {
     test.skip(!isMobileProject(testInfo), "Audit réservé aux projets mobiles.");
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
+    const nav = page.locator(".mobile-bottom-nav");
+    await expect(nav).toHaveAttribute("data-hydrated", "true", { timeout: 10_000 });
     const explorerButton = page.getByRole("button", { name: "Ouvrir Explorer" });
     await expect(explorerButton).toBeVisible();
-    await page.waitForTimeout(700);
     await explorerButton.click();
+    await expect(explorerButton).toHaveAttribute("aria-expanded", "true");
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
+    await page.waitForTimeout(650);
     await expect(dialog.getByText("Explorer GlobeLink", { exact: true })).toBeVisible();
     for (const label of ["Carte", "Destinations", "Activités", "Sélection du moment", "Marketplace"]) {
       await expect(dialog.getByRole("link", { name: new RegExp(label, "i") }).first()).toBeVisible();
