@@ -1890,7 +1890,12 @@ button {
 
   .mobile-bottom-nav-inner {
     grid-template-columns: 1fr 1fr 3.5rem 1fr 1fr;
-    padding-inline: 0.25rem;
+    padding-left: max(0.25rem, env(safe-area-inset-left));
+    padding-right: max(0.25rem, env(safe-area-inset-right));
+  }
+  .mobile-bottom-nav-inner > a,
+  .mobile-bottom-nav-inner > button {
+    min-height: 3.25rem;
   }
   .mobile-bottom-nav a {
     min-width: 0;
