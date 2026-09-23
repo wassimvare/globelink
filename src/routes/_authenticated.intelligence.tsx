@@ -16,6 +16,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { getAiProEntitlement } from "@/lib/ai-pro.functions";
+import { AI_OFFERS } from "@/features/ai/ai-offers";
 
 export const Route = createFileRoute("/_authenticated/intelligence")({
   head: () => ({
@@ -89,7 +90,7 @@ function IntelligencePage() {
                   <Sparkles className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-cyan-500">Gratuit</div>
+                  <div className="text-xl font-bold text-cyan-500">{AI_OFFERS.free.label}</div>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     Pour t’inspirer et préparer les grandes lignes.
                   </p>
@@ -110,7 +111,7 @@ function IntelligencePage() {
               </div>
 
               <Button asChild variant="outline" className="mt-5 w-full rounded-2xl border-cyan-400/30">
-                <Link to="/ai-trip">
+                <Link to={AI_OFFERS.free.route}>
                   <Wand2 className="mr-2 h-4 w-4" /> Utiliser l’IA gratuite
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
@@ -126,7 +127,7 @@ function IntelligencePage() {
                   </div>
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-2xl font-bold text-violet-400">IA+</div>
+                      <div className="text-2xl font-bold text-violet-400">{AI_OFFERS.plus.label}</div>
                       {hasPlus ? (
                         <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-500">
                           Actif
@@ -162,7 +163,7 @@ function IntelligencePage() {
               </div>
 
               <Button asChild className="relative mt-6 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-500 text-white shadow-lg shadow-violet-500/20 hover:opacity-95">
-                <Link to="/ai-pro">
+                <Link to={AI_OFFERS.plus.route}>
                   <Crown className="mr-2 h-4 w-4" /> {hasPlus ? "Ouvrir IA+" : "Découvrir IA+ — 7 jours gratuits"}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
