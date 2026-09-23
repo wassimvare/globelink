@@ -155,17 +155,23 @@ function TripsPage() {
                 </DialogHeader>
                 <div className="space-y-3">
                   <Input
+                    data-testid="trip-create-title"
+                    aria-label="Titre du voyage"
                     placeholder="Titre (ex : Été indonésien)"
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
                   />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Input
+                      data-testid="trip-create-country"
+                      aria-label="Pays du voyage"
                       placeholder="Pays *"
                       value={form.country}
                       onChange={(e) => setForm({ ...form, country: e.target.value })}
                     />
                     <Input
+                      data-testid="trip-create-city"
+                      aria-label="Ville du voyage"
                       placeholder="Ville / région"
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
@@ -175,6 +181,8 @@ function TripsPage() {
                     <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
                       Départ
                       <Input
+                        data-testid="trip-create-start"
+                        aria-label="Date de départ"
                         type="date"
                         value={form.startsOn}
                         onChange={(e) => setForm({ ...form, startsOn: e.target.value })}
@@ -183,6 +191,8 @@ function TripsPage() {
                     <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
                       Retour
                       <Input
+                        data-testid="trip-create-end"
+                        aria-label="Date de retour"
                         type="date"
                         min={form.startsOn || undefined}
                         value={form.endsOn}
@@ -191,13 +201,18 @@ function TripsPage() {
                     </label>
                   </div>
                   <Input
+                    data-testid="trip-create-budget"
+                    aria-label="Budget du voyage"
                     placeholder="Budget prévu (€)"
                     type="number"
                     min="0"
+                    step="0.01"
+                    inputMode="decimal"
                     value={form.budget}
                     onChange={(e) => setForm({ ...form, budget: e.target.value })}
                   />
                   <Textarea
+                    aria-label="Notes du voyage"
                     placeholder="Notes, plans, envies…"
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -206,6 +221,7 @@ function TripsPage() {
                 </div>
                 <DialogFooter>
                   <Button
+                    data-testid="trip-create-submit"
                     disabled={!form.country.trim() || create.isPending}
                     onClick={() => create.mutate()}
                     className="rounded-full"

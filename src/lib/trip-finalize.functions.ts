@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { isInternalJournalEntry } from "@/features/travel/day-program";
+import { buildTripDateRange } from "@/features/travel/trip-journey";
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   const R = 6371;
@@ -34,13 +36,27 @@ export const finalizeTrip = createServerFn({ method: "POST" })
         .from("trip_entries")
         .select("*")
         .eq("trip_id", data.tripId)
+        .eq("user_id", userId)
         .order("visited_on", { ascending: true })
         .order("position"),
-      supabase.from("trip_expenses").select("*").eq("trip_id", data.tripId),
-      supabase.from("trip_days").select("*").eq("trip_id", data.tripId).order("day_date"),
+      supabase
+        .from("trip_expenses")
+        .select("*")
+        .eq("trip_id", data.tripId)
+        .eq("user_id", userId),
+      supabase
+        .from("trip_days")
+        .select("*")
+        .eq("trip_id", data.tripId)
+        .eq("user_id", userId)
+        .order("day_date"),
     ]);
 
-    const geo = (entries ?? []).filter((e) => e.lat != null && e.lng != null) as Array<{
+    const userEntries = (entries ?? []).filter((entry) => !isInternalJournalEntry(entry));
+    const actualExpenses = (expenses ?? []).filter(
+      (expense) => expense.category !== "Prévision IA+",
+    );
+    const geo = userEntries.filter((e) => e.lat != null && e.lng != null) as Array<{
       lat: number;
       lng: number;
       country: string | null;
@@ -48,22 +64,27 @@ export const finalizeTrip = createServerFn({ method: "POST" })
     let distanceKm = 0;
     for (let i = 1; i < geo.length; i++) distanceKm += haversineKm(geo[i - 1], geo[i]);
 
-    const countries = new Set((entries ?? []).map((e) => e.country).filter(Boolean));
+    const countries = new Set(userEntries.map((e) => e.country).filter(Boolean));
     if (trip.country) countries.add(trip.country);
 
     const photosCount =
-      (entries ?? []).reduce((n, e) => n + (e.media_urls?.length ?? 0), 0) +
-      (entries ?? []).filter((e) => e.image_url).length;
-    const spent = (expenses ?? []).reduce((s, e) => s + Number(e.amount), 0);
-    const activities = (entries ?? []).filter((e) => e.kind === "activity").length;
-    const restaurants = (entries ?? []).filter((e) => e.kind === "restaurant").length;
-    const hotels = (entries ?? []).filter((e) => e.kind === "hotel").length;
+      userEntries.reduce((n, e) => n + (e.media_urls?.length ?? 0), 0) +
+      userEntries.filter((e) => e.image_url).length;
+    const spent = actualExpenses.reduce((s, e) => s + Number(e.amount), 0);
+    const activities = userEntries.filter((e) => e.kind === "activity").length;
+    const restaurants = userEntries.filter((e) => e.kind === "restaurant").length;
+    const hotels = userEntries.filter((e) => e.kind === "hotel").length;
+    const daySet = new Set<string>();
+    buildTripDateRange(trip.starts_on, trip.ends_on, 366).forEach((day) => daySet.add(day));
+    (days ?? []).forEach((day) => day.day_date && daySet.add(day.day_date));
+    userEntries.forEach((entry) => entry.visited_on && daySet.add(entry.visited_on));
+    actualExpenses.forEach((expense) => expense.spent_on && daySet.add(expense.spent_on));
 
     const stats = {
       distance_km: Math.round(distanceKm),
       countries_count: countries.size,
-      entries_count: entries?.length ?? 0,
-      days_count: days?.length ?? 0,
+      entries_count: userEntries.length,
+      days_count: daySet.size,
       photos_count: photosCount,
       expenses_total: Number(spent.toFixed(2)),
       activities_count: activities,
@@ -82,7 +103,7 @@ export const finalizeTrip = createServerFn({ method: "POST" })
         const digest = {
           trip: { title: trip.title, country: trip.country, city: trip.city },
           stats,
-          highlights: (entries ?? []).slice(0, 40).map((e) => ({
+          highlights: userEntries.slice(0, 40).map((e) => ({
             day: e.visited_on,
             kind: e.kind,
             title: e.title,

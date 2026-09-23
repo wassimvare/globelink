@@ -21,23 +21,47 @@ export const EMPTY_TRIP_FORM: TripFormState = {
 };
 
 export function validateTripDates(form: TripFormState) {
+  if (form.endsOn && !form.startsOn) {
+    throw new Error("Renseigne la date de départ avant la date de retour.");
+  }
   if (form.startsOn && form.endsOn && form.endsOn < form.startsOn) {
     throw new Error("La date de retour doit être après la date de départ.");
   }
 }
 
-export function buildTripInsert(userId: string, form: TripFormState) {
+function parseOptionalBudget(value: string) {
+  const normalized = value.trim().replace(",", ".");
+  if (!normalized) return null;
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error("Le budget doit être un montant positif ou nul.");
+  }
+  return Math.round(amount * 100) / 100;
+}
+
+export function buildTripUpdate(form: TripFormState) {
+  const country = form.country.trim();
+  if (!country) throw new Error("Renseigne le pays du voyage.");
   validateTripDates(form);
+
+  const city = form.city.trim();
+  const title = form.title.trim() || `${country} voyage`;
   return {
-    user_id: userId,
-    title: form.title || `${form.country} voyage`,
-    country: form.country.trim(),
-    city: form.city.trim() || null,
-    budget: form.budget ? Number(form.budget) : null,
+    title,
+    country,
+    city: city || null,
+    budget: parseOptionalBudget(form.budget),
     starts_on: form.startsOn || null,
     ends_on: form.endsOn || null,
     notes: form.notes.trim() || null,
-    cover_url: destinationCover(form.country, form.city),
+    cover_url: destinationCover(country, city),
+  };
+}
+
+export function buildTripInsert(userId: string, form: TripFormState) {
+  return {
+    user_id: userId,
+    ...buildTripUpdate(form),
     status: "planned" as const,
   };
 }

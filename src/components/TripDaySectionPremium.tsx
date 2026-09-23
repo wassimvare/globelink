@@ -34,6 +34,8 @@ import {
 } from "@/features/travel/day-program";
 import { refreshTripDayWeather } from "@/lib/trip-weather.functions";
 import { setTripProgramSelection } from "@/lib/trip-program-selection.functions";
+import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
+import { parseExpenseAmount } from "@/features/travel/trip-journey";
 // TRIP_JOURNAL_DAYS_V2
 // TRIP_DAILY_PROGRAM_V3
 import { Button } from "@/components/ui/button";
@@ -743,7 +745,7 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
       {otherEntries.length > 0 && (
         <div className="mx-4 mb-4 grid gap-2 sm:mx-6 sm:mb-6 sm:grid-cols-2">
           {otherEntries.map((entry) => (
-            <CompactEntry key={entry.id} entry={entry} tripId={tripId} />
+            <CompactEntry key={entry.id} entry={entry} tripId={tripId} userId={userId} />
           ))}
         </div>
       )}
@@ -805,7 +807,12 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                   type="button"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                   onClick={async () => {
-                    const { error } = await supabase.from("trip_expenses").delete().eq("id", expense.id);
+                    const { error } = await supabase
+                      .from("trip_expenses")
+                      .delete()
+                      .eq("id", expense.id)
+                      .eq("trip_id", tripId)
+                      .eq("user_id", userId);
                     if (error) toast.error(error.message);
                     else qc.invalidateQueries({ queryKey: ["trip-expenses", tripId] });
                   }}
@@ -1048,7 +1055,7 @@ function WeatherEditor({
   );
 }
 
-function CompactEntry({ entry, tripId }: { entry: any; tripId: string }) {
+function CompactEntry({ entry, tripId, userId }: { entry: any; tripId: string; userId: string }) {
   const qc = useQueryClient();
   const kind = ENTRY_KINDS.find((item) => item.value === entry.kind) ?? ENTRY_KINDS[0];
   const Icon = kind.icon;
@@ -1069,7 +1076,12 @@ function CompactEntry({ entry, tripId }: { entry: any; tripId: string }) {
         type="button"
         className="text-muted-foreground transition hover:text-destructive"
         onClick={async () => {
-          const { error } = await supabase.from("trip_entries").delete().eq("id", entry.id);
+          const { error } = await supabase
+            .from("trip_entries")
+            .delete()
+            .eq("id", entry.id)
+            .eq("trip_id", tripId)
+            .eq("user_id", userId);
           if (error) toast.error(error.message);
           else qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
         }}
@@ -1088,14 +1100,18 @@ function AddExpenseButton({ tripId, userId, day }: { tripId: string; userId: str
   const [pending, setPending] = useState(false);
 
   const submit = async () => {
-    if (!form.label.trim() || !form.amount) return;
+    const amount = parseExpenseAmount(form.amount);
+    if (!form.label.trim() || amount == null) {
+      toast.error("Entre un libellé et un montant supérieur à 0 €.");
+      return;
+    }
     setPending(true);
     try {
       const { error } = await supabase.from("trip_expenses").insert({
         trip_id: tripId,
         user_id: userId,
         label: form.label.trim(),
-        amount: Number(form.amount),
+        amount,
         category: form.category.trim() || null,
         spent_on: day,
       });
@@ -1123,11 +1139,11 @@ function AddExpenseButton({ tripId, userId, day }: { tripId: string; userId: str
         </DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Libellé" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
-          <Input placeholder="Montant (€)" type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          <Input placeholder="Montant (€)" type="number" min="0.01" step="0.01" inputMode="decimal" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
           <Input placeholder="Catégorie (restaurant, transport…)" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
         </div>
         <DialogFooter>
-          <Button disabled={pending || !form.label.trim() || !form.amount} onClick={submit}>
+          <Button disabled={pending || !form.label.trim() || parseExpenseAmount(form.amount) == null} onClick={submit}>
             {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />} Ajouter
           </Button>
         </DialogFooter>
@@ -1138,6 +1154,7 @@ function AddExpenseButton({ tripId, userId, day }: { tripId: string; userId: str
 
 function AddEntryButton({ tripId, userId, day }: { tripId: string; userId: string; day: string }) {
   const qc = useQueryClient();
+  const geocode = useServerFn(geocodePlaceLocation);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [form, setForm] = useState({ kind: "activity", title: "", city: "", country: "", notes: "" });
@@ -1146,6 +1163,20 @@ function AddEntryButton({ tripId, userId, day }: { tripId: string; userId: strin
     if (!form.title.trim()) return;
     setPending(true);
     try {
+      let coords: { lat?: number; lng?: number } = {};
+      if (form.city.trim() && form.country.trim()) {
+        try {
+          const result = await geocode({
+            data: { city: form.city.trim(), country: form.country.trim() },
+          });
+          if (Number.isFinite(result?.lat) && Number.isFinite(result?.lng)) {
+            coords = { lat: Number(result.lat), lng: Number(result.lng) };
+          }
+        } catch {
+          // Le texte du lieu reste enregistré même si la géolocalisation échoue.
+        }
+      }
+
       const { error } = await supabase.from("trip_entries").insert({
         trip_id: tripId,
         user_id: userId,
@@ -1155,7 +1186,8 @@ function AddEntryButton({ tripId, userId, day }: { tripId: string; userId: strin
         country: form.country.trim() || null,
         notes: form.notes.trim() || null,
         visited_on: day,
-        position: 0,
+        position: Math.floor(Date.now() % 2_000_000_000),
+        ...coords,
       });
       if (error) throw error;
       await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });

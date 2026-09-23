@@ -4,11 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft,
+  CalendarDays,
   Camera,
   Loader2,
   MapPin,
+  Pencil,
   Plus,
   Sparkles,
+  Trash2,
   Wallet,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +33,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -41,6 +45,14 @@ import { finalizeTrip } from "@/lib/trip-finalize.functions";
 import { resolvedDestinationCover } from "@/lib/destination-cover";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
+import {
+  buildTripUpdate,
+  formatTripDate,
+  tripStatusLabel,
+  type TripFormState,
+} from "@/features/travel/trip-domain";
+import { isInternalJournalEntry } from "@/features/travel/day-program";
+import { buildTripDateRange, tripBudgetSnapshot } from "@/features/travel/trip-journey";
 
 export const Route = createFileRoute("/_authenticated/trips/$id")({
   component: TripDetail,
@@ -53,47 +65,69 @@ function TripDetail() {
   const finalize = useServerFn(finalizeTrip);
   const [showRecap, setShowRecap] = useState(false);
 
-  const { data: trip } = useQuery({
-    queryKey: ["trip", id],
-    queryFn: async () =>
-      (await supabase.from("trips").select("*").eq("id", id).maybeSingle()).data,
+  const {
+    data: trip,
+    isLoading: tripLoading,
+    error: tripError,
+  } = useQuery({
+    queryKey: ["trip", id, user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("*")
+        .eq("id", id)
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
   });
 
-  const { data: entries } = useQuery({
+  const { data: entries, error: entriesError } = useQuery({
     queryKey: ["trip-entries", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("trip_entries")
-          .select("*")
-          .eq("trip_id", id)
-          .order("visited_on")
-          .order("position")
-      ).data ?? [],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trip_entries")
+        .select("*")
+        .eq("trip_id", id)
+        .eq("user_id", user!.id)
+        .order("visited_on")
+        .order("position");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
-  const { data: expenses } = useQuery({
+  const { data: expenses, error: expensesError } = useQuery({
     queryKey: ["trip-expenses", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("trip_expenses")
-          .select("*")
-          .eq("trip_id", id)
-          .order("spent_on")
-      ).data ?? [],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trip_expenses")
+        .select("*")
+        .eq("trip_id", id)
+        .eq("user_id", user!.id)
+        .order("spent_on");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
-  const { data: days } = useQuery({
+  const { data: days, error: daysError } = useQuery({
     queryKey: ["trip-days", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("trip_days")
-          .select("*")
-          .eq("trip_id", id)
-          .order("day_date")
-      ).data ?? [],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("trip_days")
+        .select("*")
+        .eq("trip_id", id)
+        .eq("user_id", user!.id)
+        .order("day_date");
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
   const dayList = useMemo(() => {
@@ -102,17 +136,19 @@ function TripDetail() {
     (entries ?? []).forEach((entry) => entry.visited_on && set.add(entry.visited_on));
     (expenses ?? []).forEach((expense) => expense.spent_on && set.add(expense.spent_on));
 
-    if (trip?.starts_on && trip?.ends_on) {
-      const start = new Date(`${trip.starts_on}T12:00:00`);
-      const end = new Date(`${trip.ends_on}T12:00:00`);
-      for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-        set.add(cursor.toISOString().slice(0, 10));
-      }
-    }
+    buildTripDateRange(trip?.starts_on, trip?.ends_on, 366).forEach((day) => set.add(day));
 
     return Array.from(set).sort();
   }, [days, entries, expenses, trip?.starts_on, trip?.ends_on]);
 
+  const userEntries = useMemo(
+    () => (entries ?? []).filter((entry) => !isInternalJournalEntry(entry)),
+    [entries],
+  );
+  const planningEntries = useMemo(
+    () => userEntries.filter((entry) => !entry.visited_on),
+    [userEntries],
+  );
   const actualExpenses = useMemo(
     () => (expenses ?? []).filter((expense) => expense.category !== "Prévision IA+"),
     [expenses],
@@ -125,8 +161,11 @@ function TripDetail() {
     [expenses],
   );
   const totalSpent = actualExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-  const budget = trip?.budget ? Number(trip.budget) : 0;
-  const spentPct = budget ? Math.min(100, (totalSpent / budget) * 100) : 0;
+  const budgetState = useMemo(
+    () => tripBudgetSnapshot({ budget: trip?.budget, spent: totalSpent, forecast: forecastTotal }),
+    [trip?.budget, totalSpent, forecastTotal],
+  );
+  const budget = budgetState.budget;
 
   const doFinalize = useMutation({
     mutationFn: async () => finalize({ data: { tripId: id } }),
@@ -138,12 +177,31 @@ function TripDetail() {
     onError: (error: any) => toast.error(error?.message ?? "Erreur"),
   });
 
-  if (!trip) {
+  if (tripLoading) {
     return (
       <div className="app-page">
         <AppHeader />
-        <div className="mx-auto max-w-4xl px-4 py-16 text-center text-muted-foreground">
-          Voyage introuvable.
+        <div className="mx-auto max-w-5xl px-4 py-8">
+          <div className="skeleton h-64 rounded-3xl" />
+          <div className="mt-5 skeleton h-40 rounded-3xl" />
+        </div>
+      </div>
+    );
+  }
+
+  const loadError = tripError || entriesError || expensesError || daysError;
+  if (loadError || !trip) {
+    return (
+      <div className="app-page">
+        <AppHeader />
+        <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+          <h1 className="font-display text-2xl">Voyage introuvable</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Ce voyage n’existe plus ou n’est pas accessible avec ce compte.
+          </p>
+          <Button asChild variant="outline" className="mt-5 rounded-full">
+            <Link to="/trips">Retour à mes voyages</Link>
+          </Button>
         </div>
       </div>
     );
@@ -177,11 +235,11 @@ function TripDetail() {
             <div className="absolute inset-x-0 bottom-0 p-5 text-white sm:p-6">
               <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider opacity-90">
                 <Badge className="border-0 bg-white/20 text-white backdrop-blur">
-                  {finalized ? "🏁 Voyage terminé" : trip.status}
+                  {finalized ? "🏁 Voyage terminé" : tripStatusLabel(trip.status)}
                 </Badge>
                 {trip.starts_on && (
                   <span>
-                    {trip.starts_on} → {trip.ends_on ?? "?"}
+                    {formatTripDate(trip.starts_on)} → {trip.ends_on ? formatTripDate(trip.ends_on) : "date libre"}
                   </span>
                 )}
               </div>
@@ -195,12 +253,12 @@ function TripDetail() {
           </div>
 
           <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
-            <QuickStat label="Étapes" value={String(entries?.length ?? 0)} />
+            <QuickStat label="Étapes" value={String(userEntries.length)} />
             <QuickStat label="Jours" value={String(dayList.length || 0)} />
             <QuickStat
               label="Photos"
               value={String(
-                (entries ?? []).reduce(
+                userEntries.reduce(
                   (count, entry) =>
                     count + (entry.media_urls?.length ?? 0) + (entry.image_url ? 1 : 0),
                   0,
@@ -210,33 +268,62 @@ function TripDetail() {
             <QuickStat label="Dépensé" value={`${totalSpent.toFixed(0)} €`} />
           </div>
 
-          {budget > 0 && (
+          {(budget > 0 || forecastTotal > 0) && (
             <div className="p-4">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Wallet className="h-3.5 w-3.5" /> Budget réellement dépensé
-                </span>
-                <span className="tabular-nums">
-                  {totalSpent.toFixed(2)} € / {budget.toFixed(0)} €
-                </span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
-                <div
-                  className={`h-full transition-all ${spentPct > 100 ? "bg-destructive" : "gradient-hero"}`}
-                  style={{ width: `${Math.min(100, spentPct)}%` }}
-                />
-              </div>
-              {forecastTotal > 0 && (
-                <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+              {budget > 0 ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Wallet className="h-3.5 w-3.5" /> Budget réellement dépensé
+                    </span>
+                    <span className="tabular-nums">
+                      {totalSpent.toFixed(2)} € / {budget.toFixed(0)} €
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className={`h-full transition-all ${
+                        budgetState.isOverBudget ? "bg-destructive" : "gradient-hero"
+                      }`}
+                      style={{ width: `${Math.min(100, budgetState.spentPct)}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span
+                      className={
+                        budgetState.isOverBudget ? "font-semibold text-destructive" : "text-muted-foreground"
+                      }
+                    >
+                      {budgetState.remaining != null && budgetState.remaining >= 0
+                        ? `${budgetState.remaining.toFixed(2)} € restants`
+                        : `${Math.abs(budgetState.remaining ?? 0).toFixed(2)} € au-dessus du budget`}
+                    </span>
+                    {forecastTotal > 0 && (
+                      <span
+                        className={`rounded-full px-2.5 py-1 font-semibold tabular-nums ${
+                          budgetState.isProjectedOverBudget
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-primary/10 text-primary"
+                        }`}
+                      >
+                        {budgetState.projected.toFixed(2)} € projetés avec IA+
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">Prévision IA+ du voyage</span>
                   <span className="rounded-full bg-primary/10 px-2.5 py-1 font-semibold tabular-nums text-primary">
-                    {forecastTotal.toFixed(2)} € prévu
+                    {forecastTotal.toFixed(2)} € prévu · ajoute un budget pour suivre l’écart
                   </span>
                 </div>
               )}
             </div>
           )}
         </header>
+
+        {!finalized && <EditTripButton trip={trip} userId={user!.id} />}
 
         <TripJourneyRail
           tripId={id}
@@ -245,7 +332,7 @@ function TripDetail() {
           country={trip.country}
           startsOn={trip.starts_on}
           endsOn={trip.ends_on}
-          entryCount={entries?.length ?? 0}
+          entryCount={userEntries.length}
         />
 
         {!finalized && (
@@ -273,7 +360,16 @@ function TripDetail() {
           </section>
         )}
 
-        {(entries ?? []).some((entry) => entry.lat != null && entry.lng != null) && (
+        {planningEntries.length > 0 && (
+          <PlanningInbox
+            entries={planningEntries}
+            tripId={id}
+            userId={user!.id}
+            dayOptions={dayList}
+          />
+        )}
+
+        {userEntries.some((entry) => entry.lat != null && entry.lng != null) && (
           <section className="mt-6 overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <div className="flex items-center justify-between px-4 py-3">
               <h2 className="font-display text-lg">🗺️ Parcours</h2>
@@ -296,7 +392,7 @@ function TripDetail() {
                   </div>
                 }
               >
-                <TripRouteMap entries={entries ?? []} />
+                <TripRouteMap entries={userEntries} />
               </ClientOnly>
             </div>
           </section>
@@ -310,7 +406,7 @@ function TripDetail() {
                 Chaque journée est organisée clairement : programme, météo, humeur et budget au même endroit.
               </p>
             </div>
-            {dayList.length > 0 && (
+            {dayList.length > 0 && !(trip.starts_on && trip.ends_on) && (
               <AddDayButton
                 tripId={id}
                 userId={user!.id}
@@ -438,11 +534,268 @@ function TripDetail() {
         open={showRecap}
         onOpenChange={setShowRecap}
         trip={trip}
-        entries={entries ?? []}
+        entries={userEntries}
         expenses={expenses ?? []}
         days={days ?? []}
       />
     </div>
+  );
+}
+
+function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const initialForm = (): TripFormState => ({
+    title: String(trip.title ?? ""),
+    country: String(trip.country ?? ""),
+    city: String(trip.city ?? ""),
+    budget: trip.budget == null ? "" : String(trip.budget),
+    startsOn: String(trip.starts_on ?? ""),
+    endsOn: String(trip.ends_on ?? ""),
+    notes: String(trip.notes ?? ""),
+  });
+  const [form, setForm] = useState<TripFormState>(initialForm);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const patch = buildTripUpdate(form);
+      const { error } = await supabase
+        .from("trips")
+        .update(patch)
+        .eq("id", trip.id)
+        .eq("user_id", userId);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["trip", trip.id] }),
+        qc.invalidateQueries({ queryKey: ["trips"] }),
+        qc.invalidateQueries({ queryKey: ["add-to-trip-picker"] }),
+      ]);
+      setOpen(false);
+      toast.success("Voyage mis à jour");
+    },
+    onError: (error: any) => toast.error(error?.message ?? "Impossible de modifier ce voyage."),
+  });
+
+  return (
+    <div className="mt-3 flex justify-end">
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (nextOpen) setForm(initialForm());
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="rounded-full">
+            <Pencil className="mr-2 h-4 w-4" /> Modifier le voyage
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Modifier le voyage</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Input
+              aria-label="Titre du voyage"
+              placeholder="Titre"
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                aria-label="Pays du voyage"
+                placeholder="Pays *"
+                value={form.country}
+                onChange={(event) => setForm({ ...form, country: event.target.value })}
+              />
+              <Input
+                aria-label="Ville du voyage"
+                placeholder="Ville / région"
+                value={form.city}
+                onChange={(event) => setForm({ ...form, city: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                Départ
+                <Input
+                  type="date"
+                  value={form.startsOn}
+                  onChange={(event) => setForm({ ...form, startsOn: event.target.value })}
+                />
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                Retour
+                <Input
+                  type="date"
+                  min={form.startsOn || undefined}
+                  value={form.endsOn}
+                  onChange={(event) => setForm({ ...form, endsOn: event.target.value })}
+                />
+              </label>
+            </div>
+            <Input
+              aria-label="Budget du voyage"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="Budget prévu (€)"
+              value={form.budget}
+              onChange={(event) => setForm({ ...form, budget: event.target.value })}
+            />
+            <Textarea
+              aria-label="Notes du voyage"
+              rows={4}
+              placeholder="Notes, plans, envies…"
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              disabled={save.isPending || !form.country.trim()}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function PlanningInbox({
+  entries,
+  tripId,
+  userId,
+  dayOptions,
+}: {
+  entries: any[];
+  tripId: string;
+  userId: string;
+  dayOptions: string[];
+}) {
+  const qc = useQueryClient();
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const assignDay = async (entryId: string, day: string) => {
+    if (!day || pendingId) return;
+    setPendingId(entryId);
+    try {
+      const { error } = await supabase
+        .from("trip_entries")
+        .update({ visited_on: day })
+        .eq("id", entryId)
+        .eq("trip_id", tripId)
+        .eq("user_id", userId);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+      toast.success("Lieu ajouté à la journée");
+    } catch (error: any) {
+      toast.error(error?.message ?? "Impossible de planifier ce lieu.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const removeEntry = async (entryId: string) => {
+    if (pendingId) return;
+    setPendingId(entryId);
+    try {
+      const { error } = await supabase
+        .from("trip_entries")
+        .delete()
+        .eq("id", entryId)
+        .eq("trip_id", tripId)
+        .eq("user_id", userId);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["trip-entries", tripId] });
+      toast.success("Élément retiré du voyage");
+    } catch (error: any) {
+      toast.error(error?.message ?? "Impossible de retirer cet élément.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  return (
+    <section
+      data-testid="trip-planning-inbox"
+      className="mt-6 overflow-hidden rounded-3xl border border-amber-400/20 bg-amber-500/[0.05] shadow-soft"
+    >
+      <div className="flex items-start gap-3 border-b border-border/60 p-4 sm:p-5">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-500/15 text-amber-500">
+          <CalendarDays className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="font-display text-lg font-bold">À organiser</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            Les lieux ajoutés depuis Explorer restent ici tant que tu ne leur as pas choisi une journée.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-2 p-3 sm:p-4">
+        {entries.map((entry) => (
+          <div
+            key={entry.id}
+            className="grid gap-3 rounded-2xl border border-border/70 bg-card p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{entry.title}</p>
+              {(entry.city || entry.country) && (
+                <p className="mt-1 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  {[entry.city, entry.country].filter(Boolean).join(", ")}
+                </p>
+              )}
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              {dayOptions.length > 0 ? (
+                <select
+                  aria-label={`Planifier ${entry.title}`}
+                  defaultValue=""
+                  disabled={pendingId === entry.id}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value) void assignDay(entry.id, value);
+                  }}
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary/50 sm:w-44"
+                >
+                  <option value="">Choisir un jour</option>
+                  {dayOptions.map((day) => (
+                    <option key={day} value={day}>
+                      {formatTripDate(day)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs text-muted-foreground">Ajoute d’abord une journée.</span>
+              )}
+              <button
+                type="button"
+                aria-label={`Retirer ${entry.title} du voyage`}
+                disabled={pendingId === entry.id}
+                onClick={() => void removeEntry(entry.id)}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+              >
+                {pendingId === entry.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -486,8 +839,9 @@ function AddDayButton({
       if (!used.has(candidate) && (!endsOn || candidate <= endsOn)) return candidate;
     }
 
+    if (startsOn && endsOn) return "";
     if (existing.length > 0) return addDay([...existing].sort().at(-1)!);
-    return new Date().toISOString().slice(0, 10);
+    return startsOn || new Date().toISOString().slice(0, 10);
   }, [existing, startsOn, endsOn]);
 
   const [date, setDate] = useState(suggestedDate);
