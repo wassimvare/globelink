@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { AddToTripButton } from "@/components/AddToTripButton";
+import { AIContextActions } from "@/components/AIContextActions";
 import { fetchLocatedTravelers, type LocatedTraveler } from "@/lib/real-travelers";
 import { COUNTRY_INFO } from "@/lib/country-info";
 import { CountrySheet } from "@/components/CountrySheet";
@@ -22,7 +23,6 @@ import {
   MapPin,
   Users,
   Sparkles,
-  Crown,
   X,
   LocateFixed,
   Loader2,
@@ -1736,6 +1736,21 @@ function PlaceSheet({
                 label="Ajouter à mon voyage"
               />
 
+              <AIContextActions
+                destination={[place.city, place.country].filter(Boolean).join(", ")}
+                freePrompt={`Que dois-je savoir sur ${place.name} avant d’y aller ? Donne-moi des conseils rapides et pratiques, en tenant compte de ${[place.city, place.country].filter(Boolean).join(", ") || "sa destination"}.`}
+                proPrompt={
+                  place.category === "hotel"
+                    ? `Compare ${place.name} aux meilleurs hébergements proches pour mon voyage : emplacement, prix indicatifs, avantages, limites, alternatives et verdict.`
+                    : `Recherche et vérifie ${place.name} pour mon voyage : intérêt, horaires ou conditions à confirmer, prix indicatifs, alternatives proches et conseil final.`
+                }
+                proMode={place.category === "hotel" ? "compare" : "research"}
+                freeLabel="Demander à GlobeLink"
+                proLabel={place.category === "hotel" ? "Comparer avec IA+" : "Vérifier avec IA+"}
+                className="mt-3"
+                compact
+              />
+
               <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <Button
                   asChild
@@ -1745,15 +1760,6 @@ function PlaceSheet({
                     <Navigation className="h-4 w-4" />
                     <span className="text-xs">Itinéraire</span>
                   </a>
-                </Button>
-                <Button
-                  asChild
-                  className="h-auto min-w-[82px] shrink-0 flex-col gap-1 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-500 py-2.5 text-white shadow-soft hover:text-white hover:opacity-95"
-                >
-                  <Link to="/ai-pro">
-                    <Crown className="h-4 w-4" />
-                    <span className="text-xs">IA+</span>
-                  </Link>
                 </Button>
                 <Button
                   variant={saved ? "default" : "outline"}
