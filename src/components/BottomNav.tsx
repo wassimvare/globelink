@@ -15,14 +15,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { QuickCreate } from "@/components/QuickCreate";
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer";
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 
 const explorerPrefixes = ["/map", "/destinations", "/activities", "/deals", "/marketplace"];
@@ -85,8 +85,8 @@ function MobileExplorer({ active, pathname }: { active: boolean; pathname: strin
   const [open, setOpen] = useState(false);
 
   return (
-    <Drawer open={open} onOpenChange={setOpen}>
-      <DrawerTrigger asChild>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
         <button
           type="button"
           aria-label="Ouvrir Explorer"
@@ -100,15 +100,15 @@ function MobileExplorer({ active, pathname }: { active: boolean; pathname: strin
           <span className="max-w-full truncate">Explorer</span>
           <span className="nav-dot absolute bottom-0.5 h-1 w-1 scale-0 rounded-full bg-primary transition" />
         </button>
-      </DrawerTrigger>
+      </SheetTrigger>
 
-      <DrawerContent className="rounded-t-3xl border-border/70 bg-card/95 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-elevated backdrop-blur-2xl">
-        <DrawerHeader className="px-5 pb-2 text-left">
-          <DrawerTitle>Explorer GlobeLink</DrawerTitle>
-          <DrawerDescription>
+      <SheetContent side="bottom" className="max-h-[88dvh] overflow-y-auto rounded-t-3xl border-border/70 bg-card/95 px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-4 shadow-elevated backdrop-blur-2xl">
+        <SheetHeader className="px-5 pb-2 text-left">
+          <SheetTitle>Explorer GlobeLink</SheetTitle>
+          <SheetDescription>
             Retrouve sur mobile les mêmes rubriques que sur ordinateur.
-          </DrawerDescription>
-        </DrawerHeader>
+          </SheetDescription>
+        </SheetHeader>
 
         <div className="grid gap-2 px-4 pb-4">
           <ExplorerLink
@@ -147,8 +147,8 @@ function MobileExplorer({ active, pathname }: { active: boolean; pathname: strin
             active={pathname.startsWith("/marketplace")}
           />
         </div>
-      </DrawerContent>
-    </Drawer>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -166,7 +166,7 @@ function ExplorerLink({
   active: boolean;
 }) {
   return (
-    <DrawerClose asChild>
+    <SheetClose asChild>
       <Link
         to={to as any}
         preload="intent"
@@ -185,7 +185,7 @@ function ExplorerLink({
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
       </Link>
-    </DrawerClose>
+    </SheetClose>
   );
 }
 
