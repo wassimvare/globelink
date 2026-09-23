@@ -50,6 +50,7 @@ import {
   type MyPrefs,
   type ScorePart,
 } from "@/features/match/travel-match";
+import { matchIntentDraftKey } from "@/features/match/match-draft";
 
 const matchJourneySearch = z.object({
   tripId: z.string().uuid().optional(),
@@ -382,7 +383,7 @@ function MatchPage() {
       }
 
       if (intent && typeof window !== "undefined") {
-        window.localStorage.setItem(`globelink:match-intent:${targetId}`, intent.draft);
+        window.localStorage.setItem(matchIntentDraftKey(targetId), intent.draft);
       }
 
       const result = await sendLike({ data: { toUserId: targetId } });
@@ -720,6 +721,7 @@ function MatchPage() {
                       <button
                         key={intent.id}
                         type="button"
+                        data-testid={`travel-match-intent-${intent.id}`}
                         disabled={busy}
                         onClick={() => advance("right", intent)}
                         className="rounded-2xl border border-border bg-background/70 p-3 text-left transition hover:border-primary/30 hover:bg-primary/[0.04] disabled:opacity-60"
@@ -935,7 +937,7 @@ function SwipeCard({
             </Badge>
           ))}
         </div>
-        <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3">
+        <div data-testid="travel-match-compatibility" className="rounded-2xl border border-primary/15 bg-primary/5 p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-primary">
               <CheckCircle2 className="h-4 w-4" /> Pourquoi ce match ?
