@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Crown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AI_OFFERS } from "@/features/ai/ai-offers";
 
 type ProMode = "research" | "compare" | "plan" | "safety";
 
@@ -47,7 +48,7 @@ export function AIContextActions({
           }
         >
           <Link
-            to="/ai-trip"
+            to={AI_OFFERS.free.route}
             search={{
               destination: destination || undefined,
               prompt: freePrompt,
@@ -65,7 +66,7 @@ export function AIContextActions({
           className="rounded-full bg-gradient-to-r from-violet-600 via-indigo-500 to-cyan-500 text-white shadow-soft hover:opacity-95"
         >
           <Link
-            to="/ai-pro"
+            to={AI_OFFERS.plus.route}
             search={{
               prompt: proPrompt,
               mode: proMode,

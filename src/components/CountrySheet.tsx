@@ -27,6 +27,7 @@ import { fetchLiveCatalog, type LiveCatalogItem } from "@/lib/live-catalog";
 import { getSignedMediaUrl } from "@/lib/storage";
 import { CatalogImage } from "@/components/CatalogImage";
 import { AddToTripButton } from "@/components/AddToTripButton";
+import { AIContextActions } from "@/components/AIContextActions";
 import { DestinationImage } from "@/components/DestinationImage";
 import { getPublicExchangeRate, getPublicWeather } from "@/lib/public-open-data.functions";
 
@@ -686,7 +687,7 @@ function PlaceGroup({
                 </div>
               </div>
             </Link>
-            <div className="border-t border-border/60 p-1.5">
+            <div className="space-y-1.5 border-t border-border/60 p-1.5">
               <AddToTripButton
                 item={{
                   title: it.name,
@@ -703,6 +704,18 @@ function PlaceGroup({
                 variant="ghost"
                 className="w-full rounded-lg"
               />
+              {it.kind === "hotel" && (
+                <AIContextActions
+                  destination={[it.city, it.country].filter(Boolean).join(", ")}
+                  freePrompt={`Donne-moi un avis général sur le quartier de ${it.name} pour un voyage.`}
+                  proPrompt={`Compare ${it.name} aux meilleurs hébergements proches pour mon voyage : prix indicatifs, emplacement, transports, avantages, limites, alternatives et verdict.`}
+                  proMode="compare"
+                  proLabel="Comparer avec IA+"
+                  showFree={false}
+                  compact
+                  className="[&>a]:w-full [&>button]:w-full"
+                />
+              )}
             </div>
           </article>
         ))}

@@ -830,7 +830,7 @@ function CatalogRail({
                     {card}
                   </Link>
                 )}
-                <div className="border-t border-border/70 p-2">
+                <div className="space-y-1.5 border-t border-border/70 p-2">
                   <AddToTripButton
                     item={{
                       title: item.title,
@@ -848,6 +848,20 @@ function CatalogRail({
                     variant="ghost"
                     className="w-full rounded-xl"
                   />
+                  {item.kind === "hotel" && (
+                    <AIContextActions
+                      destination={[item.city ?? fallbackCity, item.country ?? fallbackCountry]
+                        .filter(Boolean)
+                        .join(", ")}
+                      freePrompt={`Donne-moi un avis général sur l’emplacement de ${item.title} pour un voyage.`}
+                      proPrompt={`Compare ${item.title} avec les meilleurs hébergements proches pour mon voyage : prix indicatifs, quartier, transports, avantages, limites, alternatives et verdict.`}
+                      proMode="compare"
+                      proLabel="Comparer avec IA+"
+                      showFree={false}
+                      compact
+                      className="[&>a]:w-full [&>button]:w-full"
+                    />
+                  )}
                 </div>
               </div>
             );

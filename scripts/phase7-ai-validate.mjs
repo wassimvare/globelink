@@ -13,6 +13,15 @@ const proUi = read("src/routes/ai-pro.tsx");
 const capabilities = read("src/features/ai/phase7-capabilities.ts");
 const actions = read("src/features/ai/phase7-actions.ts");
 const tests = read("src/features/ai/phase7-actions.test.ts");
+const offers = read("src/features/ai/ai-offers.ts");
+const offerTests = read("src/features/ai/ai-offers.test.ts");
+const intelligenceUi = read("src/routes/_authenticated.intelligence.tsx");
+const contextActions = read("src/components/AIContextActions.tsx");
+const tripDayUi = read("src/components/TripDaySectionPremium.tsx");
+const destinationUi = read("src/routes/destinations.$slug.tsx");
+const mapUi = read("src/routes/map.tsx");
+const countrySheet = read("src/components/CountrySheet.tsx");
+const homeUi = read("src/routes/index.tsx");
 
 check(
   "IA gratuite garde un périmètre explicite",
@@ -70,6 +79,49 @@ check(
     actions.includes("parseAiPlusBudgetForecasts") &&
     tests.includes("sépare strictement les programmes par date") &&
     tests.includes("prévisions quotidiennes"),
+);
+
+
+check(
+  "GlobeLink expose strictement deux offres IA",
+  offers.includes("AI_OFFER_ORDER") &&
+    offers.includes('id: "free"') &&
+    offers.includes('id: "plus"') &&
+    offerTests.includes("exposes exactly two user-facing offers") &&
+    intelligenceUi.includes("AI_OFFERS.free") &&
+    intelligenceUi.includes("AI_OFFERS.plus"),
+);
+check(
+  "Les actions IA partagées pointent uniquement vers Gratuit et IA+",
+  contextActions.includes("AI_OFFERS.free.route") &&
+    contextActions.includes("AI_OFFERS.plus.route"),
+);
+check(
+  "Chaque journée du carnet peut être organisée avec IA+",
+  tripDayUi.includes("Organiser ma journée avec IA+") &&
+    tripDayUi.includes('proMode="plan"') &&
+    tripDayUi.includes("tripId={tripId}"),
+);
+check(
+  "Les sélections d’hôtels proposent la comparaison IA+",
+  destinationUi.includes("Comparer avec IA+") &&
+    countrySheet.includes("Comparer avec IA+"),
+);
+check(
+  "Explorer utilise une IA contextuelle au lieu d’un raccourci IA+ générique",
+  mapUi.includes("AIContextActions") &&
+    mapUi.includes("Vérifier avec IA+") &&
+    !mapUi.includes('<Link to="/ai-pro">'),
+);
+check(
+  "L’accueil transmet le prochain voyage à IA+",
+  homeUi.includes("tripId={nextTrip.id}") &&
+    homeUi.includes("Optimiser avec IA+"),
+);
+check(
+  "Le passage du gratuit à IA+ conserve la demande",
+  freeUi.includes("upgradePrompt: message") &&
+    freeUi.includes("prompt: turn.upgradePrompt || undefined"),
 );
 
 const failed = checks.filter((item) => !item.ok);

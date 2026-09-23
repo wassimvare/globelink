@@ -38,6 +38,7 @@ import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
 import { parseExpenseAmount } from "@/features/travel/trip-journey";
 // TRIP_JOURNAL_DAYS_V2
 // TRIP_DAILY_PROGRAM_V3
+import { AIContextActions } from "@/components/AIContextActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -561,6 +562,13 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
     day: "numeric",
     month: "long",
   });
+  const dayPlaces = otherEntries
+    .map((entry) => String(entry.title ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const dayContext = dayPlaces.length
+    ? ` Les éléments déjà prévus sont : ${dayPlaces.join(", ")}.`
+    : " La journée est encore vide.";
 
   return (
     <article className="animate-rise overflow-hidden rounded-[2rem] border border-border/80 bg-card shadow-soft">
@@ -628,6 +636,22 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.06] to-cyan-500/[0.05] p-3">
+              <div className="mb-2 text-xs font-semibold text-violet-500">
+                GlobeLink IA · cette journée
+              </div>
+              <AIContextActions
+                destination={dateLabel}
+                freePrompt={`Aide-moi à améliorer ma journée du ${dateLabel} avec des conseils simples et réalistes.${dayContext}`}
+                proPrompt={`Organise précisément la journée du ${dateLabel} dans mon voyage GlobeLink. Lis mon carnet, tiens compte des étapes déjà prévues, des trajets, de mon budget et propose un ordre réaliste avec horaires et alternatives.${dayContext}`}
+                proMode="plan"
+                tripId={tripId}
+                freeLabel="Conseil pour cette journée"
+                proLabel="Organiser ma journée avec IA+"
+                compact
+              />
             </div>
           </div>
         </div>

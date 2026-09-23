@@ -3,7 +3,7 @@ import fs from "node:fs";
 // Validation only: source transformations were frozen into src/ during Phase 1.
 // A check must never mutate the repository before dev/build/test.
 const checks = [
-  ["src/routes/_authenticated.intelligence.tsx", ["GlobeLink IA", "Ton assistant voyage", "Gratuit", "IA+"]],
+  ["src/routes/_authenticated.intelligence.tsx", ["GlobeLink IA", "Ton assistant voyage", "AI_OFFERS.free", "AI_OFFERS.plus"]],
   ["src/lib/phase3-intelligence.functions.ts", ["organizeSmartDay", "getPhase3Context", "fetchWeather", "fetchTicketmasterEvents", "reserve_free_ai_usage"]],
   ["src/lib/phase3-intelligence.ts", ["calculatePhase3Compatibility", "weatherCodeLabel", "overlapDays"]],
   ["src/lib/phase3-intelligence.test.ts", ["score élevé", "codes météo"]],
