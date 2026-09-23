@@ -120,15 +120,14 @@ test.describe("Audit mobile iPhone + Android", () => {
     await page.waitForTimeout(700);
     await explorerButton.click();
 
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByText("Explorer GlobeLink", { exact: true })).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Explorer GlobeLink", { exact: true })).toBeVisible();
     for (const label of ["Carte", "Destinations", "Activités", "Sélection du moment", "Marketplace"]) {
-      await expect(page.getByRole("link", { name: new RegExp(label, "i") })).toBeVisible();
+      await expect(dialog.getByRole("link", { name: new RegExp(label, "i") }).first()).toBeVisible();
     }
 
-    const drawerFits = await page
-      .getByRole("dialog")
-      .evaluate((element) => {
+    const drawerFits = await dialog.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return (
           rect.left >= -1 &&
