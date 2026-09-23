@@ -48,6 +48,7 @@ type ChatTurn = {
   role: "user" | "assistant";
   content: string;
   upgradeRecommended?: boolean;
+  upgradePrompt?: string;
 };
 
 const SUGGESTIONS = [
@@ -96,7 +97,13 @@ function FreeAiPage() {
         [
           ...current,
           { id: `u-${stamp}`, role: "user", content: message } satisfies ChatTurn,
-          { id: `a-${stamp}`, role: "assistant", content: data.answer, upgradeRecommended: data.upgradeRecommended } satisfies ChatTurn,
+          {
+            id: `a-${stamp}`,
+            role: "assistant",
+            content: data.answer,
+            upgradeRecommended: data.upgradeRecommended,
+            upgradePrompt: message,
+          } satisfies ChatTurn,
         ].slice(-12),
       );
       setRemaining(data.remaining);
@@ -206,7 +213,15 @@ function FreeAiPage() {
                         <div className="mt-3 flex flex-col gap-2 rounded-xl border border-violet-400/20 bg-violet-500/[0.06] p-3 sm:flex-row sm:items-center sm:justify-between">
                           <p className="text-xs text-muted-foreground">Cette demande peut être exécutée plus loin avec le carnet connecté, des comparaisons réelles ou un programme complet.</p>
                           <Button asChild size="sm" variant="outline" className="shrink-0 rounded-xl border-violet-400/30">
-                            <Link to="/ai-pro"><Crown className="mr-2 h-3.5 w-3.5" /> Continuer avec IA+</Link>
+                            <Link
+                              to="/ai-pro"
+                              search={{
+                                prompt: turn.upgradePrompt || undefined,
+                                mode: "research",
+                              }}
+                            >
+                              <Crown className="mr-2 h-3.5 w-3.5" /> Continuer avec IA+
+                            </Link>
                           </Button>
                         </div>
                       )}
@@ -266,7 +281,13 @@ function FreeAiPage() {
               </p>
             </div>
             <Button asChild variant="outline" size="sm" className="shrink-0 rounded-xl border-violet-400/30">
-              <Link to="/ai-pro">
+              <Link
+                to="/ai-pro"
+                search={{
+                  prompt: query.trim() || prompt?.trim() || undefined,
+                  mode: "research",
+                }}
+              >
                 Découvrir IA+ <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
