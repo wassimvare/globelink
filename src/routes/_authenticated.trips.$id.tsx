@@ -48,6 +48,7 @@ import { geocodePlaceLocation } from "@/lib/place-geocoding.functions";
 import {
   buildTripUpdate,
   formatTripDate,
+  tripStatusLabel,
   type TripFormState,
 } from "@/features/travel/trip-domain";
 import { isInternalJournalEntry } from "@/features/travel/day-program";
@@ -234,7 +235,7 @@ function TripDetail() {
             <div className="absolute inset-x-0 bottom-0 p-5 text-white sm:p-6">
               <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider opacity-90">
                 <Badge className="border-0 bg-white/20 text-white backdrop-blur">
-                  {finalized ? "🏁 Voyage terminé" : trip.status}
+                  {finalized ? "🏁 Voyage terminé" : tripStatusLabel(trip.status)}
                 </Badge>
                 {trip.starts_on && (
                   <span>
