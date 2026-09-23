@@ -138,6 +138,14 @@ test.describe("Phase 3 — parcours authentifiés live", () => {
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByText("500.00 € / 500 €")).toBeVisible();
 
+    const tripId = page.url().split("/trips/")[1]?.split(/[?#]/)[0] ?? "";
+    const dayAiLink = page.getByRole("link", { name: "Organiser ma journée avec IA+" }).first();
+    await expect(dayAiLink).toBeVisible();
+    const dayAiHref = (await dayAiLink.getAttribute("href")) ?? "";
+    expect(dayAiHref).toContain("/ai-pro");
+    expect(dayAiHref).toContain("mode=plan");
+    expect(dayAiHref).toContain(`tripId=${tripId}`);
+
     const firstExpenseButton = page.getByRole("button", { name: "Dépense", exact: true }).first();
     await firstExpenseButton.click();
     const expenseDialog = page.getByRole("dialog");
