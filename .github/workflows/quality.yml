@@ -73,11 +73,11 @@ jobs:
       - name: Install Playwright test runner
         run: npm install --no-save --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install mobile browsers
+        run: npx playwright install --with-deps chromium webkit
 
-      - name: Run public and access-control journeys
-        run: npx playwright test e2e/core.smoke.spec.ts e2e/critical-surfaces.spec.ts e2e/ai-surfaces.spec.ts
+      - name: Run public, access-control and mobile journeys
+        run: npx playwright test e2e/core.smoke.spec.ts e2e/critical-surfaces.spec.ts e2e/ai-surfaces.spec.ts e2e/mobile-audit.spec.ts
 
       - name: Run live authenticated journeys when test accounts are configured
         env:
