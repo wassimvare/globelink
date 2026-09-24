@@ -51,6 +51,14 @@ type ChatTurn = {
   upgradePrompt?: string;
 };
 
+function getFreeAiErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (/Gemini API|\b503\b|UNAVAILABLE|high demand|overload|resource_exhausted|rate.?limit/i.test(message)) {
+    return "GlobeLink IA est temporairement très sollicitée. Réessaie dans quelques instants.";
+  }
+  return message || "GlobeLink IA n'a pas pu répondre.";
+}
+
 const SUGGESTIONS = [
   {
     label: "Trouver une destination",
@@ -110,7 +118,7 @@ function FreeAiPage() {
       setQuery("");
     },
     onError: (error: Error) =>
-      toast.error(error.message || "GlobeLink IA n'a pas pu répondre."),
+      toast.error(getFreeAiErrorMessage(error)),
   });
 
   const send = () => {
