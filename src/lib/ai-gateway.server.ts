@@ -9,7 +9,10 @@ const GEMINI_PRIMARY_TIMEOUT_MS = 28_000;
 const GEMINI_FAST_FALLBACK_TIMEOUT_MS = 16_000;
 const AI_GATEWAY_TIMEOUT_MS = 10_000;
 const GEMINI_MAX_OUTPUT_TOKENS = 4_096;
+const GEMINI_PRIMARY_MAX_ATTEMPTS = 3;
+const GEMINI_RETRY_DELAYS_MS = [400, 1_200] as const;
 const RETRYABLE_GEMINI_STATUSES = new Set([400, 404, 408, 429, 500, 502, 503, 504]);
+const SAME_MODEL_RETRYABLE_GEMINI_STATUSES = new Set([500, 502, 503, 504]);
 const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
 const DEFAULT_GEMINI_FAST_FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
@@ -134,27 +137,42 @@ function shouldTryFastFallback(error: unknown) {
   );
 }
 
+function shouldRetrySameGeminiModel(error: unknown) {
+  const status = geminiStatus(error);
+  if (status != null) return SAME_MODEL_RETRYABLE_GEMINI_STATUSES.has(status);
+  return isTransientNetworkError(error);
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 function friendlyGeminiFailure(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   if (/429|resource_exhausted|rate.?limit/i.test(message)) {
     return new Error(
-      "IA+ est temporairement très sollicitée. Le moteur de secours a aussi été essayé automatiquement ; réessaie dans quelques instants.",
+      "GlobeLink IA est temporairement très sollicitée. Le moteur de secours a aussi été essayé automatiquement ; réessaie dans quelques instants.",
+    );
+  }
+  if (/500|502|503|504|unavailable|high demand|overload/i.test(message)) {
+    return new Error(
+      "GlobeLink IA est temporairement très sollicitée. Plusieurs tentatives automatiques ont été faites ; réessaie dans quelques instants.",
     );
   }
   if (/délai|timeout|abort/i.test(message)) {
     return new Error(
-      "L’analyse IA+ a dépassé le délai prévu malgré le moteur de secours. Réessaie dans un instant.",
+      "GlobeLink IA a dépassé le délai prévu malgré le moteur de secours. Réessaie dans un instant.",
     );
   }
   if (/401|403|permission|unauthenticated/i.test(message)) {
-    return new Error("Le moteur IA+ est momentanément indisponible. Réessaie un peu plus tard.");
+    return new Error("Le moteur GlobeLink IA est momentanément indisponible. Réessaie un peu plus tard.");
   }
   if (/400|404|invalid_argument|not_found/i.test(message)) {
     return new Error(
-      "Le moteur IA+ n’a pas pu traiter cette demande avec sa configuration actuelle. Un moteur de secours a été essayé automatiquement.",
+      "GlobeLink IA n’a pas pu traiter cette demande avec sa configuration actuelle. Un moteur de secours a été essayé automatiquement.",
     );
   }
-  return error instanceof Error ? error : new Error("IA+ n'a pas pu répondre pour le moment.");
+  return new Error("GlobeLink IA n'a pas pu répondre pour le moment. Réessaie dans quelques instants.");
 }
 
 type GenerateOptions = {
@@ -257,6 +275,38 @@ async function generateWithGeminiModel(args: {
   }
 }
 
+async function generateWithGeminiRetries(args: {
+  geminiKey: string;
+  modelId: string;
+  timeoutMs: number;
+  options: GenerateOptions;
+}) {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= GEMINI_PRIMARY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await generateWithGeminiModel(args);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= GEMINI_PRIMARY_MAX_ATTEMPTS || !shouldRetrySameGeminiModel(error)) {
+        throw error;
+      }
+
+      const delayMs = GEMINI_RETRY_DELAYS_MS[Math.min(attempt - 1, GEMINI_RETRY_DELAYS_MS.length - 1)];
+      console.warn("[GlobeLink IA] réponse Gemini temporairement indisponible, nouvelle tentative", {
+        model: normalizeModelId(args.modelId),
+        attempt,
+        nextAttempt: attempt + 1,
+        status: geminiStatus(error),
+        delayMs,
+      });
+      await wait(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Gemini temporairement indisponible.");
+}
+
 async function generateWithAiGateway(options: GenerateOptions) {
   const fallbackKey = getLovableKey();
   if (!fallbackKey) return null;
@@ -300,7 +350,7 @@ export async function generateTravelAiText(options: GenerateOptions) {
     let lastPrimaryError: unknown = null;
 
     try {
-      return await generateWithGeminiModel({
+      return await generateWithGeminiRetries({
         geminiKey,
         modelId: primaryModelId,
         timeoutMs: GEMINI_PRIMARY_TIMEOUT_MS,
