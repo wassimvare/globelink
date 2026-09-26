@@ -27,8 +27,6 @@ jobs:
         run: |
           rm -rf android
           npx cap add android
-          npm run build
-          npx cap sync android
       - name: Validate generated Android project
         run: |
           test -f android/settings.gradle
@@ -53,8 +51,6 @@ jobs:
         run: |
           rm -rf ios
           npx cap add ios
-          npm run build
-          npx cap sync ios
       - name: Validate generated iOS project
         run: |
           test -d ios/App/App.xcodeproj
