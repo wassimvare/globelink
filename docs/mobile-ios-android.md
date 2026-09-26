@@ -34,3 +34,24 @@ npm run mobile:android
 Adding Capacitor alone does not turn Web Push into WhatsApp-style incoming calls. Native VoIP/call integrations require Apple/Google native configuration, signing, entitlements/permissions, device tokens, and server-side call push delivery.
 
 Do not put Apple certificates, APNs keys, Android signing keys, Firebase service credentials, or other secrets in Git.
+
+## Native incoming-call foundation
+
+The branch now also contains the first native incoming-call layer:
+
+- iOS: PushKit VoIP registration + CallKit incoming-call UI.
+- Android: Firebase Messaging service + incoming-call activity/token store.
+
+These source files are staged in the conventional Capacitor native paths. After `npx cap add ios` / `npx cap add android`, keep/merge them into the generated native projects.
+
+### Still required before real-device calls work
+
+- Apple Developer app identifier and Push Notifications/VoIP entitlements.
+- APNs VoIP signing key/certificate configured server-side.
+- Firebase Android project and `google-services.json`.
+- Android manifest declarations/permissions and full-screen notification policy as applicable.
+- A secure API/RPC for registering APNs/FCM device tokens against the signed-in GlobeLink user.
+- Server routing: APNs VoIP for iOS native installs, FCM for Android native installs, existing Web Push as PWA fallback.
+- Bridge answer/end events to GlobeLink's existing WebRTC call session.
+
+Those credentials are intentionally not committed to Git.
