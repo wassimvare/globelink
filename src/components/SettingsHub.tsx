@@ -25,6 +25,11 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import {
+  enablePushNotifications,
+  pushPermissionState,
+  type PushActivationState,
+} from "@/lib/push-notifications";
+import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   loadNotificationPreferences,
   saveNotificationPreferences,
@@ -133,6 +138,10 @@ export function SettingsHub({ activeSection }: { activeSection?: SettingsHubSect
   const [query, setQuery] = useState("");
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
+    "unsupported",
+  );
+  const [pushBusy, setPushBusy] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<AccountSettings>(DEFAULT_ACCOUNT_SETTINGS);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -183,6 +192,11 @@ export function SettingsHub({ activeSection }: { activeSection?: SettingsHubSect
   }, [user?.id, needsNotifications]);
 
   useEffect(() => {
+    if (!needsNotifications || typeof window === "undefined") return;
+    setPushPermission(pushPermissionState());
+  }, [needsNotifications, user?.id]);
+
+  useEffect(() => {
     if (!accountSettings) return;
     setSettingsDraft(accountSettings);
     setTravelInterestsText(accountSettings.travel_interests.join(", "));
@@ -221,6 +235,56 @@ export function SettingsHub({ activeSection }: { activeSection?: SettingsHubSect
       qc.invalidateQueries({ queryKey: ["match-real-candidates"] }),
     ]);
     toast.success(nextPublic ? "Profil visible publiquement" : "Profil masqué du public");
+  }
+
+  async function activateSystemNotifications() {
+    if (pushBusy) return;
+    const current = pushPermissionState();
+    setPushPermission(current);
+
+    if (current === "unsupported") {
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const standalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+      if (isIos && !standalone) {
+        toast.info(
+          "Sur iPhone/iPad, ajoute GlobeLink à l’écran d’accueil puis ouvre l’application depuis son icône pour activer les notifications.",
+          { duration: 9000 },
+        );
+      } else {
+        toast.error("Les notifications push ne sont pas prises en charge sur cet appareil ou ce navigateur.");
+      }
+      return;
+    }
+
+    if (current === "denied") {
+      toast.info(
+        "Les notifications sont bloquées. Réactive-les dans les réglages de l’appareil ou du navigateur, puis reviens ici.",
+        { duration: 9000 },
+      );
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      const state: PushActivationState = await enablePushNotifications();
+      const next = pushPermissionState();
+      setPushPermission(next);
+      if (state === "granted") {
+        toast.success("Notifications système activées sur cet appareil");
+      } else if (state === "unsupported") {
+        toast.info("Ajoute GlobeLink à l’écran d’accueil pour activer les notifications.");
+      } else {
+        toast.info("Les notifications n’ont pas été autorisées.");
+      }
+    } catch (error) {
+      console.warn("System push activation failed", error);
+      setPushPermission(pushPermissionState());
+      toast.error("Impossible d’activer les notifications système sur cet appareil.");
+    } finally {
+      setPushBusy(false);
+    }
   }
 
   function updatePreference<K extends keyof NotificationPreferences>(
@@ -502,6 +566,44 @@ export function SettingsHub({ activeSection }: { activeSection?: SettingsHubSect
           title="Notifications"
           description="Réduisez le bruit sans perdre les alertes qui comptent pour vous."
         >
+          <div className="rounded-2xl border border-primary/20 bg-primary/[0.05] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Bell className="h-4 w-4 text-primary" />
+                  Notifications système
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Nécessaires pour recevoir les appels lorsque GlobeLink est fermé ou en arrière-plan.
+                </p>
+                <p className="mt-2 text-xs font-semibold">
+                  État :{" "}
+                  {pushPermission === "granted"
+                    ? "activées"
+                    : pushPermission === "denied"
+                      ? "bloquées"
+                      : pushPermission === "default"
+                        ? "à activer"
+                        : "non disponibles"}
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={activateSystemNotifications}
+                disabled={pushBusy || pushPermission === "granted"}
+                className="shrink-0 rounded-xl"
+              >
+                {pushBusy
+                  ? "Activation…"
+                  : pushPermission === "granted"
+                    ? "Activées"
+                    : pushPermission === "denied"
+                      ? "Voir les réglages"
+                      : "Activer"}
+              </Button>
+            </div>
+          </div>
+
           <div className="divide-y divide-border/70 overflow-hidden rounded-2xl border border-border/70">
             <SettingRow
               title="Tout mettre en pause"
