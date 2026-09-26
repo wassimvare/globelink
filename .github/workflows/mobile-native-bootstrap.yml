@@ -1,0 +1,62 @@
+name: Mobile native bootstrap
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.ts"
+      - "ios/**"
+      - "android/**"
+      - ".github/workflows/mobile-native-bootstrap.yml"
+
+jobs:
+  android:
+    name: Android project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Generate Android native project
+        run: |
+          rm -rf android
+          npx cap add android
+      - name: Validate generated Android project
+        run: |
+          test -f android/settings.gradle
+          test -f android/app/build.gradle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: globelink-android-native-project
+          path: android/
+          retention-days: 7
+
+  ios:
+    name: iOS project
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Generate iOS native project
+        run: |
+          rm -rf ios
+          npx cap add ios
+      - name: Validate generated iOS project
+        run: |
+          test -d ios/App/App.xcodeproj
+          test -f ios/App/App/AppDelegate.swift
+      - uses: actions/upload-artifact@v4
+        with:
+          name: globelink-ios-native-project
+          path: ios/
+          retention-days: 7
