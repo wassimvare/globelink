@@ -9,6 +9,7 @@ existing key from the Edge Functions environment or from the previous local
 runtime config.
 """
 import argparse
+import base64
 import datetime
 import json
 import os
@@ -51,6 +52,27 @@ def env(container):
     return dict(value.split("=", 1) for value in container["Config"]["Env"] if "=" in value)
 
 
+def vapid_public_key_from_json(serialized):
+    try:
+        payload = json.loads(serialized)
+        public = payload["publicKey"]
+        x = str(public["x"])
+        y = str(public["y"])
+
+        def decode(value):
+            padding = "=" * ((4 - len(value) % 4) % 4)
+            return base64.urlsafe_b64decode(value + padding)
+
+        raw = b"\x04" + decode(x) + decode(y)
+        if len(raw) != 65:
+            raise ValueError
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise RuntimeError(
+            "Fichier VAPID invalide ; aucune modification effectuée."
+        ) from None
+
+
 def public_origin(value):
     parsed = urlsplit(value)
     if (
@@ -89,6 +111,10 @@ def main():
     parser.add_argument("--public-url", required=True, type=public_origin)
     parser.add_argument("--db-container")
     parser.add_argument("--functions-container")
+    parser.add_argument(
+        "--vapid-keys-file",
+        help="Fichier JSON VAPID local à importer sans afficher la clé privée.",
+    )
     parser.add_argument("--check-only", action="store_true")
     args = parser.parse_args()
 
@@ -153,6 +179,13 @@ def main():
         except ValueError:
             raise RuntimeError("Configuration VAPID locale illisible ; aucune modification effectuée.") from None
 
+    file_keys_json = ""
+    if args.vapid_keys_file:
+        vapid_file = Path(args.vapid_keys_file).expanduser()
+        if not vapid_file.is_file():
+            raise RuntimeError("Fichier VAPID indiqué introuvable ; aucune modification effectuée.")
+        file_keys_json = vapid_file.read_text().strip()
+
     private_key = (
         settings.get("GLOBELINK_VAPID_PRIVATE_KEY")
         or settings.get("VAPID_PRIVATE_KEY")
@@ -167,12 +200,17 @@ def main():
         or settings.get("VAPID_KEYS_JSON")
         or os.environ.get("GLOBELINK_VAPID_KEYS_JSON")
         or os.environ.get("VAPID_KEYS_JSON")
+        or file_keys_json
         or previous.get("vapidKeysJson")
         or ""
     )
     if not private_key and not keys_json:
         raise RuntimeError(
             "Clé VAPID privée existante introuvable. Aucune nouvelle clé n'a été générée pour ne pas casser les abonnements déjà enregistrés."
+        )
+    if keys_json and vapid_public_key_from_json(keys_json) != PUBLIC_VAPID_KEY:
+        raise RuntimeError(
+            "La clé VAPID publique du fichier ne correspond pas à celle publiée par GlobeLink ; aucune modification effectuée."
         )
     if private_key and len(private_key.strip()) < 20:
         raise RuntimeError("Clé VAPID privée existante invalide ; aucune modification effectuée.")
