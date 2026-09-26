@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export const GLOBELINK_VAPID_PUBLIC_KEY =
-  "BC60rM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc";
+  "BC6OrM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc";
 
 export type PushActivationState = "granted" | "denied" | "unsupported";
 
