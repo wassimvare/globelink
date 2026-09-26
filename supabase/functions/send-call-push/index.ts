@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.110.2";
 import * as webpush from "jsr:@negrel/webpush@0.5.0";
 
 const EXPECTED_VAPID_PUBLIC_KEY =
-  "BC60rM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc";
+  "BC6OrM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
