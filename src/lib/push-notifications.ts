@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export const GLOBELINK_VAPID_PUBLIC_KEY =
-  "BIp0OrlWcwJjq9XEAhxuGN8k_Vicpg3efz5CtyANPf82qlu1tqYYUOXqbuVXymE-ou4E_s3ZUCgH8DkkUErposQ";
+  "BC60rM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc";
 
 export type PushActivationState = "granted" | "denied" | "unsupported";
 
@@ -51,9 +51,27 @@ async function persistSubscription(subscription: PushSubscription) {
   if (error) throw error;
 }
 
+function subscriptionUsesCurrentKey(subscription: PushSubscription) {
+  const current = subscription.options.applicationServerKey;
+  if (!current) return false;
+  const actual = new Uint8Array(current);
+  const expected = applicationServerKey();
+  if (actual.length !== expected.length) return false;
+  return actual.every((value, index) => value === expected[index]);
+}
+
 async function subscribeCurrentDevice() {
   const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
+
+  // A VAPID rotation requires replacing the browser subscription. Keeping an
+  // old subscription would make the push service reject messages signed with
+  // GlobeLink's new application-server key.
+  if (subscription && !subscriptionUsesCurrentKey(subscription)) {
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
