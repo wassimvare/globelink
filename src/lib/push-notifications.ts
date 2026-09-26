@@ -20,7 +20,6 @@ type SendCallPushArgs = IncomingCallPush & {
 function supportsWebPush() {
   return (
     typeof window !== "undefined" &&
-    "Notification" in window &&
     "serviceWorker" in navigator &&
     "PushManager" in window
   );
@@ -87,9 +86,13 @@ async function subscribeCurrentDevice() {
  */
 export async function ensurePushSubscription(): Promise<PushActivationState> {
   if (!supportsWebPush()) return "unsupported";
-  if (Notification.permission === "denied") return "denied";
-  if (Notification.permission !== "granted") return "denied";
+  if ("Notification" in window && Notification.permission === "denied") return "denied";
+
   try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    if (!existing) return "denied";
+
     await subscribeCurrentDevice();
     return "granted";
   } catch (error) {
@@ -98,19 +101,37 @@ export async function ensurePushSubscription(): Promise<PushActivationState> {
   }
 }
 
-/** À appeler depuis un clic/tap utilisateur pour respecter Safari/iOS. */
+/**
+ * À appeler uniquement depuis un clic/tap utilisateur.
+ * Sur iPhone/iPad en mode écran d'accueil, PushManager.subscribe() est la
+ * source de vérité : WebKit peut gérer la demande d'autorisation directement
+ * depuis cet appel même quand window.Notification est limité.
+ */
 export async function enablePushNotifications(): Promise<PushActivationState> {
   if (!supportsWebPush()) return "unsupported";
-  let permission = Notification.permission;
-  if (permission === "default") permission = await Notification.requestPermission();
-  if (permission !== "granted") return "denied";
-  await subscribeCurrentDevice();
-  return "granted";
+
+  if ("Notification" in window && Notification.permission === "denied") {
+    return "denied";
+  }
+
+  try {
+    await subscribeCurrentDevice();
+    return "granted";
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      (error.name === "NotAllowedError" || error.name === "AbortError")
+    ) {
+      return "denied";
+    }
+    throw error;
+  }
 }
 
 export function pushPermissionState(): NotificationPermission | "unsupported" {
   if (!supportsWebPush()) return "unsupported";
-  return Notification.permission;
+  if ("Notification" in window) return Notification.permission;
+  return "default";
 }
 
 /**
