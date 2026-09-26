@@ -51,3 +51,12 @@ IDENTIFIANTS_ADMIN_LOCAL.txt
 
 # Generated self-hosted catalog secrets
 supabase/functions/_shared/catalog-runtime.json
+
+# Native mobile build artifacts and local signing
+ios/App/Pods/
+ios/DerivedData/
+android/.gradle/
+android/local.properties
+android/**/build/
+*.jks
+*.keystore
