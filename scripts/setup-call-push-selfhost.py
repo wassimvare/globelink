@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 NAME = "send-call-push"
-PUBLIC_VAPID_KEY = "BC60rM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc"
+PUBLIC_VAPID_KEY = "BC6OrM_FUL8gW0vucXb_K4DujyNCFj-IzN-SJVcNVP74hcbTcInfe5CUsBOL2177teLxwWIt_C_8Xooti3WZhHc"
 
 
 def run(args, data=None):
