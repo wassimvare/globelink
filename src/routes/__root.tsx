@@ -12,7 +12,8 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import tripMobileFixCss from "../trip-mobile-fixes.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { AuthProvider } from "@/lib/auth-context";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ensurePushSubscription } from "@/lib/push-notifications";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/lib/theme";
@@ -183,6 +184,17 @@ function AuthSync() {
   return null;
 }
 
+function PushSubscriptionSync() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+    void ensurePushSubscription();
+  }, [user?.id]);
+
+  return null;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
@@ -191,6 +203,7 @@ function RootComponent() {
         <AuthProvider>
           <CallProvider>
             <AuthSync />
+            <PushSubscriptionSync />
             <ProductAnalyticsTracker />
             <PwaBootstrap />
             <MobileBootstrap />
