@@ -237,49 +237,73 @@ Deno.serve(async (req) => {
         ? authData.user.user_metadata.avatar_url
         : null;
 
+    const appOrigin =
+      Deno.env.get("GLOBELINK_APP_ORIGIN") ||
+      "https://globelink-theta.vercel.app";
+    const navigate = new URL(`/messages/${conversationId}`, appOrigin).href;
+    const icon = callerAvatar ||
+      new URL("/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2", appOrigin).href;
+    const badge = new URL(
+      "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
+      appOrigin,
+    ).href;
+
+    // Standard Declarative Web Push payload. On recent iOS/WebKit the system
+    // can display this notification directly, without first waking service
+    // worker JavaScript. Older browsers still receive the same JSON and the
+    // GlobeLink service worker renders it as a normal Web Push notification.
     const payload = JSON.stringify({
-      title: callerName,
-      body: kind === "video" ? "Appel vidéo entrant" : "Appel audio entrant",
-      icon: callerAvatar || "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
-      badge: "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
-      tag: `globelink-call-${callId}`,
-      requireInteraction: true,
-      data: {
-        url: `/messages/${conversationId}`,
-        callId,
-        conversationId,
-        kind,
+      web_push: 8030,
+      notification: {
+        title: callerName,
+        lang: "fr-FR",
+        dir: "ltr",
+        body: kind === "video" ? "Appel vidéo entrant" : "Appel audio entrant",
+        navigate,
+        icon,
+        badge,
+        tag: `globelink-call-${callId}`,
+        silent: false,
+        requireInteraction: true,
+        data: {
+          url: navigate,
+          callId,
+          conversationId,
+          kind,
+        },
       },
     });
 
-    let sent = 0;
-    let removed = 0;
-    let failed = 0;
-    for (const subscription of subscriptions) {
-      try {
-        const subscriber = appServer.subscribe({
-          endpoint: subscription.endpoint,
-          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-        });
-        await subscriber.pushTextMessage(payload, {
-          urgency: webpush.Urgency.High,
-          ttl: 60,
-          topic: callTopic(callId),
-        });
-        sent += 1;
-      } catch (error) {
-        if (
-          error instanceof webpush.PushMessageError &&
-          (error.response.status === 404 || error.response.status === 410)
-        ) {
-          await admin.from("push_subscriptions").delete().eq("id", subscription.id);
-          removed += 1;
-        } else {
-          failed += 1;
+    const results = await Promise.all(
+      subscriptions.map(async (subscription) => {
+        try {
+          const subscriber = appServer.subscribe({
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+          });
+          await subscriber.pushTextMessage(payload, {
+            urgency: webpush.Urgency.High,
+            ttl: 45,
+            topic: callTopic(callId),
+          });
+          return "sent" as const;
+        } catch (error) {
+          if (
+            error instanceof webpush.PushMessageError &&
+            (error.response.status === 404 || error.response.status === 410)
+          ) {
+            await admin.from("push_subscriptions").delete().eq("id", subscription.id);
+            return "removed" as const;
+          }
           console.error("send-call-push delivery", error);
+          return "failed" as const;
         }
-      }
-    }
+      }),
+    );
+
+    const sent = results.filter((result) => result === "sent").length;
+    const removed = results.filter((result) => result === "removed").length;
+    const failed = results.filter((result) => result === "failed").length;
 
     return Response.json(
       { ok: true, sent, removed, failed },
