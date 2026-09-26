@@ -270,7 +270,7 @@ export function SettingsHub({ activeSection }: { activeSection?: SettingsHubSect
     try {
       const state: PushActivationState = await enablePushNotifications();
       const next = pushPermissionState();
-      setPushPermission(next);
+      setPushPermission(state === "granted" ? "granted" : next);
       if (state === "granted") {
         toast.success("Notifications système activées sur cet appareil");
       } else if (state === "unsupported") {
