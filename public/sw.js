@@ -1,5 +1,5 @@
 /* GlobeLink production service worker: static assets only, never auth/API data. */
-const CACHE = "globelink-static-v20260830-ui-refresh";
+const CACHE = "globelink-static-v20260926-call-push";
 const OFFLINE = "/offline.html";
 const PRECACHE = [
   OFFLINE,
@@ -57,15 +57,29 @@ self.addEventListener("push", (event) => {
     payload = { body: event.data?.text?.() ?? "Nouvelle notification GlobeLink" };
   }
 
-  const title = payload.title || "GlobeLink";
+  // Declarative Web Push is handled directly by recent WebKit versions.
+  // Browsers that still dispatch the legacy push event use this same payload
+  // through the service worker, preserving backwards compatibility.
+  const notification =
+    payload?.web_push === 8030 && payload?.notification
+      ? payload.notification
+      : payload;
+  const title = notification.title || "GlobeLink";
   const options = {
-    body: payload.body || "Tu as une nouvelle notification",
-    icon: payload.icon || "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
-    badge: payload.badge || "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
-    tag: payload.tag || undefined,
-    renotify: Boolean(payload.renotify),
-    requireInteraction: Boolean(payload.requireInteraction),
-    data: payload.data || {},
+    body: notification.body || "Tu as une nouvelle notification",
+    icon:
+      notification.icon ||
+      "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
+    badge:
+      notification.badge ||
+      "/icons/globelink-app-icon-192-v20260824.png?v=20260825-rgb2",
+    tag: notification.tag || undefined,
+    renotify: Boolean(notification.renotify),
+    requireInteraction: Boolean(notification.requireInteraction),
+    data: {
+      ...(notification.data || {}),
+      url: notification.navigate || notification.data?.url || "/",
+    },
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
