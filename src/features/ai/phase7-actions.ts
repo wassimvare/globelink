@@ -2,6 +2,7 @@ import {
   enrichAiPlusPricePlaceholders,
   type TravelPriceEstimateContext,
 } from "@/lib/travel-price-estimates";
+import { buildTripDateRange } from "@/features/travel/trip-journey";
 
 export type AiPlusDayPlan = { day: string; headline: string | null; notes: string };
 export type AiPlusBudgetForecast = {
@@ -310,6 +311,20 @@ export function parseAiPlusBudgetForecasts(
     total: Math.round(items.reduce((sum, item) => sum + item.amount, 0) * 100) / 100,
     items,
   }));
+}
+
+export function missingAiPlusProgramDays(
+  content: string,
+  startsOn?: string | null,
+  endsOn?: string | null,
+  maxDays = 60,
+) {
+  const expected = buildTripDateRange(startsOn, endsOn, maxDays);
+  if (!expected.length) return [];
+  const present = new Set(
+    splitAiPlusProgramByDay(content, startsOn, endsOn).map((item) => item.day),
+  );
+  return expected.filter((day) => !present.has(day));
 }
 
 export function buildAiPlusApplicationPreview(
