@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { detectPremiumIntent } from "./phase7-capabilities";
 import {
   buildAiPlusApplicationPreview,
+  evaluateAiPlusBudgetCeiling,
+  isAiPlusBudgetRollupCategory,
   parseAiPlusBudgetForecasts,
   splitAiPlusProgramByDay,
 } from "./phase7-actions";
@@ -92,4 +94,57 @@ describe("Phase 7 — IA+ agit sur le carnet", () => {
       actionable: true,
     });
   });
+});
+
+
+describe("Phase 7 — plafond budgétaire IA+", () => {
+  it.each([
+    "Total",
+    "Sous-total",
+    "Subtotal",
+    "Total journée",
+    "Total jour",
+    "Total séjour",
+    "Budget total",
+    "Budget conseillé",
+    "Reste budget",
+    "Marge de sécurité",
+  ])("ne recompte pas la ligne de synthèse « %s »", (category) => {
+    expect(isAiPlusBudgetRollupCategory(category)).toBe(true);
+    const budgets = parseAiPlusBudgetForecasts(
+      `| Date | Catégorie | Montant prévu | Détail |
+|---|---|---:|---|
+| 2026-09-10 | Restauration | 120 € | Repas |
+| 2026-09-10 | ${category} | 120 € | Synthèse |`,
+      "2026-09-10",
+      "2026-09-10",
+    );
+    expect(budgets).toHaveLength(1);
+    expect(budgets[0].total).toBe(120);
+  });
+
+  it.each([
+    [500, 0, 500, false, 500, 500],
+    [500, 100, 400, false, 400, 500],
+    [500, 100, 401, true, 400, 501],
+    [500, 500, 0, false, 0, 500],
+    [500, 500, 1, true, 0, 501],
+    [null, 100, 1000, false, null, 1100],
+    [0, 0, 0, false, 0, 0],
+    [0, 0, 0.01, true, 0, 0.01],
+    [500, 499.99, 0.01, false, 0.01, 500],
+    [500, 499.99, 0.02, true, 0.01, 500.01],
+  ])(
+    "calcule le plafond total budget=%s dépensé=%s prévision=%s",
+    (budget, spent, forecast, exceeded, remaining, totalWithSpent) => {
+      const result = evaluateAiPlusBudgetCeiling(
+        [{ day: "2026-09-10", total: forecast as number, items: [] }],
+        budget as number | null,
+        spent as number,
+      );
+      expect(result.exceeded).toBe(exceeded);
+      expect(result.remaining).toBe(remaining);
+      expect(result.totalWithSpent).toBe(totalWithSpent);
+    },
+  );
 });
