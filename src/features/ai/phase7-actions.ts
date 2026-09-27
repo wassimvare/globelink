@@ -252,7 +252,7 @@ export function evaluateAiPlusBudgetCeiling(
   spent: number | null | undefined,
 ) {
   const normalizedBudget =
-    Number.isFinite(Number(budget)) && Number(budget) >= 0
+    budget != null && Number.isFinite(Number(budget)) && Number(budget) >= 0
       ? roundBudgetMoney(Number(budget))
       : null;
   const normalizedSpent =
