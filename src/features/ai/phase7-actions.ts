@@ -221,6 +221,63 @@ function money(value: string) {
   return Math.round(Math.max(...matches) * 100) / 100;
 }
 
+function normalizeBudgetLabel(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function isAiPlusBudgetRollupCategory(value: string) {
+  const label = normalizeBudgetLabel(value);
+  if (!label) return false;
+  return (
+    /^(?:sous total|subtotal|total)(?:\s|$)/.test(label) ||
+    /(?:^|\s)(?:total jour|total journee|total sejour|budget total|budget conseille|reste budget|budget restant)(?:\s|$)/.test(
+      label,
+    ) ||
+    /(?:^|\s)marge(?:\s+de)?\s+securite(?:\s|$)/.test(label)
+  );
+}
+
+function roundBudgetMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+export function evaluateAiPlusBudgetCeiling(
+  forecasts: AiPlusBudgetForecast[],
+  budget: number | null | undefined,
+  spent: number | null | undefined,
+) {
+  const normalizedBudget =
+    Number.isFinite(Number(budget)) && Number(budget) >= 0
+      ? roundBudgetMoney(Number(budget))
+      : null;
+  const normalizedSpent =
+    Number.isFinite(Number(spent)) && Number(spent) > 0
+      ? roundBudgetMoney(Number(spent))
+      : 0;
+  const forecast = roundBudgetMoney(
+    forecasts.reduce((sum, item) => sum + Math.max(0, Number(item.total || 0)), 0),
+  );
+  const remaining =
+    normalizedBudget === null
+      ? null
+      : roundBudgetMoney(Math.max(0, normalizedBudget - normalizedSpent));
+  const totalWithSpent = roundBudgetMoney(normalizedSpent + forecast);
+
+  return {
+    budget: normalizedBudget,
+    spent: normalizedSpent,
+    remaining,
+    forecast,
+    totalWithSpent,
+    exceeded: normalizedBudget !== null && totalWithSpent > normalizedBudget + 0.009,
+  };
+}
+
 export function parseAiPlusBudgetForecasts(
   content: string,
   startsOn?: string | null,
@@ -242,7 +299,7 @@ export function parseAiPlusBudgetForecasts(
     const category = cells[dayIndex + 1]?.replace(/\*\*/g, "").trim();
     const amount = money(cells[dayIndex + 2] || "");
     const detail = cells[dayIndex + 3]?.replace(/\*\*/g, "").trim() || "Prévision IA+";
-    if (!category || amount == null) continue;
+    if (!category || amount == null || isAiPlusBudgetRollupCategory(category)) continue;
     const items = grouped.get(day) ?? [];
     items.push({ category, amount, detail });
     grouped.set(day, items);
