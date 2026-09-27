@@ -33,9 +33,12 @@
     "mobile:check": "node scripts/mobile-check.mjs",
     "mobile:add:ios": "npx cap add ios",
     "mobile:add:android": "npx cap add android",
-    "mobile:sync": "npm run build && npx cap sync",
-    "mobile:ios": "npm run mobile:sync && npx cap open ios",
-    "mobile:android": "npm run mobile:sync && npx cap open android"
+    "mobile:sync": "npx cap sync && npm run mobile:check",
+    "mobile:sync:android": "npx cap sync android && npm run mobile:check -- android",
+    "mobile:sync:ios": "npx cap sync ios && npm run mobile:check -- ios",
+    "mobile:ios": "npm run mobile:sync:ios && npx cap open ios",
+    "mobile:android": "npm run mobile:sync:android && npx cap open android",
+    "mobile:android:apk": "npm run mobile:sync:android && node scripts/mobile-android-apk.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",

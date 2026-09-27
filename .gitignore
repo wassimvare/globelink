@@ -60,3 +60,10 @@ android/local.properties
 android/**/build/
 *.jks
 *.keystore
+*.p12
+*.p8
+*.mobileprovision
+*.xcarchive/
+mobile-builds/
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
