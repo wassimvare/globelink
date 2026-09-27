@@ -499,7 +499,7 @@ ${answer}`,
       dailyLimit,
       tripContext: connectedTrip.summary,
       updatedAt: now.toISOString(),
-      applicationPreview,
+      applicationPreview: applicationPreview,
     };
   });
 
