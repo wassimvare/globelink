@@ -4,6 +4,7 @@ import {
   buildAiPlusApplicationPreview,
   evaluateAiPlusBudgetCeiling,
   isAiPlusBudgetRollupCategory,
+  missingAiPlusProgramDays,
   parseAiPlusBudgetForecasts,
   splitAiPlusProgramByDay,
 } from "./phase7-actions";
@@ -58,6 +59,19 @@ describe("Phase 7 — IA+ agit sur le carnet", () => {
     expect(days[1].notes).toContain("### Hôtel / Nuit");
     expect(days[1].notes).toContain("Hôtel Centre");
     expect(days[2].notes).not.toContain("### Hôtel / Nuit");
+  });
+
+  it("repère les dates manquantes quand une génération IA+ s'arrête trop tôt", () => {
+    const truncated = `### 2026-09-10 · Jour 1
+### Matin
+- Balade
+### 2026-09-11 · Jour 2
+### Matin
+- Marché`;
+
+    expect(
+      missingAiPlusProgramDays(truncated, "2026-09-10", "2026-09-14"),
+    ).toEqual(["2026-09-12", "2026-09-13", "2026-09-14"]);
   });
 
   it("convertit le budget IA+ en prévisions quotidiennes", () => {

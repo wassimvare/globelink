@@ -47,6 +47,28 @@ describe("generateTravelAiText avec Gemini natif", () => {
     });
   });
 
+  it("autorise 8 000 jetons pour un programme IA+ long", async () => {
+    process.env.GEMINI_API_KEY = "cle-fictive-globelink-1234567890";
+    process.env.GEMINI_MODEL = "gemini-3.7-flash";
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        generationConfig: Record<string, unknown>;
+      };
+      expect(body.generationConfig.maxOutputTokens).toBe(8_000);
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "Programme complet" }] }, finishReason: "STOP" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      generateTravelAiText({ prompt: "Programme complet", maxOutputTokens: 8_000 }),
+    ).resolves.toMatchObject({ text: "Programme complet" });
+  });
+
   it("retente automatiquement Gemini après un 503 temporaire", async () => {
     process.env.GEMINI_API_KEY = "cle-fictive-globelink-1234567890";
     process.env.GEMINI_MODEL = "gemini-3.7-flash";
