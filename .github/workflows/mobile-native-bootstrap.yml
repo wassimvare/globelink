@@ -1,0 +1,140 @@
+name: Mobile test builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.ts"
+      - "ios/**"
+      - "android/**"
+      - "mobile/**"
+      - "scripts/mobile-*.mjs"
+      - "docs/mobile-ios-android.md"
+      - ".github/workflows/mobile-native-bootstrap.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: globelink-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android installable APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Reuse the test-only signing key when available
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: globelink-android-debug-key-v1
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Sync and compile the Android test APK
+        run: npm run mobile:android:apk
+      - name: Verify and package the installable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-builds/android
+          cp android/app/build/outputs/apk/debug/app-debug.apk mobile-builds/android/GlobeLink-test.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs mobile-builds/android/GlobeLink-test.apk > mobile-builds/android/signature.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging mobile-builds/android/GlobeLink-test.apk > mobile-builds/android/apk-info.txt
+          grep -q "package: name='app.globelink.mobile.test'" mobile-builds/android/apk-info.txt
+          grep -q "launchable-activity: name='app.globelink.mobile.MainActivity'" mobile-builds/android/apk-info.txt
+          unzip -p mobile-builds/android/GlobeLink-test.apk assets/capacitor.config.json > mobile-builds/android/capacitor.config.json
+          node -e "const c = require('./mobile-builds/android/capacitor.config.json'); if (c.server.url !== 'https://globelink-theta.vercel.app' || c.server.cleartext !== false) process.exit(1)"
+          cp mobile/INSTALLER-ANDROID.txt mobile-builds/android/
+          printf 'source=%s\nrun=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > mobile-builds/android/build.txt
+          (cd mobile-builds/android && sha256sum GlobeLink-test.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: globelink-android-test-apk
+          path: mobile-builds/android/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Installation summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Android — APK de test
+          Télécharger **globelink-android-test-apk** dans les artefacts, extraire le ZIP puis ouvrir **GlobeLink-test.apk** sur Android.
+
+          Android 7.0 minimum, connexion Internet requise. Application **GlobeLink Test**. Signature de test vérifiée, pas de publication Play Store.
+
+          Les notifications natives et appels application fermée ne sont pas encore intégrés. Si la clé de test en cache a expiré, désinstaller l'ancienne version avant de réinstaller.
+          SUMMARY
+
+  ios:
+    name: iOS simulator and unsigned device archive
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Select Xcode 26
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCODE_PATH="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' | sort | tail -n 1)"
+          test -n "$XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run mobile:sync:ios
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath mobile-builds/ios-simulator \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Compile an unsigned iPhone archive
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath mobile-builds/GlobeLink-unsigned.xcarchive \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO archive
+      - name: Package iOS builds and signing instructions
+        run: |
+          mkdir -p mobile-builds/ios
+          ditto -c -k --sequesterRsrc --keepParent mobile-builds/ios-simulator/Build/Products/Debug-iphonesimulator/App.app mobile-builds/ios/GlobeLink-simulator.zip
+          ditto -c -k --sequesterRsrc --keepParent mobile-builds/GlobeLink-unsigned.xcarchive mobile-builds/ios/GlobeLink-unsigned.xcarchive.zip
+          cp docs/mobile-ios-android.md mobile-builds/ios/README.md
+          printf 'source=%s\nrun=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > mobile-builds/ios/build.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: globelink-ios-test-builds
+          path: mobile-builds/ios/
+          if-no-files-found: error
+          retention-days: 30
+      - name: iOS status summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## iOS — compilation de test
+          Le simulateur et l'archive iPhone **non signée** ont été compilés.
+
+          Ces fichiers ne sont pas installables sur iPhone. TestFlight nécessite l'adhésion Apple Developer, l'app App Store Connect et une signature Apple. Aucune publication n'a été effectuée.
+          SUMMARY
