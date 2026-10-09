@@ -138,6 +138,7 @@ export function CatalogImage({ item, className = "h-full w-full object-cover", p
   const preferVerifiedCommercialPhoto = !!cachedOpenImage && (item.kind === "restaurant" || item.kind === "hotel");
   const primaryInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: false, skipOfficialSite: false, skipOpenKnowledge: preferVerifiedCommercialPhoto }), [item, lookup, preferVerifiedCommercialPhoto]);
   const fallbackInput = useMemo(() => catalogPlaceMediaInput(item, lookup, { skipGoogle: true, skipOfficialSite: true }), [item, lookup]);
+  const directAvailableForLookup = (url: string | null, failed: Set<string>) => !!url && !failed.has(url);
   const publicInput = useMemo(() => ({ title: item.title, kind: item.kind, latitude: primaryInput.latitude, longitude: primaryInput.longitude, city: primaryInput.city ?? null, country: primaryInput.country ?? null }), [item.kind, item.title, primaryInput.city, primaryInput.country, primaryInput.latitude, primaryInput.longitude]);
   const knownLogo = useMemo(() => knownPlaceLogo(item), [item]);
   const directAttributions = useMemo(() => cachedCatalogAttributions(item), [item]);
@@ -146,14 +147,14 @@ export function CatalogImage({ item, className = "h-full w-full object-cover", p
 
   const directFailed = !!exactDirect && failedUrls.has(exactDirect);
   const canResolveSource = ((!exactDirect || directFailed) || preferVerifiedCommercialPhoto) && (!!lookup || !!primaryInput.wikidata || !!primaryInput.wikipedia || !!primaryInput.wikimediaCommons);
-  const { data: resolvedMedia, isFetching, refetch: refetchPrimary } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, primaryInput, "primary"), queryFn: async () => resolveMedia({ data: primaryInput }), enabled: canResolveSource, staleTime: 30_000, gcTime: 15 * 60_000, retry: 1 });
+  const { data: resolvedMedia, isFetching, refetch: refetchPrimary } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, { ...primaryInput, fastOnly: !priority }, "primary"), queryFn: async () => resolveMedia({ data: { ...primaryInput, fastOnly: !priority } }), enabled: canResolveSource && (priority || !directAvailableForLookup(exactDirect, failedUrls)), staleTime: 12 * 60 * 60_000, gcTime: 24 * 60 * 60_000, retry: false });
   const primaryUrl = safeExactHttps(resolvedMedia?.url);
   const primaryFailed = !!primaryUrl && failedUrls.has(primaryUrl);
   const primaryExhausted = canResolveSource && !isFetching && (!primaryUrl || primaryFailed);
-  const { data: publicMedia } = useQuery({ queryKey: publicPlaceMediaQueryKey(publicInput), queryFn: async () => resolvePublicMedia({ data: publicInput }), enabled: primaryExhausted && priority, staleTime: 12 * 60 * 60_000, gcTime: 24 * 60 * 60_000, retry: 1 });
+  const { data: publicMedia } = useQuery({ queryKey: publicPlaceMediaQueryKey(publicInput), queryFn: async () => resolvePublicMedia({ data: publicInput }), enabled: primaryExhausted && priority && !directAvailableForLookup(exactDirect, failedUrls), staleTime: 12 * 60 * 60_000, gcTime: 24 * 60 * 60_000, retry: false });
   const publicUrl = safeExactHttps(publicMedia?.url);
   const publicFailed = !!publicUrl && failedUrls.has(publicUrl);
-  const { data: fallbackMedia } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, fallbackInput, "fallback"), queryFn: async () => resolveMedia({ data: fallbackInput }), enabled: canResolveSource && (primaryFailed || publicFailed), staleTime: 30 * 60_000, gcTime: 60 * 60_000, retry: 1 });
+  const { data: fallbackMedia } = useQuery({ queryKey: verifiedPlaceMediaQueryKey(item.id, fallbackInput, "fallback"), queryFn: async () => resolveMedia({ data: fallbackInput }), enabled: priority && canResolveSource && !directAvailableForLookup(exactDirect, failedUrls) && (primaryFailed || publicFailed), staleTime: 30 * 60_000, gcTime: 60 * 60_000, retry: false });
 
   const directAvailable = exactDirect && !failedUrls.has(exactDirect) ? exactDirect : null;
   const resolvedCandidate = safeExactHttps(resolvedMedia?.url);
