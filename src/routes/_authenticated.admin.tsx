@@ -93,7 +93,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
     <div className="mx-auto max-w-md p-8 text-center">
       <Shield className="mx-auto h-10 w-10 text-destructive" />
       <h2 className="mt-4 font-display text-xl">Accès refusé</h2>
-      <p className="text-sm text-muted-foreground">{error.message}</p>
+      <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Erreur d'accès à l'administration"}</p>
       <Button asChild className="mt-4">
         <Link to="/">Retour</Link>
       </Button>
