@@ -48,7 +48,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   useEffect(() => {
@@ -64,7 +64,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         {import.meta.env.DEV && (
           <details className="mt-4 rounded-2xl border border-border bg-muted/40 p-3 text-left text-xs">
             <summary className="cursor-pointer font-semibold">Voir la cause technique</summary>
-            <p className="mt-2 break-words text-muted-foreground">{error.message}</p>
+            <p className="mt-2 break-words text-muted-foreground">{error instanceof Error ? error.message : String(error ?? "Erreur inconnue")}</p>
           </details>
         )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
