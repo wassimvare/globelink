@@ -129,18 +129,16 @@ test.describe("Audit mobile iPhone + Android", () => {
       await expect(dialog.getByRole("link", { name: new RegExp(label, "i") }).first()).toBeVisible();
     }
 
-    const drawerFits = await dialog.evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        return (
-          rect.left >= -1 &&
-          rect.right <= window.innerWidth + 1 &&
-          rect.top >= -1 &&
-          rect.bottom <= window.innerHeight + 1
-        );
-      })
-      .catch(() => true);
-
-    expect(drawerFits).toBe(true);
+    // Mobile WebKit's fixed-position layout viewport can extend into the safe-area
+    // beyond window.innerHeight. Check *usable* controls instead of comparing the
+    // sheet's bottom border to the smaller visible viewport height.
+    await expect(dialog.getByRole("button", { name: "Fermer" })).toBeInViewport();
+    await expect(dialog.getByRole("link", { name: /Marketplace/i }).first()).toBeInViewport();
+    const fitsHorizontally = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left >= -1 && rect.right <= window.innerWidth + 1;
+    });
+    expect(fitsHorizontally).toBe(true);
     await expectNoHorizontalOverflow(page);
   });
 
