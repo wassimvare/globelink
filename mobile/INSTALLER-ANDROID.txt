@@ -1,0 +1,24 @@
+INSTALLER GLOBELINK TEST SUR ANDROID
+
+1. Dans l'exécution GitHub « Mobile test builds », télécharger l'artefact
+   « globelink-android-test-apk ». Être connecté au compte GitHub autorisé.
+2. Extraire le fichier ZIP.
+3. Sur le téléphone Android, ouvrir « GlobeLink-test.apk ».
+4. Si Android le demande, autoriser l'installation depuis ce navigateur ou
+   ce gestionnaire de fichiers, puis appuyer sur Installer.
+5. Ouvrir « GlobeLink Test » et se connecter avec son compte GlobeLink.
+
+Android 7.0 ou plus récent, Android System WebView à jour, Internet nécessaire.
+L'application de test utilise le vrai service GlobeLink et le compte habituel :
+les publications et messages envoyés sont réels.
+
+À tester : connexion par e-mail, navigation, carte, ajout d'une photo,
+microphone/caméra pendant un appel ouvert, fermeture puis réouverture.
+La connexion Google dans la WebView n'est pas validée : privilégier l'e-mail.
+Les notifications natives et appels quand l'application est fermée ne sont
+pas encore intégrés à cette version.
+
+Signature de développement : cette version n'est pas une version Play Store.
+Si une mise à jour refuse de s'installer après un changement de clé de test,
+désinstaller l'ancienne « GlobeLink Test » puis réinstaller (reconnexion requise).
+Ce fichier APK ne peut pas être installé sur iPhone.
