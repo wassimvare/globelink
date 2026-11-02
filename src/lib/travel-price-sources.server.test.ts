@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSpecs,
   classifyTravelSource,
   hasExplicitPriceEvidence,
   mergeTravelPriceSources,
@@ -160,6 +161,24 @@ describe("IA+ — hiérarchie des sources de prix", () => {
       },
     };
     expect(mergeTravelPriceSources([web, live])).toEqual([live]);
+  });
+});
+
+describe("IA+ — sources officielles pour les formalités du départ", () => {
+  it("recherche les visas, passeports, transits et la sécurité avant les tarifs", () => {
+    const specs = buildSpecs({
+      query: "Prépare la fiche avant de partir",
+      country: "Japon",
+      startsOn: "2027-04-10",
+      endsOn: "2027-04-20",
+      mode: "safety",
+    });
+    expect(specs).toHaveLength(2);
+    expect(specs[0].query).toContain("passeport visa");
+    expect(specs[0].query).toContain("transit");
+    expect(specs[1].query).toContain("sécurité santé");
+    expect(specs.every((spec) => spec.includeDomains?.includes("diplomatie.gouv.fr"))).toBe(true);
+    expect(specs.every((spec) => !spec.query.includes("prix tarif"))).toBe(true);
   });
 });
 

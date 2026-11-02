@@ -19,6 +19,7 @@ import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import { AppHeader } from "@/components/AppHeader";
 import { AIContextActions } from "@/components/AIContextActions";
+import { TripDeparturePreparation } from "@/components/trips/TripDeparturePreparation";
 import { TripJourneyRail } from "@/components/TripJourneyRail";
 // AI_CONTEXT_LAYER_V1_TRIP
 // JOURNEY_CONTINUITY_V1_TRIP
@@ -363,6 +364,14 @@ function TripDetail() {
               />
             </div>
           </section>
+        )}
+
+        {!finalized && (
+          <TripDeparturePreparation
+            tripId={id}
+            destination={[trip.city, trip.country].filter(Boolean).join(", ")}
+            notes={trip.notes}
+          />
         )}
 
         {planningEntries.length > 0 && (
