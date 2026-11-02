@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTripInsert, isTripActive, selectFocusTrip, tripStatusLabel } from "./trip-domain";
+import { buildTripInsert, buildTripUpdate, isTripActive, selectFocusTrip, tripStatusLabel } from "./trip-domain";
 
 describe("trip focus", () => {
   it("does not keep a finalized trip in the current-trip card", () => {
@@ -40,6 +40,7 @@ describe("trip focus", () => {
       country: "  Indonésie ",
       city: " Jakarta ",
       budget: "3000,50",
+      travelers: "4",
       startsOn: "2026-07-05",
       endsOn: "2026-07-25",
       notes: "  Plongée et quad  ",
@@ -49,6 +50,7 @@ describe("trip focus", () => {
     expect(insert.country).toBe("Indonésie");
     expect(insert.city).toBe("Jakarta");
     expect(insert.budget).toBe(3000.5);
+    expect(insert.travelers).toBe(4);
     expect(insert.notes).toBe("Plongée et quad");
   });
 
@@ -58,6 +60,7 @@ describe("trip focus", () => {
       country: "France",
       city: "",
       budget: "",
+      travelers: "1",
       startsOn: "",
       endsOn: "",
       notes: "",
@@ -75,5 +78,10 @@ describe("trip focus", () => {
     ).toThrow(/date de retour/i);
     expect(() => buildTripInsert("user-1", { ...base, budget: "-10" })).toThrow(/budget/i);
     expect(() => buildTripInsert("user-1", { ...base, country: "   " })).toThrow(/pays/i);
+    for (const travelers of ["", "0", "51", "1.5", "abc", "-2"]) {
+      expect(() => buildTripInsert("user-1", { ...base, travelers })).toThrow(/voyageurs/i);
+    }
+    expect(buildTripUpdate({ ...base, travelers: "2" }).travelers).toBe(2);
+    expect(buildTripInsert("user-1", { ...base, travelers: "50" }).travelers).toBe(50);
   });
 });

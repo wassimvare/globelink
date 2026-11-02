@@ -149,7 +149,7 @@ function AiPlusPage() {
     queryFn: async () => {
       let request = supabase
         .from("trips")
-        .select("id, title, city, country, budget, starts_on, ends_on, status")
+        .select("id, title, city, country, budget, travelers, starts_on, ends_on, status")
         .eq("user_id", user!.id);
       if (tripId) request = request.eq("id", tripId);
       const { data, error } = await request
@@ -533,7 +533,8 @@ function PremiumWorkspace({
                   {[
                     [trip?.city, trip?.country].filter(Boolean).join(", ") || null,
                     days ? `${days} jour${days > 1 ? "s" : ""}` : null,
-                    trip?.budget ? `Budget : ${Number(trip.budget).toLocaleString("fr-FR")} €` : null,
+                    trip?.budget ? `Budget total : ${Number(trip.budget).toLocaleString("fr-FR")} €` : null,
+                    trip ? `${trip.travelers ?? 1} voyageur${(trip.travelers ?? 1) > 1 ? "s" : ""}` : null,
                   ].filter(Boolean).join(" • ") || "Ajoute un voyage à ton carnet pour que IA+ personnalise réellement ses décisions."}
                 </p>
               </div>

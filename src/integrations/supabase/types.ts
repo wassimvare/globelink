@@ -1696,6 +1696,7 @@ export type Database = {
           status: string;
           summary: string | null;
           title: string;
+          travelers: number;
           updated_at: string;
           user_id: string;
         };
@@ -1715,6 +1716,7 @@ export type Database = {
           status?: string;
           summary?: string | null;
           title: string;
+          travelers?: number;
           updated_at?: string;
           user_id: string;
         };
@@ -1734,6 +1736,7 @@ export type Database = {
           status?: string;
           summary?: string | null;
           title?: string;
+          travelers?: number;
           updated_at?: string;
           user_id?: string;
         };

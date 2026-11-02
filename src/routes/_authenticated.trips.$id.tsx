@@ -13,6 +13,7 @@ import {
   Sparkles,
   Trash2,
   Wallet,
+  Users,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -248,6 +249,9 @@ function TripDetail() {
               </h1>
               <p className="mt-1 flex items-center gap-1 text-sm opacity-90">
                 <MapPin className="h-4 w-4" /> {[trip.city, trip.country].filter(Boolean).join(", ")}
+              </p>
+              <p className="mt-1 flex items-center gap-1 text-sm opacity-90">
+                <Users className="h-4 w-4" /> {trip.travelers ?? 1} voyageur{(trip.travelers ?? 1) > 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -550,6 +554,7 @@ function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
     country: String(trip.country ?? ""),
     city: String(trip.city ?? ""),
     budget: trip.budget == null ? "" : String(trip.budget),
+    travelers: String(trip.travelers ?? 1),
     startsOn: String(trip.starts_on ?? ""),
     endsOn: String(trip.ends_on ?? ""),
     notes: String(trip.notes ?? ""),
@@ -636,16 +641,34 @@ function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
                 />
               </label>
             </div>
-            <Input
-              aria-label="Budget du voyage"
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              placeholder="Budget prévu (€)"
-              value={form.budget}
-              onChange={(event) => setForm({ ...form, budget: event.target.value })}
-            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                Budget total du groupe (€)
+                <Input
+                  aria-label="Budget total du voyage"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="Budget total (€)"
+                  value={form.budget}
+                  onChange={(event) => setForm({ ...form, budget: event.target.value })}
+                />
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                Nombre de voyageurs
+                <Input
+                  aria-label="Nombre de voyageurs"
+                  type="number"
+                  min="1"
+                  max="50"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.travelers}
+                  onChange={(event) => setForm({ ...form, travelers: event.target.value })}
+                />
+              </label>
+            </div>
             <Textarea
               aria-label="Notes du voyage"
               rows={4}

@@ -19,6 +19,7 @@ import {
   Plus,
   Sparkles,
   Wallet,
+  Users,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -200,17 +201,36 @@ function TripsPage() {
                       />
                     </label>
                   </div>
-                  <Input
-                    data-testid="trip-create-budget"
-                    aria-label="Budget du voyage"
-                    placeholder="Budget prévu (€)"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={form.budget}
-                    onChange={(e) => setForm({ ...form, budget: e.target.value })}
-                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                      Budget total du groupe (€)
+                      <Input
+                        data-testid="trip-create-budget"
+                        aria-label="Budget total du voyage"
+                        placeholder="Budget total (€)"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={form.budget}
+                        onChange={(e) => setForm({ ...form, budget: e.target.value })}
+                      />
+                    </label>
+                    <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
+                      Nombre de voyageurs
+                      <Input
+                        data-testid="trip-create-travelers"
+                        aria-label="Nombre de voyageurs"
+                        type="number"
+                        min="1"
+                        max="50"
+                        step="1"
+                        inputMode="numeric"
+                        value={form.travelers}
+                        onChange={(e) => setForm({ ...form, travelers: e.target.value })}
+                      />
+                    </label>
+                  </div>
                   <Textarea
                     aria-label="Notes du voyage"
                     placeholder="Notes, plans, envies…"
@@ -268,6 +288,9 @@ function TripsPage() {
                         <Wallet className="h-3.5 w-3.5" /> {Number(focusTrip.budget).toLocaleString("fr-FR")} €
                       </span>
                     )}
+                    <span className="flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" /> {focusTrip.travelers ?? 1} voyageur{(focusTrip.travelers ?? 1) > 1 ? "s" : ""}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -432,6 +455,9 @@ function TripsPage() {
                             <Wallet className="h-3 w-3" /> {Number(trip.budget).toLocaleString("fr-FR")} €
                           </span>
                         )}
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3 w-3" /> {trip.travelers ?? 1} voyageur{(trip.travelers ?? 1) > 1 ? "s" : ""}
+                        </span>
                         {trip.starts_on && (
                           <span className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" /> {formatTripDate(trip.starts_on)}

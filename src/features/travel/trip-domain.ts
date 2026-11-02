@@ -5,6 +5,7 @@ export type TripFormState = {
   country: string;
   city: string;
   budget: string;
+  travelers: string;
   startsOn: string;
   endsOn: string;
   notes: string;
@@ -15,6 +16,7 @@ export const EMPTY_TRIP_FORM: TripFormState = {
   country: "",
   city: "",
   budget: "",
+  travelers: "1",
   startsOn: "",
   endsOn: "",
   notes: "",
@@ -39,6 +41,15 @@ function parseOptionalBudget(value: string) {
   return Math.round(amount * 100) / 100;
 }
 
+function parseTravelers(value: string) {
+  const trimmed = value.trim();
+  const count = Number(trimmed);
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(count) || count < 1 || count > 50) {
+    throw new Error("Le nombre de voyageurs doit être compris entre 1 et 50.");
+  }
+  return count;
+}
+
 export function buildTripUpdate(form: TripFormState) {
   const country = form.country.trim();
   if (!country) throw new Error("Renseigne le pays du voyage.");
@@ -51,6 +62,7 @@ export function buildTripUpdate(form: TripFormState) {
     country,
     city: city || null,
     budget: parseOptionalBudget(form.budget),
+    travelers: parseTravelers(form.travelers),
     starts_on: form.startsOn || null,
     ends_on: form.endsOn || null,
     notes: form.notes.trim() || null,
