@@ -700,7 +700,7 @@ function PremiumWorkspace({
             {pending && (
               <div className="mt-2 flex items-start gap-2 rounded-xl border border-violet-400/20 bg-violet-500/[0.08] px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
                 <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-violet-400" />
-                <span>Analyse en cours. IA+ réessaie automatiquement si le moteur tarde à répondre.</span>
+                <span>Préparation en cours. Un voyage complet peut prendre quelques minutes. Garde cette page ouverte.</span>
               </div>
             )}
             <div className="mt-3 space-y-2">

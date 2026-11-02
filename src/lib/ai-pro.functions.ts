@@ -6,7 +6,7 @@ import {
   parseAiPlusBudgetForecasts,
   splitAiPlusProgramByDay,
 } from "@/features/ai/phase7-actions";
-import { generateTravelAiText } from "./ai-gateway.server";
+import { createTravelAiRequestContext, generateTravelAiText } from "./ai-gateway.server";
 import {
   JOURNAL_SELECTION_TITLE_PREFIX,
   parseDayProgram,
@@ -317,6 +317,9 @@ export const askGlobeLinkPro = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Source lookup, the initial plan, budget corrections and missing-day
+    // completions share a deadline below the hosting platform's 300 s limit.
+    const aiRequestContext = createTravelAiRequestContext();
     const db = supabase as any;
     const now = new Date();
     const { start, end } = utcDayBounds();
@@ -435,6 +438,7 @@ export const askGlobeLinkPro = createServerFn({ method: "POST" })
 - Si le premier plan dépasse le plafond, réduis ou remplace les options (hôtel, restaurants, activités, transports) avant de répondre ; ne dépasse jamais le plafond en supposant que l'utilisateur paiera la différence.`;
 
     const { text, providerName } = await generateTravelAiText({
+      requestContext: aiRequestContext,
       temperature: 0.2,
       thinkingLevel: "low",
       maxOutputTokens: data.mode === "plan" ? FULL_PLAN_OUTPUT_TOKENS : 3_400,
@@ -463,6 +467,7 @@ export const askGlobeLinkPro = createServerFn({ method: "POST" })
 
     if (initialBudgetGuard.exceeded && initialBudgetGuard.budget != null && initialBudgetGuard.forecast > 0) {
       const correction = await generateTravelAiText({
+        requestContext: aiRequestContext,
         temperature: 0.1,
         thinkingLevel: "low",
         maxOutputTokens: data.mode === "plan" ? FULL_PLAN_OUTPUT_TOKENS : 3_400,
@@ -564,6 +569,7 @@ ${answer}`,
             : Math.max(0, beforeGuard.remaining - beforeGuard.forecast);
 
         const completion = await generateTravelAiText({
+          requestContext: aiRequestContext,
           temperature: 0.1,
           thinkingLevel: "low",
           maxOutputTokens: FULL_PLAN_OUTPUT_TOKENS,
