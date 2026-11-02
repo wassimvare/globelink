@@ -65,10 +65,10 @@ export function BottomNav() {
       data-hydrated={hydrated ? "true" : "false"}
     >
       <div className="mobile-bottom-nav-inner grid grid-cols-[1fr_1fr_56px_1fr_1fr] items-center border-t border-border/70 bg-card/96 px-1.5 pt-1 shadow-[0_-10px_35px_-24px_rgba(3,28,43,.45)] backdrop-blur-xl">
-        <NavItem to="/" label="Accueil" Icon={Home} exact />
+        <NavItem to="/" label="Accueil" Icon={Home} exact tourId="home-mobile" />
         <MobileExplorer active={explorerActive} pathname={pathname} />
 
-        <div className="relative -mt-4 flex justify-center">
+        <div data-tour="quick-create-mobile" className="relative -mt-4 flex justify-center">
           <QuickCreate compact />
         </div>
 
@@ -77,9 +77,10 @@ export function BottomNav() {
           label="Voyage"
           Icon={Notebook}
           activePrefixes={["/trips", "/intelligence", "/ai-trip", "/ai-pro", "/match"]}
+          tourId="travel-mobile"
         />
 
-        <NavItem to={profilePath} label="Profil" Icon={UserIcon} activePrefixes={["/profile"]} />
+        <NavItem to={profilePath} label="Profil" Icon={UserIcon} activePrefixes={["/profile"]} tourId="profile-mobile" />
       </div>
     </nav>
   );
@@ -92,6 +93,7 @@ function MobileExplorer({ active, pathname }: { active: boolean; pathname: strin
         <button
           type="button"
           aria-label="Ouvrir Explorer"
+          data-tour="explorer-mobile"
           className={`relative flex min-h-[52px] w-full touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${
             active ? "text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" : "text-muted-foreground"
           }`}
@@ -195,12 +197,14 @@ function NavItem({
   Icon,
   exact,
   activePrefixes,
+  tourId,
 }: {
   to: string;
   label: string;
   Icon: typeof Home;
   exact?: boolean;
   activePrefixes?: string[];
+  tourId?: string;
 }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const forcedActive = activePrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? false;
@@ -209,6 +213,7 @@ function NavItem({
     <Link
       to={to as any}
       preload="intent"
+      data-tour={tourId}
       activeOptions={exact ? { exact: true } : undefined}
       activeProps={{ className: "!text-primary [&_.nav-dot]:scale-100 [&_svg]:stroke-[2.4]" }}
       className={`relative flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold leading-none transition active:bg-secondary/70 ${

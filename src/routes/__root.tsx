@@ -29,6 +29,7 @@ import { OnboardingGate } from "@/components/OnboardingGate";
 import { TravelJournalEnhancer } from "@/components/TravelJournalEnhancer";
 import { BetaFeedbackWidget } from "@/components/BetaFeedbackWidget";
 import { MapBackToTopButton } from "@/components/MapBackToTopButton";
+import { GuidedTour } from "@/components/GuidedTour";
 
 function NotFoundComponent() {
   return (
@@ -219,6 +220,7 @@ function RootComponent() {
             <BetaFeedbackWidget />
             <MapBackToTopButton />
             <BottomNav />
+            <GuidedTour />
             <NetworkStatus />
             <Toaster position="top-center" richColors closeButton />
           </CallProvider>
