@@ -191,6 +191,7 @@ export function AppHeader() {
           <Link
             to="/"
             preload="intent"
+            data-tour="home-desktop"
             className={navClass}
             activeProps={{ className: navActiveClass }}
             activeOptions={{ exact: true }}
@@ -200,6 +201,7 @@ export function AppHeader() {
 
           <DropdownMenu>
             <DropdownMenuTrigger
+              data-tour="explorer-desktop"
               className={`${navClass} ${explorerActive ? navActiveClass : ""} outline-none data-[state=open]:bg-secondary data-[state=open]:text-foreground`}
             >
               <Compass className="h-4 w-4" /> Explorer
@@ -244,6 +246,7 @@ export function AppHeader() {
           {user && (
             <DropdownMenu>
               <DropdownMenuTrigger
+                data-tour="travel-desktop"
                 className={`${navClass} ${travelActive ? navActiveClass : ""} outline-none data-[state=open]:bg-secondary data-[state=open]:text-foreground`}
               >
                 <Notebook className="h-4 w-4" /> Voyage
@@ -294,6 +297,7 @@ export function AppHeader() {
                 to="/messages"
                 preload="intent"
                 aria-label="Messages"
+                data-tour="messages"
                 className="relative grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-card/80 text-foreground transition hover:border-primary/25 hover:shadow-soft"
               >
                 <MessageSquare className="h-4 w-4" />
@@ -311,7 +315,7 @@ export function AppHeader() {
                   </span>
                 )}
               </Link>
-              <div className="hidden sm:block">
+              <div data-tour="quick-create-desktop" className="hidden sm:block">
                 <QuickCreate />
               </div>
 
@@ -319,6 +323,7 @@ export function AppHeader() {
                 <DropdownMenuTrigger asChild>
                   <button
                     aria-label="Ouvrir le menu du profil"
+                    data-tour="profile-desktop"
                     className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-border/70 bg-secondary transition hover:border-primary/25 hover:shadow-soft focus-visible:ring-2 focus-visible:ring-primary/30"
                   >
                     {avatarUrl ? (
