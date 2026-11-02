@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AIReadableAnswer } from "@/components/AIReadableAnswer";
+import { DEPARTURE_PREPARATION_PROMPT, DEPARTURE_REPORT_TITLE } from "@/features/ai/departure-preparation";
 // AI_READABLE_RESPONSE_V1
 import { z } from "zod";
 import {
@@ -60,6 +61,7 @@ type ThreadTurn = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  mode?: Mode;
   updatedAt?: string;
   sources?: Source[];
   liveSearch?: boolean;
@@ -73,6 +75,7 @@ const PREMIUM_FEATURES = [
   "Voyage complet et réorganisation intelligente",
   "Comparaisons détaillées avec verdict",
   "Budget analysé selon tes vraies dépenses",
+  "Fiche Avant de partir : formalités, santé et sécurité",
   "250 demandes IA+ par jour par défaut",
 ];
 
@@ -90,7 +93,7 @@ const QUICK_PROMPTS = [
   "Analyse mon voyage enregistré et dis-moi ce que tu améliorerais en priorité.",
   "Compare les meilleurs quartiers où dormir avec avantages, limites et sources.",
   "Réorganise mon itinéraire pour réduire les trajets et préserver mon budget.",
-  "Vérifie les points à risque ou à confirmer avant mon départ et propose des plans B.",
+  DEPARTURE_PREPARATION_PROMPT,
 ];
 
 export const Route = createFileRoute("/ai-pro")({
@@ -190,6 +193,7 @@ function AiPlusPage() {
             id: `a-${stamp}`,
             role: "assistant",
             content: data.answer,
+            mode: request.mode,
             updatedAt: data.updatedAt,
             sources: data.sources,
             liveSearch: data.liveSearch,
@@ -209,17 +213,17 @@ function AiPlusPage() {
       return saveFn({
         data: {
           tripId: tripQuery.data.id,
-          title: "Conseil enregistré depuis IA+",
+          title: turn.mode === "safety" ? DEPARTURE_REPORT_TITLE : "Conseil enregistré depuis IA+",
           content: turn.content,
         },
       });
     },
-    onSuccess: (result) => {
+    onSuccess: (result, turn) => {
       const details = [
         result.appliedDays ? `${result.appliedDays} journée${result.appliedDays > 1 ? "s" : ""}` : null,
         result.appliedBudgetDays ? `${result.appliedBudgetDays} budget${result.appliedBudgetDays > 1 ? "s" : ""}` : null,
       ].filter(Boolean).join(" + ");
-      toast.success(details ? `IA+ a appliqué ${details} au carnet ✨` : "Conseil IA+ enregistré dans ton carnet ✨");
+      toast.success(details ? `IA+ a appliqué ${details} au carnet ✨` : turn.mode === "safety" ? "Fiche Avant de partir enregistrée dans ton carnet" : "Conseil IA+ enregistré dans ton carnet ✨");
     },
     onError: (error: Error) => toast.error(friendlyAiError(error)),
   });
@@ -558,7 +562,7 @@ function PremiumWorkspace({
               <ActionCard icon={Database} title="Auditer mon voyage" text="Analyse le carnet et trouve les points faibles." onClick={() => { setMode("research"); fillPrompt("Analyse tout mon voyage enregistré et donne-moi les 5 améliorations les plus importantes, avec leur impact concret."); }} />
               <ActionCard icon={Hotel} title="Comparer avec sources" text="Hôtels, quartiers ou options selon mes critères." onClick={() => { setMode("compare"); fillPrompt("Compare les meilleures options d’hébergement pour mon voyage avec des sources récentes, puis recommande celle qui correspond le mieux à mon budget et à mon itinéraire."); }} />
               <ActionCard icon={Wand2} title="Réorganiser le séjour" text="Réduit les trajets et améliore le rythme." onClick={() => { setMode("plan"); fillPrompt("Réorganise mon voyage enregistré pour réduire les trajets inutiles, garder un bon rythme et respecter mon budget. Explique précisément ce que tu changerais dans le carnet."); }} />
-              <ActionCard icon={ShieldCheck} title="Vérifier avant départ" text="Risques, horaires, conditions et plans B." onClick={() => { setMode("safety"); fillPrompt("Vérifie les points importants de mon voyage avant le départ : risques, horaires ou conditions à confirmer, réservations sensibles et plans B."); }} />
+              <ActionCard icon={ShieldCheck} title="Avant de partir" text="Passeport, visa, santé, sécurité et choses à éviter." onClick={() => { setMode("safety"); fillPrompt(DEPARTURE_PREPARATION_PROMPT); }} />
             </div>
           </div>
 
@@ -630,7 +634,7 @@ function PremiumWorkspace({
                             )}
                             <Button type="button" variant={turn.applicationPreview?.actionable ? "default" : "outline"} size="sm" disabled={savePending} onClick={() => saveTurn(turn)} className="rounded-xl">
                               {savePending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <BookmarkPlus className="mr-2 h-3.5 w-3.5" />}
-                              {turn.applicationPreview?.actionable ? "Appliquer au carnet" : "Enregistrer le conseil"}
+                              {turn.applicationPreview?.actionable ? "Appliquer au carnet" : turn.mode === "safety" ? "Enregistrer la fiche dans le carnet" : "Enregistrer le conseil"}
                             </Button>
                           </div>
                         )}

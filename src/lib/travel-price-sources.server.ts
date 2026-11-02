@@ -260,11 +260,37 @@ function destinationLabel(context: TravelPriceSearchContext) {
   return [context.city, context.country].filter(Boolean).join(", ") || "destination";
 }
 
-function buildSpecs(context: TravelPriceSearchContext): TavilySpec[] {
+export function buildSpecs(context: TravelPriceSearchContext): TavilySpec[] {
   const destination = destinationLabel(context);
   const dates = dateLabel(context);
   const travelers = Math.min(50, Math.max(1, Math.round(Number(context.travelers) || 1)));
   const base = cleanText(context.query, 700);
+  // Les formalités et la sécurité ne sont pas des comparaisons de prix :
+  // rechercher des autorités publiques avant les sources commerciales.
+  if (context.mode === "safety") {
+    const governmentDomains = [
+      "diplomatie.gouv.fr", "service-public.fr", "eda.admin.ch", "gov.uk",
+      "travel.state.gov", "europa.eu", "canada.ca", "smartraveller.gov.au", "who.int",
+    ];
+    return [
+      {
+        category: "general",
+        authority: "official_candidate",
+        query: `${destination} ${dates} passeport visa autorisation électronique formalités entrée transit nationalité site officiel gouvernement ${base}`,
+        includeDomains: governmentDomains,
+        maxResults: 6,
+        searchDepth: "advanced",
+      },
+      {
+        category: "general",
+        authority: "official_candidate",
+        query: `${destination} conseils voyageurs sécurité santé vaccins douanes lois coutumes à éviter autorités officielles ${base}`,
+        includeDomains: governmentDomains,
+        maxResults: 6,
+        searchDepth: "advanced",
+      },
+    ];
+  }
   const categories = priceSearchCategories(context);
   const specs: TavilySpec[] = [];
 
@@ -372,7 +398,9 @@ export async function searchPriorityTravelPriceSources(
   const fallback = await tavilySearch(apiKey, {
     category: "general",
     authority: "fallback",
-    query: `${destinationLabel(context)} ${dateLabel(context)} ${cleanText(context.query, 700)} voyage prix tarifs horaires disponibilité`,
+    query: context.mode === "safety"
+      ? `${destinationLabel(context)} ${dateLabel(context)} ${cleanText(context.query, 700)} formalités visa passeport santé sécurité conseils voyageurs source officielle`
+      : `${destinationLabel(context)} ${dateLabel(context)} ${cleanText(context.query, 700)} voyage prix tarifs horaires disponibilité`,
     maxResults: 6,
     searchDepth: "advanced",
   });
