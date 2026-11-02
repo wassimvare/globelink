@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { AppHeader } from "@/components/AppHeader";
 import { JourneyCard } from "@/components/trips/JourneyCard";
+import { deleteOwnedTripSafely } from "@/features/travel/delete-trip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TripBudgetTravelersFields } from "@/components/trips/TripBudgetTravelersFields";
@@ -104,12 +105,7 @@ function TripsPage() {
   const deleteTrip = useMutation({
     mutationFn: async (tripId: string) => {
       if (!user) throw new Error("Connecte-toi pour supprimer ce voyage.");
-      const { error } = await supabase
-        .from("trips")
-        .delete()
-        .eq("id", tripId)
-        .eq("user_id", user.id);
-      if (error) throw error;
+      await deleteOwnedTripSafely(tripId, user.id);
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["trips"] });
