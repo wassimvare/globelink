@@ -13,6 +13,7 @@ import {
   Sparkles,
   Trash2,
   Wallet,
+  Users,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -33,6 +34,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TripBudgetTravelersFields } from "@/components/trips/TripBudgetTravelersFields";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -248,6 +250,9 @@ function TripDetail() {
               </h1>
               <p className="mt-1 flex items-center gap-1 text-sm opacity-90">
                 <MapPin className="h-4 w-4" /> {[trip.city, trip.country].filter(Boolean).join(", ")}
+              </p>
+              <p className="mt-1 flex items-center gap-1 text-sm opacity-90">
+                <Users className="h-4 w-4" /> {trip.travelers ?? 1} voyageur{(trip.travelers ?? 1) > 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -550,6 +555,7 @@ function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
     country: String(trip.country ?? ""),
     city: String(trip.city ?? ""),
     budget: trip.budget == null ? "" : String(trip.budget),
+    travelers: String(trip.travelers ?? 1),
     startsOn: String(trip.starts_on ?? ""),
     endsOn: String(trip.ends_on ?? ""),
     notes: String(trip.notes ?? ""),
@@ -636,15 +642,11 @@ function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
                 />
               </label>
             </div>
-            <Input
-              aria-label="Budget du voyage"
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              placeholder="Budget prévu (€)"
-              value={form.budget}
-              onChange={(event) => setForm({ ...form, budget: event.target.value })}
+            <TripBudgetTravelersFields
+              budget={form.budget}
+              travelers={form.travelers}
+              onBudgetChange={(budget) => setForm({ ...form, budget })}
+              onTravelersChange={(travelers) => setForm({ ...form, travelers })}
             />
             <Textarea
               aria-label="Notes du voyage"
