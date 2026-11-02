@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AIReadableAnswer } from "@/components/AIReadableAnswer";
 import { DEPARTURE_PREPARATION_PROMPT, DEPARTURE_REPORT_TITLE } from "@/features/ai/departure-preparation";
+import { aiPlusSaveFeedback } from "@/features/ai/budget-save-feedback";
 // AI_READABLE_RESPONSE_V1
 import { z } from "zod";
 import {
@@ -128,6 +129,7 @@ function friendlyAiError(error: Error) {
 function AiPlusPage() {
   const { prompt, mode: requestedMode, tripId } = Route.useSearch();
   const { user } = useAuth();
+  const qc = useQueryClient();
   const entitlementFn = useServerFn(getAiProEntitlement);
   const askFn = useServerFn(askGlobeLinkPro);
   const saveFn = useServerFn(saveAiPlusRecommendation);
@@ -222,11 +224,17 @@ function AiPlusPage() {
       });
     },
     onSuccess: (result, turn) => {
-      const details = [
-        result.appliedDays ? `${result.appliedDays} journée${result.appliedDays > 1 ? "s" : ""}` : null,
-        result.appliedBudgetDays ? `${result.appliedBudgetDays} budget${result.appliedBudgetDays > 1 ? "s" : ""}` : null,
-      ].filter(Boolean).join(" + ");
-      toast.success(details ? `IA+ a appliqué ${details} au carnet ✨` : turn.mode === "safety" ? "Fiche Avant de partir enregistrée dans ton carnet" : "Conseil IA+ enregistré dans ton carnet ✨");
+      const feedback = aiPlusSaveFeedback(result, turn.mode === "safety");
+      toast.success(feedback.message, { duration: 7000 });
+      // Le programme et la prévision sont enregistrés côté serveur : rafraîchir le carnet
+      // déjà ouvert dans le cache pour que le budget apparaisse à jour au retour.
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: ["trip", result.tripId] }),
+        qc.invalidateQueries({ queryKey: ["trip-expenses", result.tripId] }),
+        qc.invalidateQueries({ queryKey: ["trip-entries", result.tripId] }),
+        qc.invalidateQueries({ queryKey: ["trip-days", result.tripId] }),
+        qc.invalidateQueries({ queryKey: ["trips"] }),
+      ]);
     },
     onError: (error: Error) => toast.error(friendlyAiError(error)),
   });
@@ -601,6 +609,11 @@ function PremiumWorkspace({
                         </div>
                       </div>
                       <AIReadableAnswer content={turn.content} />
+                      {turn.applicationPreview?.actionable && turn.applicationPreview.budgetDayCount === 0 && (
+                        <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3 text-xs leading-relaxed text-foreground/85">
+                          <strong>Budget du carnet inchangé.</strong> IA+ propose ici un programme sans nouvelle prévision de dépenses. En l’appliquant, les montants déjà enregistrés seront conservés.
+                        </div>
+                      )}
 
                       {turn.sources && turn.sources.length > 0 && (
                         <div className="mt-5 border-t border-border/60 pt-4">

@@ -10,6 +10,7 @@ import {
   MapPin,
   Pencil,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
   Wallet,
@@ -103,7 +104,7 @@ function TripDetail() {
     },
   });
 
-  const { data: expenses, error: expensesError } = useQuery({
+  const { data: expenses, error: expensesError, isFetching: expensesRefreshing } = useQuery({
     queryKey: ["trip-expenses", id],
     enabled: !!user,
     queryFn: async () => {
@@ -280,7 +281,7 @@ function TripDetail() {
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <Wallet className="h-3.5 w-3.5" /> Budget réellement dépensé
+                      <Wallet className="h-3.5 w-3.5" /> Dépenses réelles
                     </span>
                     <span className="tabular-nums">
                       {totalSpent.toFixed(2)} € / {budget.toFixed(0)} €
@@ -304,17 +305,41 @@ function TripDetail() {
                         ? `${budgetState.remaining.toFixed(2)} € restants`
                         : `${Math.abs(budgetState.remaining ?? 0).toFixed(2)} € au-dessus du budget`}
                     </span>
-                    {forecastTotal > 0 && (
-                      <span
-                        className={`rounded-full px-2.5 py-1 font-semibold tabular-nums ${
-                          budgetState.isProjectedOverBudget
-                            ? "bg-destructive/10 text-destructive"
-                            : "bg-primary/10 text-primary"
-                        }`}
-                      >
-                        {budgetState.projected.toFixed(2)} € projetés avec IA+
+                    <button
+                      type="button"
+                      aria-label="Actualiser le budget du carnet"
+                      disabled={expensesRefreshing}
+                      onClick={() => {
+                        void Promise.all([
+                          qc.invalidateQueries({ queryKey: ["trip-expenses", id] }),
+                          qc.invalidateQueries({ queryKey: ["trip", id] }),
+                        ]);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-border/70 px-2.5 py-1 text-muted-foreground transition hover:bg-secondary disabled:opacity-60"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${expensesRefreshing ? "animate-spin" : ""}`} />
+                      Actualiser
+                    </button>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-border/70 bg-background/45 p-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Prévisions IA+ enregistrées (non dépensées)</span>
+                      <span className="font-semibold tabular-nums">{forecastTotal.toFixed(2)} €</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Reste après dépenses et prévisions</span>
+                      <span className={`font-semibold tabular-nums ${budgetState.isProjectedOverBudget ? "text-destructive" : "text-primary"}`}>
+                        {budgetState.projectedRemaining != null
+                          ? budgetState.projectedRemaining >= 0
+                            ? `${budgetState.projectedRemaining.toFixed(2)} €`
+                            : `Dépassement de ${Math.abs(budgetState.projectedRemaining).toFixed(2)} €`
+                          : "Non calculable"}
                       </span>
-                    )}
+                    </div>
+                    <p className="mt-2 leading-relaxed text-muted-foreground">
+                      Une réorganisation IA+ sans nouvelle prévision validée modifie le programme,
+                      mais ne change pas les montants du budget.
+                    </p>
                   </div>
                 </>
               ) : (
