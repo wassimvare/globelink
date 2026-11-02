@@ -7,6 +7,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { JourneyCard } from "@/components/trips/JourneyCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TripBudgetTravelersFields } from "@/components/trips/TripBudgetTravelersFields";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowRight,
@@ -201,36 +202,14 @@ function TripsPage() {
                       />
                     </label>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-                      Budget total du groupe (€)
-                      <Input
-                        data-testid="trip-create-budget"
-                        aria-label="Budget total du voyage"
-                        placeholder="Budget total (€)"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={form.budget}
-                        onChange={(e) => setForm({ ...form, budget: e.target.value })}
-                      />
-                    </label>
-                    <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-                      Nombre de voyageurs
-                      <Input
-                        data-testid="trip-create-travelers"
-                        aria-label="Nombre de voyageurs"
-                        type="number"
-                        min="1"
-                        max="50"
-                        step="1"
-                        inputMode="numeric"
-                        value={form.travelers}
-                        onChange={(e) => setForm({ ...form, travelers: e.target.value })}
-                      />
-                    </label>
-                  </div>
+                  <TripBudgetTravelersFields
+                    budget={form.budget}
+                    travelers={form.travelers}
+                    onBudgetChange={(budget) => setForm({ ...form, budget })}
+                    onTravelersChange={(travelers) => setForm({ ...form, travelers })}
+                    budgetTestId="trip-create-budget"
+                    travelersTestId="trip-create-travelers"
+                  />
                   <Textarea
                     aria-label="Notes du voyage"
                     placeholder="Notes, plans, envies…"

@@ -34,6 +34,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TripBudgetTravelersFields } from "@/components/trips/TripBudgetTravelersFields";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -641,34 +642,12 @@ function EditTripButton({ trip, userId }: { trip: any; userId: string }) {
                 />
               </label>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-                Budget total du groupe (€)
-                <Input
-                  aria-label="Budget total du voyage"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  placeholder="Budget total (€)"
-                  value={form.budget}
-                  onChange={(event) => setForm({ ...form, budget: event.target.value })}
-                />
-              </label>
-              <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-                Nombre de voyageurs
-                <Input
-                  aria-label="Nombre de voyageurs"
-                  type="number"
-                  min="1"
-                  max="50"
-                  step="1"
-                  inputMode="numeric"
-                  value={form.travelers}
-                  onChange={(event) => setForm({ ...form, travelers: event.target.value })}
-                />
-              </label>
-            </div>
+            <TripBudgetTravelersFields
+              budget={form.budget}
+              travelers={form.travelers}
+              onBudgetChange={(budget) => setForm({ ...form, budget })}
+              onTravelersChange={(travelers) => setForm({ ...form, travelers })}
+            />
             <Textarea
               aria-label="Notes du voyage"
               rows={4}
