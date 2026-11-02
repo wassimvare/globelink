@@ -62,6 +62,7 @@ type ThreadTurn = {
   role: "user" | "assistant";
   content: string;
   mode?: Mode;
+  scopeDay?: string | null;
   updatedAt?: string;
   sources?: Source[];
   liveSearch?: boolean;
@@ -194,6 +195,7 @@ function AiPlusPage() {
             role: "assistant",
             content: data.answer,
             mode: request.mode,
+            scopeDay: data.scopeDay,
             updatedAt: data.updatedAt,
             sources: data.sources,
             liveSearch: data.liveSearch,
@@ -215,6 +217,7 @@ function AiPlusPage() {
           tripId: tripQuery.data.id,
           title: turn.mode === "safety" ? DEPARTURE_REPORT_TITLE : "Conseil enregistré depuis IA+",
           content: turn.content,
+          scopeDay: turn.scopeDay ?? undefined,
         },
       });
     },

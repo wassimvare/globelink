@@ -645,7 +645,7 @@ export function TripDaySectionPremium({ index, day, tripId, userId, meta, entrie
               <AIContextActions
                 destination={dateLabel}
                 freePrompt={`Aide-moi à améliorer ma journée du ${dateLabel} avec des conseils simples et réalistes.${dayContext}`}
-                proPrompt={`Organise précisément la journée du ${dateLabel} dans mon voyage GlobeLink. Lis mon carnet, tiens compte des étapes déjà prévues, des trajets, de mon budget et propose un ordre réaliste avec horaires et alternatives.${dayContext}`}
+                proPrompt={`Organise précisément uniquement la journée du ${dateLabel} (${day}) dans mon voyage GlobeLink, sans réécrire les autres journées. Lis mon carnet, tiens compte des étapes déjà prévues, des trajets et du budget restant. Réorganise les horaires et les lieux déjà prévus sans les refacturer et propose des alternatives économiques. Ne change pas les autres journées.${dayContext}`}
                 proMode="plan"
                 tripId={tripId}
                 freeLabel="Conseil pour cette journée"
