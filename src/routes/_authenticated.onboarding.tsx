@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { safeInternalPath } from "@/lib/auth-redirects";
+import { queueGuidedTour } from "@/lib/guided-tour";
 import { toast } from "sonner";
 
 const onboardingSearch = z.object({ next: z.string().optional() });
@@ -115,6 +116,7 @@ function OnboardingPage() {
         queryClient.invalidateQueries({ queryKey: ["profile-nav", user.id] }),
       ]);
 
+      queueGuidedTour(user.id);
       const target = destination === "/" ? safeNext : destination;
       toast.success(destination === "/trips" ? "C’est parti pour ton premier voyage ✈️" : "Bienvenue sur GlobeLink !");
       navigate({ to: target, replace: true });
