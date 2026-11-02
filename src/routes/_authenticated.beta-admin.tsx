@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +15,7 @@ import {
   MessageCircleQuestion,
   Notebook,
   Route as RouteIcon,
+  RefreshCw,
   ShieldAlert,
   Sparkles,
   TestTube2,
@@ -39,6 +41,13 @@ export const Route = createFileRoute("/_authenticated/beta-admin")({
   }),
   component: BetaAdminPage,
 });
+
+type GlobalAnalyticsOverview = {
+  total_events: number;
+  page_views: number;
+  unique_sessions: number;
+  active_users: number;
+};
 
 type FeatureUsage = {
   feature: string;
@@ -76,6 +85,12 @@ type BetaAnalyticsSummary = {
   daily: DailyUsage[];
 };
 
+async function loadGlobalAnalytics() {
+  const { data, error } = await (supabase.rpc as any)("get_product_analytics_summary", { p_days: ANALYTICS_DAYS });
+  if (error) throw error;
+  return data as GlobalAnalyticsOverview;
+}
+
 async function loadBetaAnalytics() {
   const { data, error } = await (supabase.rpc as any)("get_beta_analytics_summary", {
     p_days: ANALYTICS_DAYS,
@@ -89,6 +104,7 @@ function BetaAdminPage() {
   const { roles } = Route.useLoaderData();
   const isAdmin = roles.includes("admin");
   const isStaff = isAdmin || roles.includes("moderator");
+  const [refreshing, setRefreshing] = useState(false);
 
   const feedback = useQuery({
     queryKey: ["beta-feedback-admin", BETA_ROUND],
@@ -98,6 +114,7 @@ function BetaAdminPage() {
       return rows.filter((ticket) => ticket.context?.beta === true && String(ticket.context?.beta_round ?? BETA_ROUND) === BETA_ROUND);
     },
     staleTime: 20_000,
+    refetchInterval: 30_000,
   });
 
   const analytics = useQuery({
@@ -105,8 +122,28 @@ function BetaAdminPage() {
     enabled: isAdmin,
     queryFn: loadBetaAnalytics,
     staleTime: 30_000,
+    refetchInterval: 30_000,
     retry: false,
   });
+
+  const globalAnalytics = useQuery({
+    queryKey: ["global-analytics-beta-comparison", ANALYTICS_DAYS],
+    enabled: isAdmin,
+    queryFn: loadGlobalAnalytics,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    retry: false,
+  });
+
+  const refreshAnalytics = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([feedback.refetch(), ...(isAdmin ? [analytics.refetch(), globalAnalytics.refetch()] : [])]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const stats = useMemo(() => summarize(feedback.data ?? []), [feedback.data]);
   const diagnostics = useMemo(() => buildDiagnostics(analytics.data, stats), [analytics.data, stats]);
@@ -160,6 +197,56 @@ function BetaAdminPage() {
           </div>
         </div>
 
+        {isAdmin && (
+          <section className="mt-6 rounded-2xl border border-primary/20 bg-card p-4 shadow-soft sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Suivi des données de la bêta</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Actualisation toutes les 30 secondes. Cette page compte uniquement les testeurs de la vague 1 :
+                  les administrateurs et modérateurs sont exclus des chiffres de navigation bêta.
+                  Les retours reçus restent visibles, même lorsqu’ils viennent de l’équipe.
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="outline" disabled={refreshing || analytics.isFetching || globalAnalytics.isFetching} onClick={() => { void refreshAnalytics(); }} className="rounded-xl">
+                <RefreshCw className={`mr-2 h-4 w-4 ${refreshing || analytics.isFetching || globalAnalytics.isFetching ? "animate-spin" : ""}`} />
+                Actualiser
+              </Button>
+            </div>
+            {analytics.dataUpdatedAt > 0 && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Dernière lecture des statistiques bêta : {new Date(analytics.dataUpdatedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            )}
+            {globalAnalytics.data ? (
+              <div className="mt-4 rounded-2xl bg-background/60 p-3 text-xs">
+                <p className="font-semibold">Activité globale GlobeLink · 30 derniers jours (tous comptes, équipe comprise)</p>
+                <p className="mt-1 text-muted-foreground">
+                  {Number(globalAnalytics.data.unique_sessions || 0).toLocaleString("fr-FR")} sessions · {Number(globalAnalytics.data.page_views || 0).toLocaleString("fr-FR")} pages vues · {Number(globalAnalytics.data.active_users || 0).toLocaleString("fr-FR")} comptes actifs
+                </p>
+                {data && Number(data.page_views || 0) === 0 && Number(globalAnalytics.data.page_views || 0) > 0 && (
+                  <p className="mt-2 text-amber-500">
+                    Des pages sont bien mesurées sur GlobeLink, mais aucune n'est actuellement attribuée aux testeurs externes de la vague 1.
+                  </p>
+                )}
+                {Number(globalAnalytics.data.total_events || 0) === 0 && (
+                  <p className="mt-2 text-amber-500">
+                    Aucun événement d'utilisation reçu au cours des 30 derniers jours. Vérifie le collecteur analytics et la base de données active.
+                  </p>
+                )}
+              </div>
+            ) : globalAnalytics.error ? (
+              <p className="mt-3 text-xs text-amber-500">
+                Statistiques globales indisponibles : la collecte ne peut pas être confirmée depuis cette page.
+              </p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+              <span className="text-muted-foreground">Un testeur rejoint la cohorte en passant par la page d'entrée bêta. Un retour envoyé ne vaut pas nécessairement une session mesurée.</span>
+              <Link to="/beta" className="font-semibold text-primary underline-offset-4 hover:underline">Page d'entrée pour les testeurs</Link>
+            </div>
+          </section>
+        )}
+
         {!isAdmin ? (
           <section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-soft">
             <p className="text-sm font-semibold">Les retours sont visibles avec le rôle modérateur.</p>
@@ -187,7 +274,7 @@ function BetaAdminPage() {
               <MetricCard label="Testeurs" value={data.testers} icon={Users} />
               <MetricCard label="Sessions" value={data.sessions} icon={Activity} />
               <MetricCard label="Pages vues" value={data.page_views} icon={RouteIcon} />
-              <MetricCard label="Retours" value={Math.max(data.feedback_total, stats.total)} icon={TestTube2} />
+              <MetricCard label="Retours reçus" value={Math.max(data.feedback_total, stats.total)} icon={TestTube2} />
               <MetricCard label="Bloquants" value={Math.max(data.blocking_feedback, stats.blocking)} icon={AlertTriangle} accent="danger" />
             </section>
 

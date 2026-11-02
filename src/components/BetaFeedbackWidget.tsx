@@ -4,6 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Bug, Lightbulb, Loader2, MessageCircleQuestion, Send, TestTube2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
+import { markBetaRound, trackProductEvent } from "@/lib/product-analytics";
 import { createSupportTicket, SUPPORT_TICKET_MESSAGE_MIN_LENGTH } from "@/lib/support";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -155,6 +156,10 @@ export function BetaFeedbackWidget() {
         },
       });
 
+      // A feedback report explicitly opts the account into beta measurement on this device.
+      // Future page visits can be attributed to the cohort even without visiting /beta.
+      markBetaRound("private-1");
+      void trackProductEvent("beta_joined", { beta_round: "private-1", authenticated: true, surface: "beta_feedback" });
       toast.success("Merci — ton retour bêta a bien été envoyé.");
       setOpen(false);
       setMessage("");
