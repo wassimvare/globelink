@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dropUnaffordableAiPlusBudget, evaluateAiPlusBudgetWithExisting, keepAiPlusAnswerOnDay, resolveAiPlusRequestedDay } from "./single-day-plan";
+import { parseAiPlusBudgetForecasts, splitAiPlusProgramByDay } from "./phase7-actions";
+import { dropUnaffordableAiPlusBudget, evaluateAiPlusBudgetWithExisting, keepAiPlusAnswerOnDay, resolveAiPlusRequestedDay, isAiPlusTripReorganization } from "./single-day-plan";
 
 describe("IA+ — réorganisation d'une seule journée", () => {
   it("reconnaît la journée française du voyage", () => {
@@ -36,5 +37,50 @@ describe("IA+ — réorganisation d'une seule journée", () => {
     expect(okay.totalWithSpent).toBe(470);
     expect(okay.exceeded).toBe(false);
     expect(evaluateAiPlusBudgetWithExisting([{ day: "2026-12-16", total: 200, items: [] }], 500, 50, existing).exceeded).toBe(true);
+  });
+});
+
+
+describe("IA+ — voyage complet avec groupe et budget insuffisant", () => {
+  it("reconnaît le bouton de réorganisation du séjour", () => {
+    expect(isAiPlusTripReorganization("Réorganise mon voyage enregistré pour réduire les trajets inutiles, garder un bon rythme et respecter mon budget.")).toBe(true);
+    expect(isAiPlusTripReorganization("Organise un voyage complet avec budget pour deux personnes.")).toBe(false);
+  });
+  it("préserve un programme sur plusieurs jours tout en retirant la prévision impossible", () => {
+    const answer = [
+      "## Recommandation IA+",
+      "Optimisation des trajets pour 2 voyageurs.",
+      "### 2026-12-16 · Centre-ville",
+      "### Matin",
+      "- Visiter le musée en transports publics",
+      "### 2026-12-17 · Visites à pied",
+      "### Après-midi",
+      "- Parc gratuit",
+      "## Budget",
+      "| Date | Catégorie | Montant prévu | Détail |",
+      "|---|---|---:|---|",
+      "| 2026-12-16 | Hôtel | 600 € | 2 personnes |",
+      "| 2026-12-17 | Restaurant | 468 € | 2 personnes |",
+      "## Alternatives",
+      "- Réduire les options payantes.",
+    ].join("\n");
+    const forecasts = parseAiPlusBudgetForecasts(answer, "2026-12-16", "2026-12-17");
+    expect(forecasts.reduce((sum, forecast) => sum + forecast.total, 0)).toBe(1068);
+    expect(evaluateAiPlusBudgetWithExisting(forecasts, 500, 0, []).exceeded).toBe(true);
+    const fallback = dropUnaffordableAiPlusBudget(answer, "trip");
+    expect(splitAiPlusProgramByDay(fallback, "2026-12-16", "2026-12-17")).toHaveLength(2);
+    expect(parseAiPlusBudgetForecasts(fallback, "2026-12-16", "2026-12-17")).toHaveLength(0);
+    expect(fallback).toContain("pas un séjour financièrement validé");
+    expect(fallback).toContain("Les dépenses et prévisions existantes restent inchangées");
+    expect(fallback).toContain("## Alternatives");
+  });
+  it("ne valide pas de nouveau budget si d'autres journées utilisent déjà l'enveloppe", () => {
+    const guard = evaluateAiPlusBudgetWithExisting(
+      [{ day: "2026-12-16", total: 200, items: [] }],
+      500, 0,
+      [{ day: "2026-12-15", amount: 400 }],
+    );
+    expect(guard.reserved).toBe(400);
+    expect(guard.exceeded).toBe(true);
   });
 });

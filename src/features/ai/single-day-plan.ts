@@ -49,7 +49,16 @@ export function keepAiPlusAnswerOnDay(content: string, day: string): string {
 }
 
 /** Keep the itinerary but never apply or present an unaffordable budget table as viable. */
-export function dropUnaffordableAiPlusBudget(content: string): string {
+
+export function isAiPlusTripReorganization(query: string): boolean {
+  return /\b(?:reorganis\w*|optimis\w*|replanifi\w*|reamenag\w*|redui\w* les trajets)\b/i.test(plain(query));
+}
+
+/** No fabricated zero-cost budget: show the itinerary as a proposal, without a budget to apply. */
+export function dropUnaffordableAiPlusBudget(
+  content: string,
+  scope: "day" | "trip" = "day",
+): string {
   const lines = content.split("\n");
   const result: string[] = [];
   let inBudget = false;
@@ -59,9 +68,14 @@ export function dropUnaffordableAiPlusBudget(content: string): string {
       continue;
     }
     if (inBudget && /^##\s+[^#]/.test(line)) inBudget = false;
-    if (!inBudget) result.push(line);
+    if (!inBudget && !/^\s*\|\s*20\d{2}-\d{2}-\d{2}\s*\|/.test(line)) {
+      result.push(line);
+    }
   }
-  return result.join("\n").trim() + "\n\n## À vérifier avant d'agir\nLe programme de cette journée peut être réorganisé, mais sa nouvelle prévision de dépenses ne respecte pas le plafond du voyage. Aucun montant hors budget ne sera appliqué au carnet : vérifie ou ajuste les options payantes avant de modifier le budget. Les prévisions déjà enregistrées restent inchangées.";
+  const warning = scope === "trip"
+    ? "Le programme proposé pour le groupe est une piste de réorganisation, pas un séjour financièrement validé. Les prix envisagés dépassent le budget total enregistré : aucun nouveau budget n'est appliqué au carnet. Les dépenses et prévisions existantes restent inchangées. Vérifie les coûts réels, privilégie les activités gratuites ou réduis les options payantes ; si le coût incompressible dépasse le plafond, il faut adapter la durée, les prestations ou le budget."
+    : "Le programme de cette journée peut être réorganisé, mais sa nouvelle prévision de dépenses ne respecte pas le plafond du voyage. Aucun montant hors budget ne sera appliqué au carnet : vérifie ou ajuste les options payantes avant de modifier le budget. Les prévisions déjà enregistrées restent inchangées.";
+  return result.join("\n").trim() + "\n\n## À vérifier avant d'agir\n" + warning;
 }
 
 export type ExistingAiPlusForecast = { day: string | null; amount: number };
