@@ -85,8 +85,14 @@ function AccountDataPage() {
   const [newEmail, setNewEmail] = useState(user?.email ?? "");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [deleteEmail, setDeleteEmail] = useState("");
+  const [deleteEmail, setDeleteEmail] = useState(user?.email ?? "");
   const [deletePhrase, setDeletePhrase] = useState("");
+  const normalizedDeletePhrase = deletePhrase.trim().toUpperCase();
+  const deleteReady = Boolean(
+    user?.email &&
+      deleteEmail.trim().toLowerCase() === user.email.toLowerCase() &&
+      normalizedDeletePhrase === "SUPPRIMER",
+  );
   const [storage, setStorage] = useState<{ usage: number | null; quota: number | null }>({ usage: null, quota: null });
   const [permissions, setPermissions] = useState<PermissionStateMap>({
     geolocation: "inconnu",
@@ -111,6 +117,10 @@ function AccountDataPage() {
   useEffect(() => {
     getBrowserStorageEstimate().then(setStorage).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setDeleteEmail(user?.email ?? "");
+  }, [user?.email]);
 
   useEffect(() => {
     async function readPermissions() {
@@ -249,12 +259,12 @@ function AccountDataPage() {
 
   async function deleteForever() {
     if (!user?.email) return toast.error("Aucune adresse e-mail confirmable sur ce compte.");
-    if (deleteEmail.trim().toLowerCase() !== user.email.toLowerCase() || deletePhrase !== "SUPPRIMER") {
-      return toast.error("Entre ton e-mail exact et le mot SUPPRIMER.");
+    if (deleteEmail.trim().toLowerCase() !== user.email.toLowerCase() || normalizedDeletePhrase !== "SUPPRIMER") {
+      return toast.error("Vérifie ton e-mail et tape SUPPRIMER (majuscules ou minuscules acceptées).");
     }
     if (!window.confirm("Supprimer définitivement le compte GlobeLink ? Cette action est irréversible.")) return;
     await run("delete", async () => {
-      await deleteAccountPermanently(deleteEmail.trim(), deletePhrase);
+      await deleteAccountPermanently(deleteEmail.trim(), normalizedDeletePhrase);
       await supabase.auth.signOut({ scope: "local" });
       qc.clear();
       navigate({ to: "/", replace: true });
@@ -363,8 +373,8 @@ function AccountDataPage() {
 
           <section className="rounded-[2rem] border border-destructive/30 bg-destructive/[0.03] p-5 shadow-soft sm:p-6">
             <div className="flex items-start gap-3"><div className="grid h-11 w-11 place-items-center rounded-xl bg-destructive/10 text-destructive"><Trash2 className="h-5 w-5" /></div><div><h2 className="font-display text-2xl">Supprimer définitivement le compte</h2><p className="mt-1 text-sm text-muted-foreground">Suppression irréversible du compte Auth et des données liées. Les fichiers dont tu es propriétaire dans Storage sont nettoyés avant la suppression.</p></div></div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2"><Input value={deleteEmail} onChange={(e) => setDeleteEmail(e.target.value)} placeholder={user?.email ?? "Ton e-mail"} type="email" /><Input value={deletePhrase} onChange={(e) => setDeletePhrase(e.target.value)} placeholder="Tape SUPPRIMER" /></div>
-            <Button className="mt-3" variant="destructive" disabled={busy !== null || !deleteEmail || deletePhrase !== "SUPPRIMER"} onClick={() => void deleteForever()}>{busy === "delete" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Supprimer définitivement</Button>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2"><Input value={deleteEmail} onChange={(e) => setDeleteEmail(e.target.value)} placeholder="Ton e-mail" type="email" /><Input value={deletePhrase} onChange={(e) => setDeletePhrase(e.target.value)} placeholder="Tape SUPPRIMER" autoCapitalize="characters" /></div>
+            <Button className="mt-3" variant="destructive" disabled={busy !== null || !deleteReady} onClick={() => void deleteForever()}>{busy === "delete" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Supprimer définitivement</Button>
           </section>
         </div>
       </main>
