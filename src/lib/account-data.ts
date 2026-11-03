@@ -79,42 +79,30 @@ export async function deleteAccountPermanently(confirmationEmail: string, confir
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) throw new Error("Ta session a expiré. Reconnecte-toi puis réessaie.");
 
-  const { data, error } = await supabase.functions.invoke("delete-account", {
-    body: { confirmationEmail, confirmationPhrase },
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
+  const response = await fetch(
+    "https://hzsfocphpynxoykfkfaj.supabase.co/functions/v1/delete-account",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: "sb_publishable_9Vrha4s7e7HJTQ3euKQyAA_lGjAaSh7",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ confirmationEmail, confirmationPhrase }),
     },
-  });
+  );
 
-  if (error) {
-    let message = error.message || "La suppression du compte a échoué.";
-    const context = (error as { context?: Response }).context;
-    if (context) {
-      try {
-        const payload = await context.clone().json() as {
-          error?: string;
-          message?: string;
-          step?: string;
-        };
-        const detail = payload.error || payload.message;
-        message = detail
-          ? `${payload.step ? `Étape ${payload.step} : ` : ""}${detail}`
-          : message;
-      } catch {
-        try {
-          const detail = await context.clone().text();
-          if (detail) message = detail;
-        } catch {
-          // Keep the SDK error when the response body cannot be read.
-        }
-      }
-    }
-    throw new Error(message);
+  let payload: { ok?: boolean; error?: string; message?: string; step?: string } = {};
+  try {
+    payload = await response.json();
+  } catch {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `Suppression impossible (HTTP ${response.status}).`);
   }
 
-  if (!data?.ok) {
-    const detail = data?.error || "La suppression du compte a échoué.";
-    throw new Error(data?.step ? `Étape ${data.step} : ${detail}` : detail);
+  if (!response.ok || !payload.ok) {
+    const detail = payload.error || payload.message || `Suppression impossible (HTTP ${response.status}).`;
+    throw new Error(payload.step ? `Étape ${payload.step} : ${detail}` : detail);
   }
 }
 
