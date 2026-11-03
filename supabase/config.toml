@@ -27,3 +27,8 @@ verify_jwt = false
 
 [functions.cache-catalog-media]
 verify_jwt = true
+
+# Uses the caller's user JWT and validates it inside the function with auth.getUser().
+# Keep gateway JWT verification disabled for compatibility with Supabase publishable/secret API keys.
+[functions.delete-account]
+verify_jwt = false
