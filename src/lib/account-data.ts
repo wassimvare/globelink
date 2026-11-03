@@ -73,8 +73,17 @@ export async function exportAccountData() {
 }
 
 export async function deleteAccountPermanently(confirmationEmail: string, confirmationPhrase: string) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Ta session a expiré. Reconnecte-toi puis réessaie.");
+
   const { data, error } = await supabase.functions.invoke("delete-account", {
     body: { confirmationEmail, confirmationPhrase },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
   if (error) {
@@ -82,16 +91,31 @@ export async function deleteAccountPermanently(confirmationEmail: string, confir
     const context = (error as { context?: Response }).context;
     if (context) {
       try {
-        const payload = await context.clone().json() as { error?: string; message?: string };
-        message = payload.error || payload.message || message;
+        const payload = await context.clone().json() as {
+          error?: string;
+          message?: string;
+          step?: string;
+        };
+        const detail = payload.error || payload.message;
+        message = detail
+          ? `${payload.step ? `Étape ${payload.step} : ` : ""}${detail}`
+          : message;
       } catch {
-        // Keep the SDK error when the response body is not JSON.
+        try {
+          const detail = await context.clone().text();
+          if (detail) message = detail;
+        } catch {
+          // Keep the SDK error when the response body cannot be read.
+        }
       }
     }
     throw new Error(message);
   }
 
-  if (!data?.ok) throw new Error(data?.error || "La suppression du compte a échoué.");
+  if (!data?.ok) {
+    const detail = data?.error || "La suppression du compte a échoué.";
+    throw new Error(data?.step ? `Étape ${data.step} : ${detail}` : detail);
+  }
 }
 
 export async function getBrowserStorageEstimate() {
