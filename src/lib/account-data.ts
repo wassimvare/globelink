@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { deleteAccountOnServer } from "@/lib/account-delete.functions";
 
 const db = supabase as any;
 
@@ -79,54 +80,32 @@ export async function deleteAccountPermanently(confirmationEmail: string, confir
     throw new Error("Ta session a expiré. Reconnecte-toi puis réessaie.");
   }
 
-  // Force a fresh access token before this sensitive operation. This avoids
-  // sending an access token that was signed by an older Supabase JWT signing key.
   const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession(
     currentSession.session,
   );
-
   if (refreshError || !refreshed.session?.access_token) {
     throw new Error(
       "Ta session n’est plus valide. Déconnecte-toi puis reconnecte-toi avant de supprimer le compte.",
     );
   }
 
-  const accessToken = refreshed.session.access_token;
-
-  // Verify the freshly issued token against the same Auth project before
-  // calling the destructive Edge Function.
-  const { data: userCheck, error: userCheckError } = await supabase.auth.getUser(accessToken);
+  const { data: userCheck, error: userCheckError } = await supabase.auth.getUser(
+    refreshed.session.access_token,
+  );
   if (userCheckError || !userCheck.user) {
     throw new Error(
       "Impossible de valider ta nouvelle session. Déconnecte-toi puis reconnecte-toi avant de réessayer.",
     );
   }
 
-  const response = await fetch(
-    "https://hzsfocphpynxoykfkfaj.supabase.co/functions/v1/delete-account",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: "sb_publishable_9Vrha4s7e7HJTQ3euKQyAA_lGjAaSh7",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ confirmationEmail, confirmationPhrase }),
+  const result = await deleteAccountOnServer({
+    data: {
+      confirmationEmail: confirmationEmail.trim().toLowerCase(),
+      confirmationPhrase: confirmationPhrase.trim().toUpperCase(),
     },
-  );
+  });
 
-  let payload: { ok?: boolean; error?: string; message?: string; step?: string } = {};
-  try {
-    payload = await response.json();
-  } catch {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Suppression impossible (HTTP ${response.status}).`);
-  }
-
-  if (!response.ok || !payload.ok) {
-    const detail = payload.error || payload.message || `Suppression impossible (HTTP ${response.status}).`;
-    throw new Error(payload.step ? `Étape ${payload.step} : ${detail}` : detail);
-  }
+  if (!result?.ok) throw new Error("La suppression du compte a échoué.");
 }
 
 export async function getBrowserStorageEstimate() {
