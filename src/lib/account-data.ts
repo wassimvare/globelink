@@ -76,7 +76,21 @@ export async function deleteAccountPermanently(confirmationEmail: string, confir
   const { data, error } = await supabase.functions.invoke("delete-account", {
     body: { confirmationEmail, confirmationPhrase },
   });
-  if (error) throw error;
+
+  if (error) {
+    let message = error.message || "La suppression du compte a échoué.";
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const payload = await context.clone().json() as { error?: string; message?: string };
+        message = payload.error || payload.message || message;
+      } catch {
+        // Keep the SDK error when the response body is not JSON.
+      }
+    }
+    throw new Error(message);
+  }
+
   if (!data?.ok) throw new Error(data?.error || "La suppression du compte a échoué.");
 }
 
