@@ -49,12 +49,12 @@ Deno.serve(async (req) => {
     step = "auth";
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace(/^Bearer\s+/i, "");
-    if (!token) return Response.json({ error: "Authentication required" }, { status: 401, headers: corsHeaders });
+    if (!token) return Response.json({ ok: false, error: "Étape auth : session absente.", step: "auth" }, { status: 200, headers: corsHeaders });
 
     const body = await req.json().catch(() => ({}));
     const phrase = String(body?.confirmationPhrase ?? "").trim();
     const confirmationEmail = String(body?.confirmationEmail ?? "").trim().toLowerCase();
-    if (phrase !== "SUPPRIMER") return Response.json({ error: "Confirmation phrase invalid" }, { status: 400, headers: corsHeaders });
+    if (phrase !== "SUPPRIMER") return Response.json({ ok: false, error: "Étape confirmation : le mot SUPPRIMER est invalide.", step: "confirmation" }, { status: 200, headers: corsHeaders });
 
     const url = Deno.env.get("SUPABASE_URL") ?? "";
     const publishableKey = readKey("SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_ANON_KEY");
@@ -66,10 +66,10 @@ Deno.serve(async (req) => {
     });
 
     const { data: authData, error: authError } = await userClient.auth.getUser(token);
-    if (authError || !authData.user) return Response.json({ error: "Invalid session" }, { status: 401, headers: corsHeaders });
+    if (authError || !authData.user) return Response.json({ ok: false, error: `Étape auth : ${authError?.message || "session invalide"}`, step: "auth" }, { status: 200, headers: corsHeaders });
     const user = authData.user;
     if (!user.email || confirmationEmail !== user.email.toLowerCase()) {
-      return Response.json({ error: "Email confirmation does not match" }, { status: 400, headers: corsHeaders });
+      return Response.json({ ok: false, error: "Étape confirmation : l’adresse e-mail ne correspond pas au compte connecté.", step: "confirmation" }, { status: 200, headers: corsHeaders });
     }
 
     step = "database-connect";
@@ -112,8 +112,9 @@ Deno.serve(async (req) => {
 
     return Response.json({ ok: true }, { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store" } });
   } catch (error) {
-    console.error("delete-account", error);
-    return Response.json({ error: error instanceof Error ? error.message : "Account deletion failed", step }, { status: 500, headers: corsHeaders });
+    const message = error instanceof Error ? error.message : "Account deletion failed";
+    console.error("delete-account", { step, message });
+    return Response.json({ ok: false, error: `Étape ${step} : ${message}`, step }, { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store" } });
   } finally {
     if (sql) await sql.end({ timeout: 1 }).catch(() => {});
   }
