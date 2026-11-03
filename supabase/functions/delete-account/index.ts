@@ -19,6 +19,26 @@ function readKey(name: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KEYS", leg
   return Deno.env.get(legacy) ?? "";
 }
 
+
+function createApiKeyFetch(apiKey: string): typeof fetch {
+  return (input, init) => {
+    const headers = new Headers(
+      typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
+    );
+
+    if (init?.headers) {
+      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    }
+
+    if (headers.get("Authorization") === `Bearer ${apiKey}`) {
+      headers.delete("Authorization");
+    }
+
+    headers.set("apikey", apiKey);
+    return fetch(input, { ...init, headers });
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
@@ -38,7 +58,10 @@ Deno.serve(async (req) => {
     const publishableKey = readKey("SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_ANON_KEY");
     const secretKey = readKey("SUPABASE_SECRET_KEYS", "SUPABASE_SERVICE_ROLE_KEY");
     const userClient = createClient(url, publishableKey, { global: { headers: { Authorization: authHeader } } });
-    const admin = createClient(url, secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const admin = createClient(url, secretKey, {
+      global: { fetch: createApiKeyFetch(secretKey) },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
 
     const { data: authData, error: authError } = await userClient.auth.getUser(token);
     if (authError || !authData.user) return Response.json({ error: "Invalid session" }, { status: 401, headers: corsHeaders });
