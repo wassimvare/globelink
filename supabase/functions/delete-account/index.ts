@@ -44,7 +44,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
 
   let sql: ReturnType<typeof postgres> | null = null;
+  let step = "request";
   try {
+    step = "auth";
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace(/^Bearer\s+/i, "");
     if (!token) return Response.json({ error: "Authentication required" }, { status: 401, headers: corsHeaders });
@@ -70,10 +72,12 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Email confirmation does not match" }, { status: 400, headers: corsHeaders });
     }
 
+    step = "database-connect";
     const dbUrl = Deno.env.get("SUPABASE_DB_URL");
     if (!dbUrl) throw new Error("Database connection unavailable");
     sql = postgres(dbUrl, { prepare: false, max: 1, idle_timeout: 2 });
 
+    step = "storage-list";
     const objects = await sql<{ bucket_id: string; name: string }[]>`
       select bucket_id, name
       from storage.objects
@@ -86,6 +90,7 @@ Deno.serve(async (req) => {
       list.push(object.name);
       grouped.set(object.bucket_id, list);
     }
+    step = "storage-delete";
     for (const [bucket, names] of grouped) {
       for (let i = 0; i < names.length; i += 100) {
         const { error } = await admin.storage.from(bucket).remove(names.slice(i, i + 100));
@@ -93,6 +98,7 @@ Deno.serve(async (req) => {
       }
     }
 
+    step = "database-cleanup";
     await sql.begin(async (tx) => {
       await tx`update public.announcements set author_id = null where author_id = ${user.id}::uuid`;
       await tx`update public.reports set resolved_by = null where resolved_by = ${user.id}::uuid`;
@@ -100,13 +106,14 @@ Deno.serve(async (req) => {
       await tx`delete from public.ai_admin_grants where granted_by = ${user.id}::uuid`;
     });
 
+    step = "delete-user";
     const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
     if (deleteError) throw deleteError;
 
     return Response.json({ ok: true }, { status: 200, headers: { ...corsHeaders, "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("delete-account", error);
-    return Response.json({ error: error instanceof Error ? error.message : "Account deletion failed" }, { status: 500, headers: corsHeaders });
+    return Response.json({ error: error instanceof Error ? error.message : "Account deletion failed", step }, { status: 500, headers: corsHeaders });
   } finally {
     if (sql) await sql.end({ timeout: 1 }).catch(() => {});
   }
