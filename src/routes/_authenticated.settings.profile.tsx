@@ -56,43 +56,77 @@ const toList = (v: string) =>
     .slice(0, 20);
 
 const ALLOWED_PROFILE_IMAGES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const MAX_PROFILE_IMAGE_BYTES = 8 * 1024 * 1024;
 
-/** Les photos iPhone HEIC/HEIF ne sont pas acceptées par le bucket Storage. */
-async function prepareProfileImage(file: File): Promise<File> {
-  if (ALLOWED_PROFILE_IMAGES.has(file.type)) return file;
+function isTransientNetworkFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /load failed|failed to fetch|fetch failed|network (error|request failed)|connection (lost|failed)|timed? out|timeout/i.test(message);
+}
+
+/** Safari iOS peut perdre une connexion après un préflight ou une période d'inactivité. */
+async function retryOnNetworkFailure<T>(operation: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientNetworkFailure(error) || attempt === 2) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+    }
+  }
+  throw new Error("Connexion au stockage impossible.");
+}
+
+/** Prépare une photo légère pour l'iPhone avant un envoi sur réseau mobile. */
+async function prepareProfileImage(file: File, kind: "avatar" | "banner"): Promise<File> {
   const isHeic = /\.(heic|heif)$/i.test(file.name) ||
     file.type === "image/heic" || file.type === "image/heif";
-  if (!isHeic) {
+  if (!isHeic && !ALLOWED_PROFILE_IMAGES.has(file.type)) {
     throw new Error("Format non pris en charge. Choisis une photo JPG, PNG, WebP ou GIF.");
   }
+  // Les petites images n'ont pas besoin de réencodage. On préserve aussi
+  // les GIF animés et leur format d'origine lorsque le fichier est raisonnable.
+  if (!isHeic && file.size <= 900 * 1024) return file;
 
-  const url = URL.createObjectURL(file);
+  const objectUrl = URL.createObjectURL(file);
   try {
     const image = new Image();
-    image.src = url;
-    await image.decode();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Photo illisible sur cet appareil."));
+      image.src = objectUrl;
+    });
     if (!image.naturalWidth || !image.naturalHeight) {
-      throw new Error("Photo illisible.");
+      throw new Error("Dimensions de la photo invalides.");
     }
-    const scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight));
+    const maxEdge = kind === "avatar" ? 1440 : 2000;
+    const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Conversion de la photo indisponible.");
+    if (!context) throw new Error("Préparation de la photo indisponible.");
+    // Les images PNG/WebP transparentes deviennent un JPG à fond blanc.
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
-        (value) => value ? resolve(value) : reject(new Error("Conversion de la photo impossible.")),
+        (value) => value ? resolve(value) : reject(new Error("Conversion impossible.")),
         "image/jpeg",
-        0.85,
+        0.78,
       );
     });
-    return new File([blob], "photo-profil.jpg", { type: "image/jpeg" });
-  } catch {
-    throw new Error("Impossible de lire cette photo HEIC. Exporte-la en JPG puis réessaie.");
+    if (blob.size > MAX_PROFILE_IMAGE_BYTES) {
+      throw new Error("La photo reste trop lourde après compression.");
+    }
+    return new File([blob], `${kind}-globelink.jpg`, { type: "image/jpeg" });
+  } catch (error) {
+    if (isHeic) {
+      throw new Error("Impossible de lire cette photo HEIC. Exporte-la en JPG puis réessaie.");
+    }
+    throw error;
   } finally {
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(objectUrl);
   }
 }
 
@@ -183,29 +217,59 @@ function EditProfilePage() {
 
   const pickImage = async (kind: "avatar" | "banner", file: File | undefined) => {
     if (!file || !user || uploading || saving) return;
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error("Image trop lourde (8 Mo max)");
+    if (!file.size) {
+      toast.error("La photo sélectionnée est vide ou indisponible sur ce téléphone.");
       return;
     }
+    if (file.size > MAX_PROFILE_IMAGE_BYTES) {
+      toast.error("Photo trop lourde : 8 Mo maximum.");
+      return;
+    }
+
     setUploading(kind);
     let uploadedPath: string | null = null;
+    let step = "préparation";
     try {
-      const prepared = await prepareProfileImage(file);
-      uploadedPath = await uploadMedia(user.id, kind === "avatar" ? "avatars" : "banners", prepared);
-      // Enregistrer la photo directement : les autres champs du formulaire ne doivent
-      // pas empêcher la mise à jour de l'avatar ou de la bannière.
-      const { data: updated, error } = await supabase
-        .from("profiles")
-        .update(kind === "avatar" ? { avatar_url: uploadedPath } : { banner_url: uploadedPath })
-        .eq("id", user.id)
-        .select("id")
-        .maybeSingle();
-      if (error) throw error;
-      if (!updated) throw new Error("Profil introuvable ou modification non autorisée.");
+      const prepared = await prepareProfileImage(file, kind);
 
-      if (kind === "avatar") setAvatarPath(uploadedPath);
-      else setBannerPath(uploadedPath);
-      // Ne pas recharger les autres champs pendant une modification en cours.
+      step = "envoi de la photo";
+      // Une erreur « Load failed » sur Safari est souvent transitoire et
+      // peut disparaître sur une nouvelle connexion HTTP.
+      uploadedPath = await retryOnNetworkFailure(() =>
+        uploadMedia(user.id, kind === "avatar" ? "avatars" : "banners", prepared),
+      );
+
+      step = "enregistrement du profil";
+      const path = uploadedPath;
+      try {
+        await retryOnNetworkFailure(async () => {
+          const { data: updated, error } = await supabase
+            .from("profiles")
+            .update(kind === "avatar" ? { avatar_url: path } : { banner_url: path })
+            .eq("id", user.id)
+            .select("id")
+            .maybeSingle();
+          if (error) throw error;
+          if (!updated) throw new Error("Profil introuvable ou modification non autorisée.");
+        });
+      } catch (error) {
+        // Si la réponse s'est perdue après le COMMIT, éviter de supprimer
+        // l'image qui est peut-être déjà référencée par le profil.
+        if (!isTransientNetworkFailure(error)) throw error;
+        const { data: current, error: readError } = await supabase
+          .from("profiles")
+          .select("avatar_url, banner_url")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (readError || (kind === "avatar" ? current?.avatar_url : current?.banner_url) !== path) {
+          throw error;
+        }
+      }
+
+      if (kind === "avatar") setAvatarPath(path);
+      else setBannerPath(path);
+      // Une actualisation de la page et des composants de navigation reflète
+      // le nouveau chemin sans réinitialiser les champs en cours d'édition.
       void qc.invalidateQueries({ queryKey: ["my-profile", user.id], refetchType: "none" });
       void qc.invalidateQueries({ queryKey: ["profile", user.id] });
       void qc.invalidateQueries({ queryKey: ["profile-nav", user.id] });
@@ -214,11 +278,20 @@ function EditProfilePage() {
       }
       toast.success(kind === "avatar" ? "Photo de profil enregistrée" : "Bannière enregistrée");
     } catch (error) {
-      // Ne pas laisser de média orphelin si le profil ne peut pas être mis à jour.
-      if (uploadedPath) {
+      // Ne pas supprimer un fichier en cas de perte réseau : le profil pourrait
+      // avoir été mis à jour malgré une réponse HTTP perdue.
+      if (uploadedPath && !isTransientNetworkFailure(error)) {
         void supabase.storage.from("media").remove([uploadedPath]);
       }
-      toast.error(error instanceof Error ? error.message : "Impossible de modifier la photo.");
+      if (isTransientNetworkFailure(error)) {
+        toast.error(
+          `Connexion impossible pendant l'${step}. Vérifie ton accès au serveur GlobeLink (Tailscale ou réseau) et réessaie.`,
+          { duration: 8000 },
+        );
+      } else {
+        const reason = error instanceof Error ? error.message : "Erreur inconnue.";
+        toast.error(`Échec lors de l'${step} : ${reason}`, { duration: 8000 });
+      }
     } finally {
       setUploading(null);
     }
