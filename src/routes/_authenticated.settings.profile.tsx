@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,13 +55,51 @@ const toList = (v: string) =>
     .filter(Boolean)
     .slice(0, 20);
 
+const ALLOWED_PROFILE_IMAGES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+/** Les photos iPhone HEIC/HEIF ne sont pas acceptées par le bucket Storage. */
+async function prepareProfileImage(file: File): Promise<File> {
+  if (ALLOWED_PROFILE_IMAGES.has(file.type)) return file;
+  const isHeic = /\.(heic|heif)$/i.test(file.name) ||
+    file.type === "image/heic" || file.type === "image/heif";
+  if (!isHeic) {
+    throw new Error("Format non pris en charge. Choisis une photo JPG, PNG, WebP ou GIF.");
+  }
+
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    if (!image.naturalWidth || !image.naturalHeight) {
+      throw new Error("Photo illisible.");
+    }
+    const scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Conversion de la photo indisponible.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (value) => value ? resolve(value) : reject(new Error("Conversion de la photo impossible.")),
+        "image/jpeg",
+        0.85,
+      );
+    });
+    return new File([blob], "photo-profil.jpg", { type: "image/jpeg" });
+  } catch {
+    throw new Error("Impossible de lire cette photo HEIC. Exporte-la en JPG puis réessaie.");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function EditProfilePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const avatarInput = useRef<HTMLInputElement>(null);
-  const bannerInput = useRef<HTMLInputElement>(null);
-
   const { data: profile, isLoading } = useQuery({
     queryKey: ["my-profile", user?.id],
     enabled: !!user,
@@ -125,10 +163,18 @@ function EditProfilePage() {
   }, [profile]);
 
   useEffect(() => {
-    getSignedMediaUrl(avatarPath).then(setAvatarUrl);
+    let active = true;
+    getSignedMediaUrl(avatarPath).then((url) => {
+      if (active) setAvatarUrl(url);
+    });
+    return () => { active = false; };
   }, [avatarPath]);
   useEffect(() => {
-    getSignedMediaUrl(bannerPath).then(setBannerUrl);
+    let active = true;
+    getSignedMediaUrl(bannerPath).then((url) => {
+      if (active) setBannerUrl(url);
+    });
+    return () => { active = false; };
   }, [bannerPath]);
 
   const set =
@@ -136,34 +182,50 @@ function EditProfilePage() {
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const pickImage = async (kind: "avatar" | "banner", file: File | undefined) => {
-    if (!file || !user) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("Choisis une image");
-      return;
-    }
+    if (!file || !user || uploading || saving) return;
     if (file.size > 8 * 1024 * 1024) {
       toast.error("Image trop lourde (8 Mo max)");
       return;
     }
     setUploading(kind);
+    let uploadedPath: string | null = null;
     try {
-      const path = await uploadMedia(user.id, kind === "avatar" ? "avatars" : "banners", file);
-      if (kind === "avatar") setAvatarPath(path);
-      else setBannerPath(path);
-      toast.success(
-        kind === "avatar"
-          ? "Photo prête — pense à enregistrer"
-          : "Bannière prête — pense à enregistrer",
-      );
-    } catch {
-      toast.error("Échec de l'envoi de l'image");
+      const prepared = await prepareProfileImage(file);
+      uploadedPath = await uploadMedia(user.id, kind === "avatar" ? "avatars" : "banners", prepared);
+      // Enregistrer la photo directement : les autres champs du formulaire ne doivent
+      // pas empêcher la mise à jour de l'avatar ou de la bannière.
+      const { data: updated, error } = await supabase
+        .from("profiles")
+        .update(kind === "avatar" ? { avatar_url: uploadedPath } : { banner_url: uploadedPath })
+        .eq("id", user.id)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!updated) throw new Error("Profil introuvable ou modification non autorisée.");
+
+      if (kind === "avatar") setAvatarPath(uploadedPath);
+      else setBannerPath(uploadedPath);
+      // Ne pas recharger les autres champs pendant une modification en cours.
+      void qc.invalidateQueries({ queryKey: ["my-profile", user.id], refetchType: "none" });
+      void qc.invalidateQueries({ queryKey: ["profile", user.id] });
+      void qc.invalidateQueries({ queryKey: ["profile-nav", user.id] });
+      if (profile?.username) {
+        void qc.invalidateQueries({ queryKey: ["profile-page", profile.username] });
+      }
+      toast.success(kind === "avatar" ? "Photo de profil enregistrée" : "Bannière enregistrée");
+    } catch (error) {
+      // Ne pas laisser de média orphelin si le profil ne peut pas être mis à jour.
+      if (uploadedPath) {
+        void supabase.storage.from("media").remove([uploadedPath]);
+      }
+      toast.error(error instanceof Error ? error.message : "Impossible de modifier la photo.");
     } finally {
       setUploading(null);
     }
   };
 
   const save = async () => {
-    if (!user) return;
+    if (!user || uploading) return;
     const parsed = schema.safeParse({
       username: form.username.trim().toLowerCase(),
       display_name: form.display_name,
@@ -263,9 +325,9 @@ function EditProfilePage() {
           <section className="overflow-hidden rounded-3xl border border-border bg-card shadow-soft">
             <div className="relative h-36 bg-gradient-to-br from-primary via-primary/80 to-accent">
               {bannerUrl && <img src={bannerUrl} alt="" className="h-full w-full object-cover" />}
-              <button
-                onClick={() => bannerInput.current?.click()}
-                className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full bg-background/85 px-3 py-1.5 text-xs font-medium shadow-soft backdrop-blur"
+              <label
+                htmlFor="profile-banner-upload"
+                className={`absolute right-3 top-3 inline-flex cursor-pointer items-center gap-2 rounded-full bg-background/85 px-3 py-1.5 text-xs font-medium shadow-soft backdrop-blur ${uploading || saving ? "pointer-events-none opacity-60" : ""}`}
               >
                 {uploading === "banner" ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -273,13 +335,18 @@ function EditProfilePage() {
                   <ImagePlus className="h-3.5 w-3.5" />
                 )}{" "}
                 Bannière
-              </button>
+              </label>
               <input
-                ref={bannerInput}
+                id="profile-banner-upload"
                 type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => pickImage("banner", e.target.files?.[0])}
+                accept="image/*,.heic,.heif"
+                className="sr-only"
+                disabled={!!uploading || saving}
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  e.currentTarget.value = "";
+                  void pickImage("banner", file);
+                }}
               />
             </div>
             <div className="flex items-end gap-4 px-6 pb-6">
@@ -291,26 +358,31 @@ function EditProfilePage() {
                     (form.username[0]?.toUpperCase() ?? "?")
                   )}
                 </div>
-                <button
-                  onClick={() => avatarInput.current?.click()}
+                <label
+                  htmlFor="profile-avatar-upload"
                   aria-label="Changer la photo de profil"
-                  className="absolute -bottom-1 -right-1 grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground shadow-elevated"
+                  className={`absolute -bottom-1 -right-1 grid h-9 w-9 cursor-pointer place-items-center rounded-full bg-primary text-primary-foreground shadow-elevated ${uploading || saving ? "pointer-events-none opacity-60" : ""}`}
                 >
                   {uploading === "avatar" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Camera className="h-4 w-4" />
                   )}
-                </button>
+                </label>
                 <input
-                  ref={avatarInput}
+                  id="profile-avatar-upload"
                   type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => pickImage("avatar", e.target.files?.[0])}
+                  accept="image/*,.heic,.heif"
+                  className="sr-only"
+                  disabled={!!uploading || saving}
+                  onChange={(e) => {
+                    const file = e.currentTarget.files?.[0];
+                    e.currentTarget.value = "";
+                    void pickImage("avatar", file);
+                  }}
                 />
               </div>
-              <p className="pb-2 text-sm text-muted-foreground">JPG ou PNG, 8 Mo max.</p>
+              <p className="pb-2 text-sm text-muted-foreground">JPG, PNG, WebP, GIF ou HEIC, 8 Mo max.</p>
             </div>
           </section>
 
@@ -416,7 +488,7 @@ function EditProfilePage() {
           <div className="sticky bottom-4 mt-8 flex gap-3">
             <Button
               onClick={save}
-              disabled={saving}
+              disabled={saving || !!uploading}
               size="lg"
               className="flex-1 gap-2 shadow-elevated"
             >
