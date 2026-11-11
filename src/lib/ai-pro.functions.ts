@@ -319,7 +319,7 @@ export const askGlobeLinkPro = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     // Source lookup, the initial plan, budget corrections and missing-day
     // completions share a deadline below the hosting platform's 300 s limit.
-    const aiRequestContext = createTravelAiRequestContext();
+    const aiRequestContext = createTravelAiRequestContext(240_000, { latencyMode: "responsive" });
     const db = supabase as any;
     const now = new Date();
     const { start, end } = utcDayBounds();
@@ -335,18 +335,22 @@ export const askGlobeLinkPro = createServerFn({ method: "POST" })
         ? Math.min(1_000, Math.trunc(configuredLimit))
         : PRO_REQUESTS_PER_DAY;
 
-    const { count, error: usageError } = await db
-      .from("ai_usage")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("feature", "ai_pro")
-      .gte("created_at", start)
-      .lt("created_at", end);
+    // Both reads are user-scoped and independent. Do not make the carnet wait
+    // for a separate round-trip to the usage counter before loading it.
+    const [{ count, error: usageError }, connectedTrip] = await Promise.all([
+      db
+        .from("ai_usage")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("feature", "ai_pro")
+        .gte("created_at", start)
+        .lt("created_at", end),
+      loadConnectedTrip(db, userId, data.tripId),
+    ]);
     const meteringAvailable = !usageError;
     const usageToday = Number(count ?? 0);
     if (meteringAvailable && usageToday >= dailyLimit) throw new Error("AI_DAILY_LIMIT");
 
-    const connectedTrip = await loadConnectedTrip(db, userId, data.tripId);
     const recentUserContext = (data.history ?? [])
       .filter((message) => message.role === "user")
       .slice(-2)
