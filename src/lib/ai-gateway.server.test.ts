@@ -55,6 +55,203 @@ afterEach(() => {
 });
 
 describe("generateTravelAiText", () => {
+  function responsiveContext(timeoutMs = 240_000) {
+    return createTravelAiRequestContext(timeoutMs, { latencyMode: "responsive" });
+  }
+
+  it("IA+ ne lance pas de secours quand le moteur principal répond rapidement", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      delayedResponse(2_000, init, geminiResponse),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({
+      prompt: "Programme",
+      requestContext: responsiveContext(),
+    });
+    await vi.runAllTimersAsync();
+    await expect(request).resolves.toMatchObject({ modelId: "gemini-3.7-flash" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("IA+ termine en 55 s au lieu de 105 s quand le principal est bloqué, sans raccourcir le voyage", async () => {
+    vi.useFakeTimers();
+    const startedAt = Date.now();
+    const prompt = "Organise 10 jours pour 2 voyageurs, budget total du groupe 2500 euros.";
+    const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+      delayedResponse(url.includes("gemini-3.7-flash:") ? 120_000 : 45_000, init, geminiResponse),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({
+      prompt,
+      maxOutputTokens: 8_000,
+      requestContext: responsiveContext(),
+    });
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.runAllTimersAsync();
+    await expect(request).resolves.toMatchObject({ modelId: "gemini-3.5-flash-lite" });
+    expect(Date.now() - startedAt).toBe(55_000);
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    const body = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(body.contents[0].parts[0].text).toBe(prompt);
+    expect(body.generationConfig).toEqual({
+      maxOutputTokens: 8_000,
+      thinkingConfig: { thinkingLevel: "minimal" },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("IA+ conserve la réponse principale si le secours échoue plus vite", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+      url.includes("gemini-3.7-flash:")
+        ? delayedResponse(12_000, init, geminiResponse)
+        : Promise.resolve(apiError(503)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({
+      prompt: "Programme",
+      requestContext: responsiveContext(),
+    });
+    await vi.runAllTimersAsync();
+    await expect(request).resolves.toMatchObject({ modelId: "gemini-3.7-flash" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("IA+ annule le secours si le principal termine avant lui", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+      delayedResponse(url.includes("gemini-3.7-flash:") ? 12_000 : 45_000, init, geminiResponse),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({
+      prompt: "Programme",
+      requestContext: responsiveContext(),
+    });
+    await vi.runAllTimersAsync();
+    await expect(request).resolves.toMatchObject({ modelId: "gemini-3.7-flash" });
+    expect(fetchMock.mock.calls[1][1]?.signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([503, 429])(
+    "IA+ bascule immédiatement après %s et ne rappelle pas ce modèle pour compléter le voyage",
+    async (status) => {
+      vi.useFakeTimers();
+      const startedAt = Date.now();
+      const requestContext = responsiveContext();
+      const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+        url.includes("gemini-3.7-flash:")
+          ? Promise.resolve(apiError(status))
+          : delayedResponse(2_000, init, geminiResponse),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const first = generateTravelAiText({ prompt: "Programme initial", requestContext });
+      await vi.runAllTimersAsync();
+      await first;
+      expect(Date.now() - startedAt).toBe(2_000);
+      const next = generateTravelAiText({ prompt: "Corriger le budget", requestContext });
+      await vi.runAllTimersAsync();
+      await next;
+      const separate = generateTravelAiText({
+        prompt: "Autre voyage",
+        requestContext: responsiveContext(),
+      });
+      await vi.runAllTimersAsync();
+      await separate;
+      expect(
+        fetchMock.mock.calls.map(([url]) => String(url).match(/models\/([^:]+)/)?.[1]),
+      ).toEqual([
+        "gemini-3.7-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.7-flash",
+        "gemini-3.5-flash-lite",
+      ]);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("IA+ réutilise le secours gagnant sans attendre à nouveau le principal lent", async () => {
+    vi.useFakeTimers();
+    const requestContext = responsiveContext();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+      delayedResponse(url.includes("gemini-3.7-flash:") ? 120_000 : 2_000, init, geminiResponse),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const first = generateTravelAiText({ prompt: "Programme initial", requestContext });
+    await vi.runAllTimersAsync();
+    await first;
+    const startedAt = Date.now();
+    const next = generateTravelAiText({ prompt: "Compléter les dates", requestContext });
+    await vi.runAllTimersAsync();
+    await next;
+    expect(Date.now() - startedAt).toBe(2_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][0]).toContain("gemini-3.5-flash-lite:");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("IA+ respecte le délai global et annule les deux générations encore en cours", async () => {
+    vi.useFakeTimers();
+    const startedAt = Date.now();
+    const requestContext = responsiveContext(20_000);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      delayedResponse(100_000, init, geminiResponse),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({ prompt: "Voyage", requestContext }).catch(
+      (error: Error) => error,
+    );
+    await vi.runAllTimersAsync();
+    expect(await request).toBeInstanceOf(Error);
+    expect(Date.now() - startedAt).toBe(20_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every(([, init]) => init?.signal?.aborted)).toBe(true);
+    await expect(generateTravelAiText({ prompt: "Suite", requestContext })).rejects.toThrow(
+      /délai total/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("IA+ utilise la passerelle si les deux modèles Gemini sont indisponibles", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("LOVABLE_API_KEY", "cle-fictive-passerelle-1234567890");
+    vi.mocked(generateText).mockResolvedValue({ text: "Programme de secours" } as any);
+    const fetchMock = vi.fn(async () => apiError(503));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({ prompt: "Voyage", requestContext: responsiveContext() });
+    await vi.runAllTimersAsync();
+    await expect(request).resolves.toMatchObject({
+      providerName: "AI Gateway",
+      text: "Programme de secours",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("IA+ ne multiplie pas les appels Gemini après une erreur d'authentification", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => apiError(403));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = generateTravelAiText({
+      prompt: "Voyage",
+      requestContext: responsiveContext(),
+    }).catch((error: Error) => error);
+    await vi.runAllTimersAsync();
+    expect(await request).toBeInstanceOf(Error);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("migre l'ancien modèle et utilise le niveau low compatible sans temperature", async () => {
     vi.stubEnv("GEMINI_MODEL", "gemini-3.6-flash");
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => geminiResponse("OK"));

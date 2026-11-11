@@ -19,12 +19,26 @@ const RETRYABLE_GEMINI_STATUSES = new Set([400, 404, 408, 429, 500, 502, 503, 50
 const SAME_MODEL_RETRYABLE_GEMINI_STATUSES = new Set([500, 502, 503, 504]);
 const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
 const DEFAULT_GEMINI_FAST_FALLBACK_MODEL = "gemini-3.5-flash-lite";
+const RESPONSIVE_FALLBACK_DELAY_MS = 10_000;
+
+type TravelAiRequestContext = {
+  deadlineAt: number;
+  quotaLimitedModels: Set<string>;
+  unavailableModels: Set<string>;
+  preferredModelId?: string;
+  latencyMode: "standard" | "responsive";
+};
 
 /** Shared only by the generations belonging to one authenticated request. */
-export function createTravelAiRequestContext(timeoutMs = 240_000) {
+export function createTravelAiRequestContext(
+  timeoutMs = 240_000,
+  options: { latencyMode?: TravelAiRequestContext["latencyMode"] } = {},
+): TravelAiRequestContext {
   return {
     deadlineAt: Date.now() + timeoutMs,
     quotaLimitedModels: new Set<string>(),
+    unavailableModels: new Set<string>(),
+    latencyMode: options.latencyMode ?? "standard",
   };
 }
 
@@ -247,9 +261,13 @@ async function generateWithGeminiModel(args: {
   modelId: string;
   timeoutMs: number;
   options: GenerateOptions;
+  signal?: AbortSignal;
 }) {
   const modelName = normalizeModelId(args.modelId);
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (args.signal?.aborted) controller.abort();
+  else args.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
 
   try {
@@ -301,13 +319,133 @@ async function generateWithGeminiModel(args: {
       modelId: modelName,
     };
   } catch (error) {
+    if (args.signal?.aborted) throw error;
     if (error instanceof Error && error.name === "AbortError") {
       throw generationTimeoutError(args.timeoutMs);
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    args.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+/**
+ * Give a healthy primary the first chance, but don't wait a full minute to
+ * start the existing fallback. Only a successful answer wins; a fast error
+ * must not discard another model's still-running generation.
+ */
+async function generateResponsiveGemini(args: {
+  geminiKey: string;
+  primaryModelId: string;
+  primaryTimeoutMs: number;
+  fallbackTimeoutMs: number;
+  deadlineAt: number;
+  options: GenerateOptions;
+  requestContext: TravelAiRequestContext;
+}) {
+  const { requestContext } = args;
+  const fallbackModelId = getGeminiFastFallbackModelId(args.primaryModelId);
+  const candidates = [
+    { modelId: args.primaryModelId, timeoutMs: args.primaryTimeoutMs, options: args.options },
+    {
+      modelId: fallbackModelId,
+      timeoutMs: args.fallbackTimeoutMs,
+      options: {
+        ...args.options,
+        thinkingLevel: /^gemini-3[.-].*flash-lite/i.test(fallbackModelId)
+          ? ("minimal" as const)
+          : ("low" as const),
+      },
+    },
+  ]
+    .filter(
+      ({ modelId }) =>
+        !requestContext.unavailableModels.has(modelId) &&
+        !requestContext.quotaLimitedModels.has(modelId),
+    )
+    .sort(
+      (left, right) =>
+        Number(right.modelId === requestContext.preferredModelId) -
+        Number(left.modelId === requestContext.preferredModelId),
+    );
+
+  if (!candidates.length) {
+    throw Object.assign(
+      new Error("Gemini API 503: moteurs indisponibles pour cette préparation."),
+      { status: 503 },
+    );
+  }
+
+  const startedAt = Date.now();
+  return new Promise<Awaited<ReturnType<typeof generateWithGeminiModel>>>((resolve, reject) => {
+    const controllers: AbortController[] = [];
+    let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+    let started = 0;
+    let failed = 0;
+    let finished = false;
+
+    const cleanup = (winner?: number) => {
+      clearTimeout(hedgeTimer);
+      controllers.forEach((controller, index) => {
+        if (index !== winner) controller.abort();
+      });
+    };
+
+    const startNext = () => {
+      if (finished || started >= candidates.length) return;
+      clearTimeout(hedgeTimer);
+      const index = started++;
+      const candidate = candidates[index];
+      const controller = new AbortController();
+      controllers[index] = controller;
+
+      void (async () => {
+        try {
+          const result = await generateWithGeminiModel({
+            ...candidate,
+            geminiKey: args.geminiKey,
+            timeoutMs: remainingTimeout(candidate.timeoutMs, args.deadlineAt),
+            signal: controller.signal,
+          });
+          if (finished) return;
+          finished = true;
+          requestContext.preferredModelId = result.modelId;
+          cleanup(index);
+          console.info("[GlobeLink IA+] génération terminée", {
+            model: result.modelId,
+            durationMs: Date.now() - startedAt,
+            attempts: started,
+          });
+          resolve(result);
+        } catch (error) {
+          // Cancellation of the losing request is expected, not a provider failure.
+          if (finished) return;
+          failed += 1;
+          const retryable = shouldTryFastFallback(error);
+          if (retryable) requestContext.unavailableModels.add(candidate.modelId);
+          if (geminiStatus(error) === 429) requestContext.quotaLimitedModels.add(candidate.modelId);
+          console.warn("[GlobeLink IA+] moteur indisponible, bascule rapide", {
+            model: candidate.modelId,
+            status: geminiStatus(error),
+            durationMs: Date.now() - startedAt,
+          });
+          if (retryable && started < candidates.length && Date.now() < args.deadlineAt) {
+            startNext();
+          } else if (failed === started) {
+            finished = true;
+            cleanup();
+            reject(error);
+          }
+        }
+      })();
+    };
+
+    startNext();
+    if (!finished && started < candidates.length) {
+      hedgeTimer = setTimeout(startNext, RESPONSIVE_FALLBACK_DELAY_MS);
+    }
+  });
 }
 
 async function generateWithGeminiRetries(args: {
@@ -411,11 +549,25 @@ export async function generateTravelAiText(options: GenerateOptions) {
     let lastPrimaryError: unknown = null;
 
     try {
-      if (requestContext.quotaLimitedModels.has(primaryModelId)) {
+      if (
+        requestContext.latencyMode !== "responsive" &&
+        requestContext.quotaLimitedModels.has(primaryModelId)
+      ) {
         throw Object.assign(
           new Error("Gemini API 429: limite déjà atteinte pendant cette préparation."),
           { status: 429 },
         );
+      }
+      if (requestContext.latencyMode === "responsive") {
+        return await generateResponsiveGemini({
+          geminiKey,
+          primaryModelId,
+          primaryTimeoutMs,
+          fallbackTimeoutMs,
+          deadlineAt,
+          options,
+          requestContext,
+        });
       }
       return await generateWithGeminiRetries({
         geminiKey,
@@ -425,7 +577,9 @@ export async function generateTravelAiText(options: GenerateOptions) {
       });
     } catch (error) {
       lastPrimaryError = error;
-      if (geminiStatus(error) === 429) requestContext.quotaLimitedModels.add(primaryModelId);
+      if (requestContext.latencyMode !== "responsive" && geminiStatus(error) === 429) {
+        requestContext.quotaLimitedModels.add(primaryModelId);
+      }
       console.warn("[GlobeLink IA+] moteur principal indisponible", {
         model: primaryModelId,
         status: geminiStatus(error),
@@ -433,7 +587,7 @@ export async function generateTravelAiText(options: GenerateOptions) {
       });
     }
 
-    if (shouldTryFastFallback(lastPrimaryError)) {
+    if (requestContext.latencyMode !== "responsive" && shouldTryFastFallback(lastPrimaryError)) {
       const fallbackModelId = getGeminiFastFallbackModelId(primaryModelId);
       try {
         if (requestContext.quotaLimitedModels.has(fallbackModelId)) {
