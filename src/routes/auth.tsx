@@ -21,7 +21,10 @@ import { toast } from "sonner";
 import { authRedirect, safeInternalPath } from "@/lib/auth-redirects";
 import { BrandLogo } from "@/components/BrandLogo";
 
-const search = z.object({ redirect: z.string().optional() });
+const search = z.object({
+  redirect: z.string().optional(),
+  mode: z.literal("signup").optional().catch(undefined),
+});
 const emailSchema = z.string().trim().toLowerCase().email("Adresse e-mail invalide").max(254);
 const usernameSchema = z
   .string()
@@ -51,7 +54,9 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const { redirect } = useSearch({ from: "/auth" });
+  const { redirect, mode } = useSearch({ from: "/auth" });
+  const next = redirect ? safeInternalPath(redirect) : undefined;
+  const onboardingPath = next ? `/onboarding?next=${encodeURIComponent(next)}` : "/onboarding";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -65,17 +70,17 @@ function AuthPage() {
     if (!user.email_confirmed_at && !user.phone_confirmed_at) {
       router.navigate({
         to: "/verify-email",
-        search: { email: user.email ?? undefined },
+        search: { email: user.email ?? undefined, next },
         replace: true,
       });
       return;
     }
     router.navigate({
       to: "/onboarding",
-      search: { next: safeInternalPath(redirect) },
+      search: { next },
       replace: true,
     });
-  }, [user, redirect, router]);
+  }, [user, next, router]);
 
   const strength = useMemo(() => {
     let score = 0;
@@ -99,7 +104,7 @@ function AuthPage() {
       if (/confirm|verified|verification/i.test(error.message)) {
         sessionStorage.setItem(PENDING_EMAIL_KEY, validEmail.data);
         toast.error("Confirme d'abord le code reçu par e-mail.");
-        router.navigate({ to: "/verify-email", search: { email: validEmail.data } });
+        router.navigate({ to: "/verify-email", search: { email: validEmail.data, next } });
         return;
       }
       return toast.error("Connexion impossible. Vérifie tes identifiants.");
@@ -141,7 +146,7 @@ function AuthPage() {
       password,
       options: {
         data: { username: validUsername.data, full_name: validUsername.data },
-        emailRedirectTo: authRedirect("/onboarding"),
+        emailRedirectTo: authRedirect(onboardingPath),
       },
     });
     setBusy(null);
@@ -174,7 +179,7 @@ function AuthPage() {
       return;
     }
     toast.success("Code envoyé. Entre-le pour activer ton compte.");
-    router.navigate({ to: "/verify-email", search: { email: validEmail.data } });
+    router.navigate({ to: "/verify-email", search: { email: validEmail.data, next } });
   }
 
   async function google() {
@@ -183,9 +188,7 @@ function AuthPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: authRedirect(
-          "/onboarding?next=" + encodeURIComponent(safeInternalPath(redirect)),
-        ),
+        redirectTo: authRedirect(onboardingPath),
         queryParams: { prompt: "select_account" },
       },
     });
@@ -257,7 +260,9 @@ function AuthPage() {
                 Bienvenue sur GlobeLink
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Connecte-toi ou crée ton profil de voyageur.
+                {mode === "signup"
+                  ? "Crée ton compte ou connecte-toi pour garder ce lieu dans ton carnet."
+                  : "Connecte-toi ou crée ton profil de voyageur."}
               </p>
             </div>
 
@@ -283,7 +288,11 @@ function AuthPage() {
               </>
             )}
 
-            <Tabs defaultValue="signin" className={googleEnabled ? "w-full" : "mt-5 w-full"}>
+            <Tabs
+              key={mode}
+              defaultValue={mode ?? "signin"}
+              className={googleEnabled ? "w-full" : "mt-5 w-full"}
+            >
               <TabsList className="grid h-11 w-full grid-cols-2 rounded-2xl bg-secondary/70 p-1">
                 <TabsTrigger value="signin" className="rounded-xl">
                   Connexion

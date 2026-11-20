@@ -25,6 +25,24 @@ test("l'accueil GlobeLink s'affiche sans erreur navigateur", async ({ page }) =>
   expect(pageErrors).toEqual([]);
 });
 
+test("un visiteur explore une destination avant de s'inscrire pour l'ajouter", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("link", { name: "Explorer une destination", exact: true }).click();
+  await expect(page).toHaveURL(/\/destinations\/?$/);
+  await page.locator('a[href="/destinations/japon"]').first().click();
+  await expect(page).toHaveURL(/\/destinations\/japon$/);
+
+  await page.getByRole("button", { name: "Ajouter cette destination" }).click();
+  await expect(page).toHaveURL(/\/auth\?/);
+  const search = new URL(page.url()).searchParams;
+  expect(search.get("mode")).toBe("signup");
+  expect(search.get("redirect")).toBe("/destinations/japon");
+  await expect(page.getByRole("tab", { name: "Inscription" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
 test("Explorer charge la carte sans casser l'application", async ({ page }) => {
   const pageErrors = watchPageErrors(page);
   await page.goto("/map", { waitUntil: "domcontentloaded" });

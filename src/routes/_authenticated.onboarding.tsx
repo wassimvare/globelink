@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { safeInternalPath } from "@/lib/auth-redirects";
+import { pendingTripItemFor } from "@/features/travel/pending-trip-item";
 import { queueGuidedTour } from "@/lib/guided-tour";
 import { toast } from "sonner";
 
@@ -59,6 +60,7 @@ function OnboardingPage() {
     }
     return value;
   }, [search.next]);
+  const returningToPlace = !!pendingTripItemFor(safeNext);
 
   const profileQuery = useQuery({
     queryKey: ["onboarding-profile", user?.id],
@@ -84,7 +86,7 @@ function OnboardingPage() {
 
   useEffect(() => {
     if (!profileQuery.data?.onboarding_completed_at) return;
-    navigate({ to: safeNext, replace: true });
+    navigate({ href: safeNext, replace: true });
   }, [navigate, profileQuery.data?.onboarding_completed_at, safeNext]);
 
   const firstName = useMemo(() => {
@@ -116,10 +118,10 @@ function OnboardingPage() {
         queryClient.invalidateQueries({ queryKey: ["profile-nav", user.id] }),
       ]);
 
-      queueGuidedTour(user.id);
+      if (!returningToPlace) queueGuidedTour(user.id);
       const target = destination === "/" ? safeNext : destination;
       toast.success(destination === "/trips" ? "C’est parti pour ton premier voyage ✈️" : "Bienvenue sur GlobeLink !");
-      navigate({ to: target, replace: true });
+      navigate({ href: target, replace: true });
     } catch (error) {
       console.error("[GlobeLink onboarding] completion failed", error);
       toast.error("Impossible de terminer l’accueil. Réessaie dans un instant.");
@@ -155,6 +157,25 @@ function OnboardingPage() {
             Réessayer
           </Button>
         </div>
+      </OnboardingShell>
+    );
+  }
+
+  if (returningToPlace) {
+    return (
+      <OnboardingShell>
+        <main className="mx-auto flex min-h-[65vh] max-w-lg flex-col items-center justify-center text-center">
+          <NotebookTabs className="h-9 w-9 text-primary" aria-hidden />
+          <h1 className="mt-4 font-display text-3xl font-bold">Ton compte est prêt</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Retrouve le lieu que tu as choisi et ajoute-le à un voyage.
+          </p>
+          <Button size="lg" className="mt-6" disabled={!!finishing} onClick={() => finish("/")}>
+            {finishing && <Loader2 className="h-4 w-4 animate-spin" />}
+            Reprendre l’ajout au carnet
+            {!finishing && <ArrowRight className="h-4 w-4" />}
+          </Button>
+        </main>
       </OnboardingShell>
     );
   }

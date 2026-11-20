@@ -1,15 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { AppHeader } from "@/components/AppHeader";
 import { JourneyCard } from "@/components/trips/JourneyCard";
 import { deleteOwnedTripSafely } from "@/features/travel/delete-trip";
+import { pendingTripItemFor } from "@/features/travel/pending-trip-item";
+import { safeInternalPath } from "@/lib/auth-redirects";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { TripBudgetTravelersFields } from "@/components/trips/TripBudgetTravelersFields";
-import { Textarea } from "@/components/ui/textarea";
+import { CreateTripDialog } from "@/components/trips/CreateTripDialog";
 import {
   ArrowRight,
   Calendar,
@@ -25,14 +26,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { resolvedDestinationCover } from "@/lib/destination-cover";
 import {
   EMPTY_TRIP_FORM,
@@ -44,6 +37,7 @@ import {
 } from "@/features/travel/trip-domain";
 
 export const Route = createFileRoute("/_authenticated/trips/")({
+  validateSearch: z.object({ returnTo: z.string().optional() }),
   head: () => ({
     meta: [
       { title: "Voyage — GlobeLink" },
@@ -61,8 +55,15 @@ function TripsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ ...EMPTY_TRIP_FORM });
+  const { returnTo } = Route.useSearch();
+  const returnPath = safeInternalPath(returnTo);
+  const pendingItem = returnTo ? pendingTripItemFor(returnPath) : null;
+  const [open, setOpen] = useState(!!pendingItem);
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_TRIP_FORM,
+    country: pendingItem?.country ?? "",
+    city: pendingItem?.city ?? "",
+  }));
 
   const { data: trips, isLoading } = useQuery({
     queryKey: ["trips", user?.id],
@@ -97,7 +98,12 @@ function TripsPage() {
       setOpen(false);
       setForm({ ...EMPTY_TRIP_FORM });
       qc.invalidateQueries({ queryKey: ["trips"] });
-      navigate({ to: "/trips/$id", params: { id: data.id } });
+      void qc.invalidateQueries({ queryKey: ["add-to-trip-picker", user?.id] });
+      if (pendingItem) {
+        void navigate({ href: returnPath, replace: true });
+      } else {
+        void navigate({ to: "/trips/$id", params: { id: data.id } });
+      }
     },
     onError: (e: any) => toast.error(e?.message ?? "Erreur"),
   });
@@ -141,91 +147,14 @@ function TripsPage() {
               </p>
             </div>
 
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button className="h-12 rounded-2xl px-5 shadow-soft">
-                  <Plus className="mr-2 h-4 w-4" /> Nouveau voyage
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[90dvh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Créer un voyage</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <Input
-                    data-testid="trip-create-title"
-                    aria-label="Titre du voyage"
-                    placeholder="Titre (ex : Été indonésien)"
-                    value={form.title}
-                    onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Input
-                      data-testid="trip-create-country"
-                      aria-label="Pays du voyage"
-                      placeholder="Pays *"
-                      value={form.country}
-                      onChange={(e) => setForm({ ...form, country: e.target.value })}
-                    />
-                    <Input
-                      data-testid="trip-create-city"
-                      aria-label="Ville du voyage"
-                      placeholder="Ville / région"
-                      value={form.city}
-                      onChange={(e) => setForm({ ...form, city: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-                      Départ
-                      <Input
-                        data-testid="trip-create-start"
-                        aria-label="Date de départ"
-                        type="date"
-                        value={form.startsOn}
-                        onChange={(e) => setForm({ ...form, startsOn: e.target.value })}
-                      />
-                    </label>
-                    <label className="space-y-1.5 text-xs font-medium text-muted-foreground">
-                      Retour
-                      <Input
-                        data-testid="trip-create-end"
-                        aria-label="Date de retour"
-                        type="date"
-                        min={form.startsOn || undefined}
-                        value={form.endsOn}
-                        onChange={(e) => setForm({ ...form, endsOn: e.target.value })}
-                      />
-                    </label>
-                  </div>
-                  <TripBudgetTravelersFields
-                    budget={form.budget}
-                    travelers={form.travelers}
-                    onBudgetChange={(budget) => setForm({ ...form, budget })}
-                    onTravelersChange={(travelers) => setForm({ ...form, travelers })}
-                    budgetTestId="trip-create-budget"
-                    travelersTestId="trip-create-travelers"
-                  />
-                  <Textarea
-                    aria-label="Notes du voyage"
-                    placeholder="Notes, plans, envies…"
-                    value={form.notes}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    rows={4}
-                  />
-                </div>
-                <DialogFooter>
-                  <Button
-                    data-testid="trip-create-submit"
-                    disabled={!form.country.trim() || create.isPending}
-                    onClick={() => create.mutate()}
-                    className="rounded-full"
-                  >
-                    {create.isPending ? "Création…" : "Créer mon voyage"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <CreateTripDialog
+              open={open}
+              onOpenChange={setOpen}
+              form={form}
+              setForm={setForm}
+              isCreating={create.isPending}
+              onCreate={() => create.mutate()}
+            />
           </div>
         </section>
 

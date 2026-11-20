@@ -1,11 +1,13 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import { Compass, Languages, MapPin, Sparkles, UserRound, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { pendingTripItemFor } from "@/features/travel/pending-trip-item";
 
 const INTERESTS = [
   "Nature",
@@ -38,6 +40,7 @@ function storageKey(userId: string) {
 
 export function OnboardingGate({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const location = useRouterState({ select: (state) => state.location });
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
   const [dismissed, setDismissed] = useState(false);
@@ -52,6 +55,18 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const [destinationCity, setDestinationCity] = useState("");
   const [startsOn, setStartsOn] = useState("");
   const [endsOn, setEndsOn] = useState("");
+  let resumePath = location.pathname + location.searchStr;
+  if (location.pathname === "/onboarding" && typeof location.search.next === "string") {
+    resumePath = location.search.next;
+  }
+  if (location.pathname === "/trips" && typeof location.search.returnTo === "string") {
+    resumePath = location.search.returnTo;
+  }
+  const resumingTripItem = !!user && !!pendingTripItemFor(resumePath);
+
+  useEffect(() => {
+    if (resumingTripItem) setDismissed(true);
+  }, [resumingTripItem]);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["phase2-onboarding-profile", user?.id],
@@ -89,7 +104,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     (profile.languages?.length ?? 0) >= 1 &&
     !!profile.travel_style;
 
-  const show = !!user && !isLoading && !dismissed && !alreadyDone && !profileLooksComplete;
+  const show =
+    !!user && !isLoading && !resumingTripItem && !dismissed && !alreadyDone && !profileLooksComplete;
 
   function finishLocally() {
     if (user && typeof window !== "undefined") localStorage.setItem(storageKey(user.id), "done");

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CalendarDays, Check, Loader2, MapPin, Notebook, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { trackProductEvent } from "@/lib/product-analytics";
+import { rememberTripItem, takePendingTripItem } from "@/features/travel/pending-trip-item";
 import {
   buildTripDateRange,
   formatTripDayOption,
@@ -54,21 +55,34 @@ export function AddToTripButton({
   label = "Ajouter à mon voyage",
   compact = false,
 }: Props) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const sourcePath = useRouterState({
+    select: (state) => state.location.pathname + state.location.searchStr,
+  });
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [addingTripId, setAddingTripId] = useState<string | null>(null);
   const [addedTripId, setAddedTripId] = useState<string | null>(null);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState("");
+  const itemIdentity = tripEntryIdentity(item);
+
+  useEffect(() => {
+    if (!loading && user && takePendingTripItem(sourcePath, itemIdentity)) setOpen(true);
+  }, [loading, user, sourcePath, itemIdentity]);
 
   const locationLabel = useMemo(
     () => [item.city, item.country].filter(Boolean).join(", "),
     [item.city, item.country],
   );
 
-  const { data: trips = [], isLoading } = useQuery({
+  const {
+    data: trips = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["add-to-trip-picker", user?.id],
     enabled: !!user && open,
     staleTime: 60_000,
@@ -94,8 +108,7 @@ export function AddToTripButton({
     [selectedTrip?.starts_on, selectedTrip?.ends_on],
   );
 
-  const openTrip = (tripId: string) =>
-    navigate({ to: "/trips/$id", params: { id: tripId } });
+  const openTrip = (tripId: string) => navigate({ to: "/trips/$id", params: { id: tripId } });
 
   const closePicker = () => {
     setOpen(false);
@@ -105,12 +118,8 @@ export function AddToTripButton({
 
   const openPicker = () => {
     if (!user) {
-      const redirect =
-        typeof window !== "undefined"
-          ? window.location.pathname + window.location.search
-          : "/trips";
-      toast.info("Connecte-toi pour ajouter ce lieu à un voyage.");
-      navigate({ to: "/auth", search: { redirect } });
+      rememberTripItem(sourcePath, item);
+      navigate({ to: "/auth", search: { redirect: sourcePath, mode: "signup" } });
       return;
     }
     setOpen(true);
@@ -133,9 +142,8 @@ export function AddToTripButton({
         .limit(250);
       if (existingError) throw existingError;
 
-      const identity = tripEntryIdentity(item);
       const existing = (candidates ?? []).find(
-        (candidate) => tripEntryIdentity(candidate) === identity,
+        (candidate) => tripEntryIdentity(candidate) === itemIdentity,
       );
       if (existing) {
         setAddedTripId(trip.id);
@@ -205,10 +213,12 @@ export function AddToTripButton({
         variant={addedTripId ? "default" : variant}
         size={size}
         className={className}
+        disabled={loading}
+        aria-label={compact ? (addedTripId ? "Ajouté au voyage" : label) : undefined}
         onClick={openPicker}
       >
         {addedTripId ? <Check className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
-        {compact ? (addedTripId ? "Ajouté" : "Voyage") : addedTripId ? "Ajouté au voyage" : label}
+        {compact ? (addedTripId ? "Ajouté" : "Ajouter") : addedTripId ? "Ajouté au voyage" : label}
       </Button>
 
       <Dialog
@@ -286,7 +296,8 @@ export function AddToTripButton({
 
               {selectedTripDays.length === 0 && (
                 <p className="rounded-xl border border-dashed border-border px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                  Ce voyage n’a pas encore de plage de dates. Le lieu sera conservé dans « À organiser ».
+                  Ce voyage n’a pas encore de plage de dates. Le lieu sera conservé dans « À
+                  organiser ».
                 </p>
               )}
 
@@ -308,6 +319,13 @@ export function AddToTripButton({
           ) : isLoading ? (
             <div className="grid min-h-32 place-items-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Chargement de tes voyages…
+            </div>
+          ) : isError && !trips.length ? (
+            <div className="space-y-3 text-center text-sm">
+              <p>Impossible de charger tes voyages.</p>
+              <Button variant="outline" onClick={() => void refetch()}>
+                Réessayer
+              </Button>
             </div>
           ) : trips.length ? (
             <div className="max-h-[52dvh] space-y-2 overflow-y-auto pr-1">
@@ -342,13 +360,14 @@ export function AddToTripButton({
               <Notebook className="mx-auto h-7 w-7 text-primary" />
               <p className="mt-3 text-sm font-semibold">Tu n’as pas encore de voyage actif.</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Crée ton premier voyage puis reviens ajouter ce lieu.
+                Crée un voyage pour choisir quand ajouter ce lieu.
               </p>
               <Button
                 className="mt-4 rounded-full"
                 onClick={() => {
+                  rememberTripItem(sourcePath, item);
                   closePicker();
-                  navigate({ to: "/trips" });
+                  navigate({ to: "/trips", search: { returnTo: sourcePath } });
                 }}
               >
                 Créer un voyage
