@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { toast } from "sonner";
 import { BrandLogo } from "@/components/BrandLogo";
+import { authRedirect, safeInternalPath } from "@/lib/auth-redirects";
 
-const verifySearch = z.object({ email: z.string().email().optional() });
+const verifySearch = z.object({ email: z.string().email().optional(), next: z.string().optional() });
 const PENDING_EMAIL_KEY = "globelink.pending-signup-email";
 
 export const Route = createFileRoute("/verify-email")({
@@ -32,6 +33,7 @@ function VerifyEmailPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const search = Route.useSearch();
+  const next = search.next ? safeInternalPath(search.next) : undefined;
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [resendBusy, setResendBusy] = useState(false);
@@ -48,9 +50,9 @@ function VerifyEmailPage() {
   useEffect(() => {
     if (!loading && user?.email_confirmed_at) {
       sessionStorage.removeItem(PENDING_EMAIL_KEY);
-      router.navigate({ to: "/onboarding", replace: true });
+      router.navigate({ to: "/onboarding", search: { next }, replace: true });
     }
-  }, [loading, user?.email_confirmed_at, router]);
+  }, [loading, user?.email_confirmed_at, next, router]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -74,13 +76,19 @@ function VerifyEmailPage() {
     }
     sessionStorage.removeItem(PENDING_EMAIL_KEY);
     toast.success("Adresse vérifiée. Bienvenue sur GlobeLink !");
-    router.navigate({ to: "/onboarding", replace: true });
+    router.navigate({ to: "/onboarding", search: { next }, replace: true });
   }
 
   async function resend() {
     if (!email || resendBusy || cooldown > 0) return;
     setResendBusy(true);
-    const { error } = await supabase.auth.resend({ type: "signup", email });
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: next
+        ? { emailRedirectTo: authRedirect(`/onboarding?next=${encodeURIComponent(next)}`) }
+        : undefined,
+    });
     setResendBusy(false);
     if (error) {
       if (/rate|limit|security purposes/i.test(error.message)) {
@@ -96,7 +104,7 @@ function VerifyEmailPage() {
   async function signOut() {
     await supabase.auth.signOut();
     sessionStorage.removeItem(PENDING_EMAIL_KEY);
-    router.navigate({ to: "/auth", replace: true });
+    router.navigate({ to: "/auth", search: { redirect: next }, replace: true });
   }
 
   if (!email && !loading) {
@@ -109,7 +117,9 @@ function VerifyEmailPage() {
             Reviens à la création de compte pour recevoir un nouveau code.
           </p>
           <Button asChild className="mt-6 w-full rounded-2xl">
-            <Link to="/auth">Créer mon compte</Link>
+            <Link to="/auth" search={{ redirect: next }}>
+              Créer mon compte
+            </Link>
           </Button>
         </div>
       </div>

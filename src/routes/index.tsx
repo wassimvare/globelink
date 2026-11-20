@@ -661,11 +661,38 @@ function FeedPage() {
     { key: "following", label: "Suivis", icon: Users },
     { key: "nearby", label: "Près de toi", icon: Navigation },
   ];
+  const FeedHeading = user ? "h1" : "h2";
 
   return (
     <div className="app-page">
       <AppHeader />
       <main>
+        {!user && (
+          <section
+            aria-labelledby="guest-home-title"
+            className="mx-auto max-w-6xl px-3 pt-3 sm:px-4 sm:pt-4"
+          >
+            <div className="surface-card flex flex-col gap-4 p-4 sm:p-6 md:flex-row md:items-center md:justify-between">
+              <div className="max-w-xl">
+                <h1
+                  id="guest-home-title"
+                  className="font-display text-2xl font-semibold sm:text-3xl"
+                >
+                  Prépare ton prochain voyage
+                </h1>
+                <p className="mt-2 text-sm text-muted-foreground sm:text-base">
+                  Découvre des activités et des adresses, puis rassemble tes favoris dans ton carnet
+                  de voyage.
+                </p>
+              </div>
+              <Button asChild size="lg" className="w-full sm:w-fit md:shrink-0">
+                <Link to="/destinations">
+                  Explorer une destination <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+            </div>
+          </section>
+        )}
         <section className="mx-auto max-w-6xl px-3 pt-3 sm:px-4 sm:pt-4">
           <div className="stories-card surface-card px-3 py-3">
             <StoriesBar followingIds={followingIds} />
@@ -771,7 +798,9 @@ function FeedPage() {
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
                 <Compass className="h-4 w-4" /> Communauté
               </div>
-              <h1 className="mt-1 font-display text-3xl font-semibold">Fil d'actualité</h1>
+              <FeedHeading className="mt-1 font-display text-3xl font-semibold">
+                Fil d'actualité
+              </FeedHeading>
             </div>
           </div>
           <div className="feed-tabs sticky top-16 z-20 -mx-3 mb-5 border-b border-border/60 bg-background/95 px-3 backdrop-blur sm:-mx-4 sm:px-4">

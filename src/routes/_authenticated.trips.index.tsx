@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { AppHeader } from "@/components/AppHeader";
 import { JourneyCard } from "@/components/trips/JourneyCard";
 import { deleteOwnedTripSafely } from "@/features/travel/delete-trip";
+import { pendingTripItemFor } from "@/features/travel/pending-trip-item";
+import { safeInternalPath } from "@/lib/auth-redirects";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TripBudgetTravelersFields } from "@/components/trips/TripBudgetTravelersFields";
@@ -44,6 +47,7 @@ import {
 } from "@/features/travel/trip-domain";
 
 export const Route = createFileRoute("/_authenticated/trips/")({
+  validateSearch: z.object({ returnTo: z.string().optional() }),
   head: () => ({
     meta: [
       { title: "Voyage — GlobeLink" },
@@ -61,8 +65,15 @@ function TripsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ ...EMPTY_TRIP_FORM });
+  const { returnTo } = Route.useSearch();
+  const returnPath = safeInternalPath(returnTo);
+  const pendingItem = returnTo ? pendingTripItemFor(returnPath) : null;
+  const [open, setOpen] = useState(!!pendingItem);
+  const [form, setForm] = useState(() => ({
+    ...EMPTY_TRIP_FORM,
+    country: pendingItem?.country ?? "",
+    city: pendingItem?.city ?? "",
+  }));
 
   const { data: trips, isLoading } = useQuery({
     queryKey: ["trips", user?.id],
@@ -97,7 +108,12 @@ function TripsPage() {
       setOpen(false);
       setForm({ ...EMPTY_TRIP_FORM });
       qc.invalidateQueries({ queryKey: ["trips"] });
-      navigate({ to: "/trips/$id", params: { id: data.id } });
+      void qc.invalidateQueries({ queryKey: ["add-to-trip-picker", user?.id] });
+      if (pendingItem) {
+        void navigate({ href: returnPath, replace: true });
+      } else {
+        void navigate({ to: "/trips/$id", params: { id: data.id } });
+      }
     },
     onError: (e: any) => toast.error(e?.message ?? "Erreur"),
   });

@@ -15,13 +15,17 @@ export function publicAppOrigin(): string {
 }
 
 export function authRedirect(path: string): string {
-  const safePath =
-    path.startsWith("/") && !path.startsWith("//") && !path.includes("\\") ? path : "/";
-  return new URL(safePath, `${publicAppOrigin()}/`).toString();
+  return new URL(safeInternalPath(path), `${publicAppOrigin()}/`).toString();
 }
 
 export function safeInternalPath(value?: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    /[\t\n\r]/.test(value)
+  )
     return "/";
   return value;
 }

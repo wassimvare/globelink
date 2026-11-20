@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Compass, Heart, Notebook, PlusCircle, Route as RouteIcon, Sparkles, Users } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/_authenticated/analytics")({
   head: () => ({
@@ -32,6 +33,10 @@ type AnalyticsSummary = {
   travel_match_opens: number;
   trips_created: number;
   trip_items_added: number;
+  destination_carnet?: {
+    viewed_sessions: number;
+    converted_sessions: number;
+  };
   top_events: CountItem[];
   top_routes: CountItem[];
   daily: DailyItem[];
@@ -68,12 +73,20 @@ function MetricCard({
 }
 
 function ProductAnalyticsPage() {
+  const { user, loading: authLoading } = useAuth();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["product-analytics-summary", 30],
+    queryKey: ["product-analytics-summary", user?.id, 30],
     queryFn: loadSummary,
+    enabled: !!user,
     staleTime: 60_000,
     retry: false,
   });
+  const conversion = data?.destination_carnet;
+  const conversionRate = conversion?.viewed_sessions
+    ? new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 }).format(
+        conversion.converted_sessions / conversion.viewed_sessions,
+      )
+    : "—";
 
   return (
     <div className="app-page min-h-screen">
@@ -98,7 +111,7 @@ function ProductAnalyticsPage() {
           </div>
         </section>
 
-        {isLoading ? (
+        {authLoading || isLoading ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, index) => (
               <div key={index} className="skeleton h-28 rounded-2xl" />
@@ -124,7 +137,22 @@ function ProductAnalyticsPage() {
               <MetricCard label="Voyages créés" value={data.trips_created} icon={PlusCircle} />
             </section>
 
-            <section className="mt-3 grid gap-3 lg:grid-cols-2">
+            <section className={`mt-3 grid gap-3 ${conversion ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
+              {conversion && (
+                <div className="rounded-[2rem] border border-border/70 bg-card p-5 shadow-soft">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Conversion carnet</p>
+                  <h2 className="mt-1 font-display text-2xl font-bold">De la destination au carnet</h2>
+                  <p className="mt-2 font-display text-3xl font-bold tabular-nums text-primary">{conversionRate}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {conversion.viewed_sessions > 0
+                      ? `${conversion.converted_sessions.toLocaleString("fr-FR")} sur ${conversion.viewed_sessions.toLocaleString("fr-FR")} sessions avec une fiche destination consultée.`
+                      : "Aucune fiche destination consultée sur la période."}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Le premier lieu ajouté au carnet après la consultation compte une fois par session.
+                  </p>
+                </div>
+              )}
               <div className="rounded-[2rem] border border-border/70 bg-card p-5 shadow-soft">
                 <div className="flex items-center justify-between gap-3">
                   <div>
