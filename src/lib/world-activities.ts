@@ -5,19 +5,68 @@ import { WORLD_MAP_HUBS } from "./world-map-hubs";
 
 type ActivitySeed = {
   title: string;
-  city: string;
+  city?: string;
   wikipedia?: string;
 };
+
+// Keyed by landmark title so a change of representative landmark cannot inherit
+// another landmark's city. Regional sites can be shown with just their country.
+const REPRESENTATIVE_ACTIVITY_CITIES = new Map(
+  Object.entries({
+    "Acropole d'Athènes": "Athènes",
+    "Big Ben": "Londres",
+    "Burj Khalifa": "Dubaï",
+    "Canaux d'Amsterdam": "Amsterdam",
+    "Capitole de La Havane": "La Havane",
+    "Carthagène des Indes": "Carthagène des Indes",
+    "Cathédrale luthérienne d'Helsinki": "Helsinki",
+    "Château de Bran": "Bran",
+    "Château de Schönbrunn": "Vienne",
+    "Château du Wawel": "Cracovie",
+    "Chutes du Niagara": "Niagara Falls",
+    "Chichén Itzá": "Pisté",
+    "Christ Rédempteur": "Rio de Janeiro",
+    Colisée: "Rome",
+    "Églises rupestres de Lalibela": "Lalibela",
+    "Grand-Place de Bruxelles": "Bruxelles",
+    Gyeongbokgung: "Séoul",
+    "Hôtel de ville de Stockholm": "Stockholm",
+    Kaaba: "La Mecque",
+    "La Petite Sirène": "Copenhague",
+    "Machu Picchu": "District de Machupicchu",
+    "Marina Bay Sands": "Singapour",
+    "Mitad del Mundo": "San Antonio de Pichincha",
+    "Monument de la Renaissance africaine": "Dakar",
+    "Mosquée Hassan-II": "Casablanca",
+    "Musée d'Art islamique de Doha": "Doha",
+    "Obélisque de Buenos Aires": "Buenos Aires",
+    "Opéra de Sydney": "Sydney",
+    "Palais Salvo": "Montevideo",
+    "Parlement hongrois": "Budapest",
+    "Place de l'Indépendance (Accra)": "Accra",
+    "Porte de Brandebourg": "Berlin",
+    "Pyramides de Gizeh": "Gizeh",
+    "Sagrada Família": "Barcelone",
+    "Sainte-Sophie (Constantinople)": "Istanbul",
+    "Sidi Bou Saïd": "Sidi Bou Saïd",
+    "Statue de la Liberté": "New York",
+    "Taipei 101": "Taipei",
+    "Taj Mahal": "Agra",
+    "Tanah Lot": "Beraban",
+    "Tour de Belém": "Lisbonne",
+    "Tour Eiffel": "Paris",
+    "Tours Petronas": "Kuala Lumpur",
+    "Vieux San Juan": "San Juan",
+    "Wat Arun": "Bangkok",
+  }),
+);
 
 // Two additional, real attractions per country. The first attraction is always
 // the representative landmark maintained in destination-landmarks.ts. This
 // gives every country three useful fallbacks without inventing establishments,
 // prices, ratings or availability.
 const EXTRA_ACTIVITY_SEEDS = {
-  "Afrique du Sud": [
-    { title: "Robben Island", city: "Le Cap" },
-    { title: "Parc national Kruger", city: "Mbombela" },
-  ],
+  "Afrique du Sud": [{ title: "Robben Island", city: "Le Cap" }, { title: "Parc national Kruger" }],
   Allemagne: [
     { title: "Château de Neuschwanstein", city: "Schwangau" },
     { title: "Cathédrale de Cologne", city: "Cologne" },
@@ -30,10 +79,7 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Glacier Perito Moreno", city: "El Calafate" },
     { title: "Chutes d'Iguazú", city: "Puerto Iguazú" },
   ],
-  Australie: [
-    { title: "Grande Barrière de corail", city: "Cairns" },
-    { title: "Uluru", city: "Yulara" },
-  ],
+  Australie: [{ title: "Grande Barrière de corail" }, { title: "Uluru" }],
   Autriche: [
     { title: "Hallstatt", city: "Hallstatt" },
     { title: "Cathédrale Saint-Étienne de Vienne", city: "Vienne" },
@@ -42,10 +88,7 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Atomium", city: "Bruxelles" },
     { title: "Beffroi de Bruges", city: "Bruges" },
   ],
-  Bolivie: [
-    { title: "Lac Titicaca", city: "Copacabana" },
-    { title: "Tiwanaku", city: "La Paz" },
-  ],
+  Bolivie: [{ title: "Lac Titicaca" }, { title: "Tiwanaku", city: "Tiwanaku" }],
   Brésil: [
     { title: "Mont du Pain de Sucre", city: "Rio de Janeiro" },
     { title: "Chutes d'Iguaçu", city: "Foz do Iguaçu" },
@@ -118,14 +161,8 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Fort d'Amber", city: "Jaipur" },
     { title: "Ghats de Varanasi", city: "Varanasi" },
   ],
-  Indonésie: [
-    { title: "Borobudur", city: "Magelang" },
-    { title: "Parc national de Komodo", city: "Labuan Bajo" },
-  ],
-  Irlande: [
-    { title: "Guinness Storehouse", city: "Dublin" },
-    { title: "Anneau du Kerry", city: "Killarney" },
-  ],
+  Indonésie: [{ title: "Borobudur", city: "Magelang" }, { title: "Parc national de Komodo" }],
+  Irlande: [{ title: "Guinness Storehouse", city: "Dublin" }, { title: "Anneau du Kerry" }],
   Islande: [
     { title: "Lagon bleu", city: "Grindavík" },
     { title: "Parc national de Þingvellir", city: "Þingvellir" },
@@ -138,34 +175,28 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Fushimi Inari-taisha", city: "Kyoto" },
     { title: "Sensō-ji", city: "Tokyo" },
   ],
-  Jordanie: [
-    { title: "Wadi Rum", city: "Aqaba" },
-    { title: "Mer Morte", city: "Suweimeh" },
-  ],
+  Jordanie: [{ title: "Wadi Rum" }, { title: "Mer Morte", city: "Suweimeh" }],
   Kenya: [
     { title: "Réserve nationale du Masai Mara", city: "Narok" },
     { title: "Giraffe Centre", city: "Nairobi" },
   ],
   Malaisie: [
-    { title: "Grottes de Batu", city: "Kuala Lumpur" },
-    { title: "George Town", city: "Penang" },
+    { title: "Grottes de Batu", city: "Batu Caves" },
+    { title: "George Town", city: "George Town" },
   ],
   Maroc: [
     { title: "Place Jemaa el-Fna", city: "Marrakech" },
     { title: "Chefchaouen", city: "Chefchaouen" },
   ],
   Mexique: [
-    { title: "Teotihuacan", city: "Mexico" },
+    { title: "Teotihuacan", city: "San Juan Teotihuacán" },
     { title: "Musée Frida-Kahlo", city: "Mexico" },
   ],
   Nigeria: [
     { title: "Lekki Conservation Centre", city: "Lagos" },
     { title: "Musée national du Nigeria", city: "Lagos" },
   ],
-  Norvège: [
-    { title: "Bryggen", city: "Bergen" },
-    { title: "Preikestolen", city: "Stavanger" },
-  ],
+  Norvège: [{ title: "Bryggen", city: "Bergen" }, { title: "Preikestolen" }],
   "Nouvelle-Zélande": [
     { title: "Hobbiton Movie Set", city: "Matamata" },
     { title: "Parc national de Tongariro", city: "Whakapapa" },
@@ -202,10 +233,7 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Palais national de Pena", city: "Sintra" },
     { title: "Ribeira de Porto", city: "Porto" },
   ],
-  Pérou: [
-    { title: "Lac Titicaca", city: "Puno" },
-    { title: "Lignes de Nazca", city: "Nazca" },
-  ],
+  Pérou: [{ title: "Lac Titicaca" }, { title: "Lignes de Nazca", city: "Nazca" }],
   Qatar: [
     { title: "Souq Waqif", city: "Doha" },
     { title: "Musée national du Qatar", city: "Doha" },
@@ -226,22 +254,13 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Temple de la Dent", city: "Kandy" },
     { title: "Fort de Galle", city: "Galle" },
   ],
-  Suisse: [
-    { title: "Jungfraujoch", city: "Interlaken" },
-    { title: "Château de Chillon", city: "Veytaux" },
-  ],
+  Suisse: [{ title: "Jungfraujoch" }, { title: "Château de Chillon", city: "Veytaux" }],
   Suède: [
     { title: "Musée Vasa", city: "Stockholm" },
     { title: "Gamla stan", city: "Stockholm" },
   ],
-  Sénégal: [
-    { title: "Île de Gorée", city: "Dakar" },
-    { title: "Lac Rose", city: "Dakar" },
-  ],
-  Tanzanie: [
-    { title: "Parc national du Serengeti", city: "Arusha" },
-    { title: "Stone Town", city: "Zanzibar" },
-  ],
+  Sénégal: [{ title: "Île de Gorée", city: "Dakar" }, { title: "Lac Rose" }],
+  Tanzanie: [{ title: "Parc national du Serengeti" }, { title: "Stone Town", city: "Zanzibar" }],
   Taïwan: [
     { title: "Parc national de Taroko", city: "Hualien" },
     { title: "Mémorial de Tchang Kaï-chek", city: "Taipei" },
@@ -258,10 +277,7 @@ const EXTRA_ACTIVITY_SEEDS = {
     { title: "Amphithéâtre d'El Jem", city: "El Jem" },
     { title: "Site archéologique de Carthage", city: "Carthage" },
   ],
-  Turquie: [
-    { title: "Cappadoce", city: "Göreme" },
-    { title: "Pamukkale", city: "Denizli" },
-  ],
+  Turquie: [{ title: "Cappadoce" }, { title: "Pamukkale", city: "Denizli" }],
   Uruguay: [
     { title: "Colonia del Sacramento", city: "Colonia del Sacramento" },
     { title: "La Mano de Punta del Este", city: "Punta del Este" },
@@ -321,6 +337,7 @@ function wikipediaUrl(reference: string) {
 function activityItem(country: string, seed: ActivitySeed, position: number): LiveCatalogItem {
   const wikipedia = seed.wikipedia ?? wikipediaReference(seed.title);
   const externalId = `${slugify(country)}:${position + 1}:${slugify(seed.title)}`;
+  const location = [seed.city, country].filter(Boolean).join(", ");
   return enrichSpecializedCatalogSource({
     id: `curated-activity-${externalId}`,
     provider: "globelink-curated",
@@ -328,9 +345,9 @@ function activityItem(country: string, seed: ActivitySeed, position: number): Li
     kind: "activity",
     slug: `${slugify(seed.title)}-gl-${slugify(country)}`,
     title: seed.title,
-    description: `Lieu réel et emblématique à découvrir à ${seed.city}, ${country}. Vérifie les horaires et les conditions d'accès avant ta visite.`,
+    description: `Lieu emblématique · ${location}. Vérifie les horaires et les conditions d'accès avant ta visite.`,
     category: "incontournable",
-    city: seed.city,
+    city: seed.city ?? null,
     country,
     country_code: null,
     latitude: null,
@@ -359,10 +376,10 @@ const BY_COUNTRY = new Map<string, LiveCatalogItem[]>();
 
 for (const country of COUNTRIES) {
   const extras = EXTRA_ACTIVITY_SEEDS[country as keyof typeof EXTRA_ACTIVITY_SEEDS] ?? [];
-  const primaryCity = WORLD_MAP_HUBS.find((hub) => hub.country === country)?.city ?? country;
+  const title = destinationLandmarkTitle(country);
   const primary: ActivitySeed = {
-    title: destinationLandmarkTitle(country),
-    city: primaryCity,
+    title,
+    city: REPRESENTATIVE_ACTIVITY_CITIES.get(title),
   };
   BY_COUNTRY.set(
     normalize(country),

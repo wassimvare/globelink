@@ -4,6 +4,7 @@ import { WORLD_MAP_HUBS } from "./world-map-hubs";
 import {
   ALL_CURATED_WORLD_ACTIVITIES,
   CURATED_ACTIVITY_COUNTRIES,
+  curatedActivityBySlug,
   curatedActivitiesForCountry,
   dailyWorldActivitySelection,
   representativeWorldActivities,
@@ -34,6 +35,25 @@ describe("world activities coverage", () => {
     const slugs = ALL_CURATED_WORLD_ACTIVITIES.map((activity) => activity.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
     expect(ALL_CURATED_WORLD_ACTIVITIES).toHaveLength(mapCountries.length * 3);
+  });
+
+  it.each([
+    ["opera-de-sydney-gl-australie", "Sydney", "Australie"],
+    ["christ-redempteur-gl-bresil", "Rio de Janeiro", "Brésil"],
+    ["chutes-du-niagara-gl-canada", "Niagara Falls", "Canada"],
+    ["machu-picchu-gl-perou", "District de Machupicchu", "Pérou"],
+    ["teotihuacan-gl-mexique", "San Juan Teotihuacán", "Mexique"],
+    ["mont-fuji-gl-japon", null, "Japon"],
+    ["uluru-gl-australie", null, "Australie"],
+  ])("uses the activity's own location for %s", (slug, city, country) => {
+    const activity = curatedActivityBySlug(slug)!;
+    const location = city ? `${city}, ${country}` : country;
+
+    expect(activity).toMatchObject({ city, country });
+    expect(activity.description).toContain(`· ${location}.`);
+    expect(new URL(activity.booking_url!).searchParams.get("query")).toBe(
+      `${activity.title}, ${location}`,
+    );
   });
 
   it("builds a diverse world selection with one country per card", () => {
