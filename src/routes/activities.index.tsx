@@ -122,7 +122,7 @@ function ActivitiesExplorerPage() {
         ) : visibleActivities.length ? (
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visibleActivities.map((activity, index) => {
-              const country = activity.country ?? "Destination";
+              const location = itemLocation(activity) || "Destination";
               return (
                 <article
                   key={activity.id}
@@ -156,7 +156,7 @@ function ActivitiesExplorerPage() {
                           {activity.title}
                         </h2>
                         <p className="mt-1 flex items-center gap-1 text-xs text-white/80">
-                          <MapPin className="h-3.5 w-3.5" /> {activity.city}, {country}
+                          <MapPin className="h-3.5 w-3.5" /> {location}
                         </p>
                       </div>
                     </div>
@@ -168,7 +168,7 @@ function ActivitiesExplorerPage() {
                         disponible
                       </span>
                       <span className="truncate text-xs text-muted-foreground">
-                        {itemLocation(activity) || country}
+                        {location}
                       </span>
                     </div>
                   </div>

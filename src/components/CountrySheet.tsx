@@ -682,7 +682,7 @@ function PlaceGroup({
               <div className="p-2">
                 <div className="truncate text-sm font-medium">{it.name}</div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="truncate">{it.city}</span>
+                  <span className="truncate">{it.city || it.country}</span>
                   {it.rating && <span>★ {it.rating.toFixed(1)}</span>}
                 </div>
               </div>

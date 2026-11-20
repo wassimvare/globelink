@@ -1145,7 +1145,7 @@ function RecapDialog({
       const enriched = await Promise.all(
         entries.map(async (entry) => {
           if (entry.lat != null && entry.lng != null) return entry;
-          if (!entry.city && !entry.country) return entry;
+          if (!entry.city?.trim()) return entry;
           const coords = await resolveRecapCoords(entry.city, entry.country);
           if (!coords) return entry;
           void supabase

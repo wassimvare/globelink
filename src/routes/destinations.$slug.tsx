@@ -143,7 +143,7 @@ function DestinationDetail({ slug }: { slug: string }) {
         .filter((item) => item.kind === "deal" || isTrustedVisibleCatalogItem(item))
         .map((item) => ({
           ...item,
-          city: item.city || catalogCity || null,
+          city: item.provider === "globelink-curated" ? item.city : item.city || catalogCity || null,
           country: item.country || country || null,
         }));
 
@@ -542,24 +542,18 @@ function DestinationDetail({ slug }: { slug: string }) {
             icon={<Sparkles className="h-4 w-4" />}
             items={groups.activity}
             loading={groups.activity.length === 0 && isCatalogForegroundFetching}
-            fallbackCity={catalogCity}
-            fallbackCountry={country}
           />
           <CatalogRail
             title="Restaurants"
             icon={<Utensils className="h-4 w-4" />}
             items={groups.restaurant}
             loading={groups.restaurant.length === 0 && isCatalogForegroundFetching}
-            fallbackCity={catalogCity}
-            fallbackCountry={country}
           />
           <CatalogRail
             title="Hébergements"
             icon={<Hotel className="h-4 w-4" />}
             items={groups.hotel}
             loading={groups.hotel.length === 0 && isCatalogForegroundFetching}
-            fallbackCity={catalogCity}
-            fallbackCountry={country}
           />
           {groups.deal.length > 0 && (
             <CatalogRail
@@ -567,8 +561,6 @@ function DestinationDetail({ slug }: { slug: string }) {
               icon={<Flame className="h-4 w-4" />}
               items={groups.deal}
               loading={isCatalogLoading}
-              fallbackCity={catalogCity}
-              fallbackCountry={country}
             />
           )}
 
@@ -766,15 +758,11 @@ function CatalogRail({
   icon,
   items,
   loading,
-  fallbackCity,
-  fallbackCountry,
 }: {
   title: string;
   icon: ReactNode;
   items: LiveCatalogItem[];
   loading: boolean;
-  fallbackCity?: string | null;
-  fallbackCountry?: string | null;
 }) {
   return (
     <section>
@@ -795,8 +783,8 @@ function CatalogRail({
                     lookup={{
                       latitude: item.latitude,
                       longitude: item.longitude,
-                      city: item.city ?? fallbackCity,
-                      country: item.country ?? fallbackCountry,
+                      city: item.city,
+                      country: item.country,
                       website: catalogOfficialWebsite(item),
                     }}
                     className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
@@ -834,8 +822,8 @@ function CatalogRail({
                   <AddToTripButton
                     item={{
                       title: item.title,
-                      city: item.city ?? fallbackCity ?? null,
-                      country: item.country ?? fallbackCountry ?? null,
+                      city: item.city,
+                      country: item.country,
                       lat: item.latitude,
                       lng: item.longitude,
                       kind: item.kind,
@@ -850,9 +838,7 @@ function CatalogRail({
                   />
                   {item.kind === "hotel" && (
                     <AIContextActions
-                      destination={[item.city ?? fallbackCity, item.country ?? fallbackCountry]
-                        .filter(Boolean)
-                        .join(", ")}
+                      destination={itemLocation(item)}
                       freePrompt={`Donne-moi un avis général sur l’emplacement de ${item.title} pour un voyage.`}
                       proPrompt={`Compare ${item.title} avec les meilleurs hébergements proches pour mon voyage : prix indicatifs, quartier, transports, avantages, limites, alternatives et verdict.`}
                       proMode="compare"
